@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This guide is for operators and field maintainers running NexusN3 Edge Core on
+This guide is for operators and field maintainers running Nexus N3 Core on
 deployed systems.
 
 ## First Checks
@@ -29,8 +29,14 @@ Typical runtime roles:
 - `worker`
 - `ai`
 
-The runtime is normally started through `nexus_n3_server.py`, using
+The runtime is normally started through `nexus-n3-core`, using
 `/etc/nexus-n3/runtime.env` as its configuration source.
+
+If you need to use a non-standard config file location, set:
+
+```bash
+export NEXUS_N3_ENV_FILE=/path/to/runtime.env
+```
 
 ## Plugin Operations
 

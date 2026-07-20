@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html class="no-js" lang="en" data-content_root="../">
+<html class="no-js" lang="en" data-content_root="">
 <head>
     <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-        <title>nexus_n3.azure_bridge &mdash; NexusN3 Edge Core</title>
+        <title>nexus_n3.azure_bridge &mdash; Nexus N3 Core</title>
     
     <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
       <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
-            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="top" title="Nexus N3 Core" href="#" />
     </head>
 <body>
     <script type="text/javascript" src="../_static/dist/blocking.js"></script>
@@ -28,7 +28,7 @@
                         <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
                             class="logo-img"
                         />
-                        NexusN3 Edge Core
+                        Nexus N3 Core
                     </a>
                 
                 
@@ -121,21 +121,23 @@
                     <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
                         <main role="main" id="main">
     <section id="nexus-n3-azure-bridge">
-<h1>nexus_n3.azure_bridge<a class="headerlink" href="#nexus-n3-azure-bridge" title="Link to this heading">¶</a></h1>
+<h1>nexus_n3.azure_bridge<a class="headerlink" href="#nexus-n3-azure-bridge" title="Permalink to this heading">¶</a></h1>
 <section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">nexus_n3.azure_bridge</span></code> provides the optional Azure IoT Hub integration layer
-for NexusN3 Edge Core. It connects the local runtime to IoT Hub for:</p>
+for Nexus N3 Core. It connects the local runtime to IoT Hub for:</p>
 <ul class="simple">
 <li><p>direct method handling</p></li>
 <li><p>reported-property updates</p></li>
 <li><p>session archive upload after stream finalization</p></li>
 <li><p>remote-control enable/disable state</p></li>
 </ul>
-<p>The bridge can run standalone or in-process via <code class="docutils literal notranslate"><span class="pre">nexus_n3_server.py</span> <span class="pre">--bridge</span> <span class="pre">azure_bridge</span></code>.</p>
+<p>The bridge can run standalone or in-process via
+<code class="docutils literal notranslate"><span class="pre">nexus_n3_server.py</span> <span class="pre">--bridge</span> <span class="pre">azure_bridge</span></code> or
+<code class="docutils literal notranslate"><span class="pre">nexus-n3-core</span> <span class="pre">--bridge</span> <span class="pre">azure_bridge</span></code>.</p>
 </section>
 <section id="key-classes-and-apis">
-<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Link to this heading">¶</a></h2>
+<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">AzureBridgeService</span></code></p>
 <ul>
@@ -171,7 +173,7 @@ for NexusN3 Edge Core. It connects the local runtime to IoT Hub for:</p>
 </ul>
 </section>
 <section id="message-flow">
-<h2>Message Flow<a class="headerlink" href="#message-flow" title="Link to this heading">¶</a></h2>
+<h2>Message Flow<a class="headerlink" href="#message-flow" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>Local runtime emits <code class="docutils literal notranslate"><span class="pre">EVT_STREAM_DRAINED</span></code> after stop/finalize.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">AzureBridgeService</span></code> inspects the payload.</p></li>
@@ -198,7 +200,7 @@ for NexusN3 Edge Core. It connects the local runtime to IoT Hub for:</p>
 </ul>
 </section>
 <section id="runtime-notes">
-<h2>Runtime Notes<a class="headerlink" href="#runtime-notes" title="Link to this heading">¶</a></h2>
+<h2>Runtime Notes<a class="headerlink" href="#runtime-notes" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>Integrated bridge mode is intended for <code class="docutils literal notranslate"><span class="pre">standalone</span></code> and <code class="docutils literal notranslate"><span class="pre">master</span></code>.</p></li>
 <li><p>The bridge listens for <code class="docutils literal notranslate"><span class="pre">EVT_STREAM_DRAINED</span></code>, so archive upload depends on the local stop/finalize flow completing successfully.</p></li>
@@ -207,7 +209,7 @@ for NexusN3 Edge Core. It connects the local runtime to IoT Hub for:</p>
 </ul>
 </section>
 <section id="key-files">
-<h2>Key Files<a class="headerlink" href="#key-files" title="Link to this heading">¶</a></h2>
+<h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.azure_bridge/bridge.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.azure_bridge/config.py</span></code></p></li>
@@ -289,7 +291,7 @@ for NexusN3 Edge Core. It connects the local runtime to IoT Hub for:</p>
                     </a>
                     and
                     <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
-                        Sphinx 8.1.3
+                        Sphinx 7.1.0
                     </a>
                 </small>
             </div>
@@ -297,9 +299,9 @@ for NexusN3 Edge Core. It connects the local runtime to IoT Hub for:</p>
     </div>
         </div>
     </footer>
-        <script src="../_static/documentation_options.js?v=01f34227"></script>
-        <script src="../_static/doctools.js?v=9bcbadda"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="../_static/copybutton.js?v=f281be69"></script>
         <script type="text/javascript" src="../_static/dist/theme.js"></script>

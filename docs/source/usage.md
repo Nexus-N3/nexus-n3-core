@@ -2,7 +2,7 @@
 
 ## Product Shape
 
-NexusN3 Edge Core is the runtime layer for:
+Nexus N3 Core is the runtime layer for:
 
 - gateway and command/event handling
 - sensor discovery, connection, and streaming
@@ -17,7 +17,8 @@ root.
 
 ## Install
 
-Create a virtual environment and install the core runtime:
+Create a virtual environment and install the core runtime from a source
+checkout:
 
 ```bash
 python -m venv .venv
@@ -26,10 +27,10 @@ pip install -U pip
 pip install -e .
 ```
 
-For packaged installs, build a wheel with:
+For a packaged install from PyPI or TestPyPI, use:
 
 ```bash
-python -m build
+python -m pip install nexus-n3-core
 ```
 
 ## Runtime Environment
@@ -39,6 +40,25 @@ Shared runtime configuration lives in:
 - `config/runtime-example.env` as the tracked template for local development
 - `config/runtime.env` as the local untracked copy
 - `/etc/nexus-n3/runtime.env` for deployed systems
+
+For an installed package, place your runtime configuration at:
+
+```bash
+/etc/nexus-n3/runtime.env
+```
+
+Or point the runtime at a different file with:
+
+```bash
+export NEXUS_N3_ENV_FILE=/path/to/runtime.env
+```
+
+To copy the current local development config into the standard deployed path:
+
+```bash
+sudo mkdir -p /etc/nexus-n3
+sudo cp /home/mike/Desktop/apps/dev/rs-nexus-project/nexus-n3-core/config/runtime.env /etc/nexus-n3/runtime.env
+```
 
 This file is the source of truth for:
 
@@ -57,12 +77,27 @@ python nexus_n3_server.py
 
 if the required values are already set in your local `config/runtime.env`.
 
+After installing from PyPI or TestPyPI, use:
+
+```bash
+nexus-n3-core
+```
+
 ## Run The Full System
 
 Minimal local run:
 
 ```bash
 python nexus_n3_server.py
+```
+
+If no site is configured in `runtime.env` and you do not pass `--site`, the
+runtime uses `local` as the default site label for output paths.
+
+Installed-package run:
+
+```bash
+nexus-n3-core
 ```
 
 On non-Linux development hosts, including Windows laptops, the runtime uses the
@@ -82,6 +117,12 @@ Standalone runtime with admin UI:
 
 ```bash
 python nexus_n3_server.py --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
+```
+
+Installed-package equivalent:
+
+```bash
+nexus-n3-core --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
 ```
 
 Standalone runtime with Azure bridge:
@@ -173,7 +214,7 @@ python -m nexus_n3.plugins install-dev-list
 - build `.rsnxplugin` bundles
 - provide focused development harnesses
 
-Installation and runtime discovery are owned by NexusN3 Edge Core through
+Installation and runtime discovery are owned by Nexus N3 Core through
 `nexus_n3.plugins`.
 
 ## BLE Backends
@@ -189,6 +230,13 @@ Select the backend at startup if needed:
 ```bash
 python nexus_n3_server.py --ble-backend bleak
 python nexus_n3_server.py --ble-backend nexus_ble_gateway
+```
+
+Installed-package equivalents:
+
+```bash
+nexus-n3-core --ble-backend bleak
+nexus-n3-core --ble-backend nexus_ble_gateway
 ```
 
 The backend choice does not require sensor plugin or sensor spec changes.

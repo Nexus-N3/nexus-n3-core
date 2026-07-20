@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.abspath('../../'))
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'NexusN3 Edge Core'
+project = 'Nexus N3 Core'
 copyright = '2026, Mike Crooks'
 author = 'Mike Crooks'
 release = '0.1.0'

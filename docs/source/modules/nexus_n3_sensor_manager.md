@@ -39,7 +39,7 @@ Internally, responsibilities are split into services:
   - `USBCameraAdapter` (V4L2 discovery)
 
 ## BLE Backends
-BLE sensors still declare `adapter: BLE`, but NexusN3 Edge Core now supports two
+BLE sensors still declare `adapter: BLE`, but Nexus N3 Core now supports two
 runtime-selectable BLE backends behind that single adapter family.
 
 ### `bleak`
@@ -65,6 +65,8 @@ sensor-spec changes.
 - CLI:
   - `python nexus_n3_server.py --ble-backend bleak`
   - `python nexus_n3_server.py --ble-backend nexus_ble_gateway`
+  - `nexus-n3-core --ble-backend bleak`
+  - `nexus-n3-core --ble-backend nexus_ble_gateway`
 - Shared runtime env file:
   - `config/runtime.env` locally, typically created from `config/runtime-example.env`
   - `/etc/nexus-n3/runtime.env` in deployed systems

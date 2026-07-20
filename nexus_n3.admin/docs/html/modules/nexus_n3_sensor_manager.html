@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html class="no-js" lang="en" data-content_root="../">
+<html class="no-js" lang="en" data-content_root="">
 <head>
     <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-        <title>nexus_n3.sensor_manager &mdash; NexusN3 Edge Core</title>
+        <title>nexus_n3.sensor_manager &mdash; Nexus N3 Core</title>
     
     <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
       <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
-            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="top" title="Nexus N3 Core" href="#" />
     </head>
 <body>
     <script type="text/javascript" src="../_static/dist/blocking.js"></script>
@@ -28,7 +28,7 @@
                         <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
                             class="logo-img"
                         />
-                        NexusN3 Edge Core
+                        Nexus N3 Core
                     </a>
                 
                 
@@ -121,9 +121,9 @@
                     <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
                         <main role="main" id="main">
     <section id="nexus-n3-sensor-manager">
-<h1>nexus_n3.sensor_manager<a class="headerlink" href="#nexus-n3-sensor-manager" title="Link to this heading">¶</a></h1>
+<h1>nexus_n3.sensor_manager<a class="headerlink" href="#nexus-n3-sensor-manager" title="Permalink to this heading">¶</a></h1>
 <section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager</span></code> manages discovery, connection, streaming, and
 standalone battery precheck for plugin-backed sensor instances. It keeps an
 asyncio loop in a background thread and exposes a stable facade API through
@@ -142,7 +142,7 @@ reconnect failures from prior sessions.</p>
 </ul>
 </section>
 <section id="key-classes-and-apis">
-<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Link to this heading">¶</a></h2>
+<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">SensorManager(system_event_bus=None,</span> <span class="pre">error_cb=None)</span></code></p>
 <ul>
@@ -174,11 +174,11 @@ reconnect failures from prior sessions.</p>
 </ul>
 </section>
 <section id="ble-backends">
-<h2>BLE Backends<a class="headerlink" href="#ble-backends" title="Link to this heading">¶</a></h2>
-<p>BLE sensors still declare <code class="docutils literal notranslate"><span class="pre">adapter:</span> <span class="pre">BLE</span></code>, but NexusN3 Edge Core now supports two
+<h2>BLE Backends<a class="headerlink" href="#ble-backends" title="Permalink to this heading">¶</a></h2>
+<p>BLE sensors still declare <code class="docutils literal notranslate"><span class="pre">adapter:</span> <span class="pre">BLE</span></code>, but Nexus N3 Core now supports two
 runtime-selectable BLE backends behind that single adapter family.</p>
 <section id="bleak">
-<h3><code class="docutils literal notranslate"><span class="pre">bleak</span></code><a class="headerlink" href="#bleak" title="Link to this heading">¶</a></h3>
+<h3><code class="docutils literal notranslate"><span class="pre">bleak</span></code><a class="headerlink" href="#bleak" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Uses the existing local host BLE path through <code class="docutils literal notranslate"><span class="pre">BLEAdapter</span></code></p></li>
 <li><p>Best for simplified deployments, development, and smaller test setups</p></li>
@@ -186,7 +186,7 @@ runtime-selectable BLE backends behind that single adapter family.</p>
 </ul>
 </section>
 <section id="nexus-ble-gateway">
-<h3><code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code><a class="headerlink" href="#nexus-ble-gateway" title="Link to this heading">¶</a></h3>
+<h3><code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code><a class="headerlink" href="#nexus-ble-gateway" title="Permalink to this heading">¶</a></h3>
 <ul class="simple">
 <li><p>Uses <code class="docutils literal notranslate"><span class="pre">GatewayBLEAdapter</span></code> with a shared <code class="docutils literal notranslate"><span class="pre">GatewaySerialClient</span></code></p></li>
 <li><p>Moves BLE transport work to the Nexus BLE gateway over USB serial</p></li>
@@ -200,7 +200,7 @@ port such as <code class="docutils literal notranslate"><span class="pre">COM3</
 </ul>
 </section>
 <section id="runtime-selection">
-<h3>Runtime Selection<a class="headerlink" href="#runtime-selection" title="Link to this heading">¶</a></h3>
+<h3>Runtime Selection<a class="headerlink" href="#runtime-selection" title="Permalink to this heading">¶</a></h3>
 <p>Backend selection is made once at server startup and does not require plugin or
 sensor-spec changes.</p>
 <ul class="simple">
@@ -208,11 +208,13 @@ sensor-spec changes.</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">nexus_n3_server.py</span> <span class="pre">--ble-backend</span> <span class="pre">bleak</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">nexus_n3_server.py</span> <span class="pre">--ble-backend</span> <span class="pre">nexus_ble_gateway</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus-n3-core</span> <span class="pre">--ble-backend</span> <span class="pre">bleak</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus-n3-core</span> <span class="pre">--ble-backend</span> <span class="pre">nexus_ble_gateway</span></code></p></li>
 </ul>
 </li>
 <li><p>Shared runtime env file:</p>
 <ul>
-<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code> locally</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code> locally, typically created from <code class="docutils literal notranslate"><span class="pre">config/runtime-example.env</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">/etc/nexus-n3/runtime.env</span></code> in deployed systems</p></li>
 </ul>
 </li>
@@ -241,7 +243,7 @@ behavior is owned by Bleak itself.</p>
 </section>
 </section>
 <section id="message-flow">
-<h2>Message Flow<a class="headerlink" href="#message-flow" title="Link to this heading">¶</a></h2>
+<h2>Message Flow<a class="headerlink" href="#message-flow" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">Core._init_sensor_manager()</span></code> resolves installed sensor plugin classes and passes sensor instances and metadata</p></li>
 <li><p>Commands are queued to the manager loop and dispatched by <code class="docutils literal notranslate"><span class="pre">SensorController</span></code></p></li>
@@ -256,7 +258,7 @@ behavior is owned by Bleak itself.</p>
 optional <code class="docutils literal notranslate"><span class="pre">consume_input</span></code> behavior live inside the installed sensor plugins.</p>
 </section>
 <section id="key-files">
-<h2>Key Files<a class="headerlink" href="#key-files" title="Link to this heading">¶</a></h2>
+<h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/SensorManager.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/sensor_controller.py</span></code></p></li>
@@ -351,7 +353,7 @@ optional <code class="docutils literal notranslate"><span class="pre">consume_in
                     </a>
                     and
                     <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
-                        Sphinx 8.1.3
+                        Sphinx 7.1.0
                     </a>
                 </small>
             </div>
@@ -359,9 +361,9 @@ optional <code class="docutils literal notranslate"><span class="pre">consume_in
     </div>
         </div>
     </footer>
-        <script src="../_static/documentation_options.js?v=01f34227"></script>
-        <script src="../_static/doctools.js?v=9bcbadda"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="../_static/copybutton.js?v=f281be69"></script>
         <script type="text/javascript" src="../_static/dist/theme.js"></script>

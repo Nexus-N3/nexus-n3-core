@@ -50,6 +50,12 @@ def _env_csv_list(name: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def _runtime_site_name(cli_site: str | None = None) -> str:
+    """Return the effective site label for runtime startup."""
+    candidate = str(cli_site or os.environ.get("AZURE_IOT_SITE") or "").strip()
+    return candidate or "local"
+
+
 def _neia_apps_catalog_url() -> str:
     # gets the app framework catalog endpoint from the runtime env or defaults to localhost
     load_runtime_env()
@@ -705,7 +711,7 @@ def main():
     load_runtime_env()  # loads the source of truth environment
 
     if args.site:
-        os.environ["AZURE_IOT_SITE"] = args.plugin_root
+        os.environ["AZURE_IOT_SITE"] = args.site
     if args.site_id:
         os.environ["AZURE_IOT_SITE_ID"] = args.site_id
     if args.site_name:
@@ -763,7 +769,7 @@ def main():
         run_async_server.compute_port = args.compute_port  # the default is 7001 but why does it need it?
         asyncio.run(
             run_async_server(
-                site=os.environ.get("AZURE_IOT_SITE"),
+                site=_runtime_site_name(args.site),
                 customer_id=os.environ.get("AZURE_IOT_CUSTOMER_ID"),
                 site_id=os.environ.get("AZURE_IOT_SITE_ID"),
                 site_name=os.environ.get("AZURE_IOT_SITE_NAME"),

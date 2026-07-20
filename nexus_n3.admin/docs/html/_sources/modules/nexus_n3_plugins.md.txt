@@ -3,7 +3,7 @@
 ## Overview
 
 `nexus_n3.plugins` owns plugin installation, cataloging, discovery, and the
-runtime host support used by NexusN3 Edge Core.
+runtime host support used by Nexus N3 Core.
 
 It is the bridge between:
 

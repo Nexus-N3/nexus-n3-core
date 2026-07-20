@@ -41,7 +41,7 @@ class FileManager:
         Args:
             base_dir (str | Path, optional): Base directory for CSV outputs. Defaults to "nexus_n3_outputs".
         """
-        self.site = site
+        self.site = str(site or "local").strip() or "local"
         self.base_root = Path(base_dir)
         self.session_label = None
         self.session_name = None

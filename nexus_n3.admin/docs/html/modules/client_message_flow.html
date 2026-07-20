@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html class="no-js" lang="en" data-content_root="../">
+<html class="no-js" lang="en" data-content_root="">
 <head>
     <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-        <title>Client Message Flow &mdash; NexusN3 Edge Core</title>
+        <title>Client Message Flow &mdash; Nexus N3 Core</title>
     
     <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
       <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
-            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="top" title="Nexus N3 Core" href="#" />
             <link rel="next" title="nexus_n3_examples" href="nexus_n3_examples.html" />
             <link rel="prev" title="Operations User Guide" href="../operations_user_guide.html" />
     </head>
@@ -30,7 +30,7 @@
                         <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
                             class="logo-img"
                         />
-                        NexusN3 Edge Core
+                        Nexus N3 Core
                     </a>
                 
                 
@@ -123,19 +123,19 @@
                     <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
                         <main role="main" id="main">
     <section id="client-message-flow">
-<h1>Client Message Flow<a class="headerlink" href="#client-message-flow" title="Link to this heading">¶</a></h1>
+<h1>Client Message Flow<a class="headerlink" href="#client-message-flow" title="Permalink to this heading">¶</a></h1>
 <p>This guide describes the command/event flow and documents all message types
 defined in <code class="docutils literal notranslate"><span class="pre">message_types.py</span></code>. It is intended for application teams building
 a control client.</p>
 <section id="common-fields">
-<h2>Common Fields<a class="headerlink" href="#common-fields" title="Link to this heading">¶</a></h2>
+<h2>Common Fields<a class="headerlink" href="#common-fields" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> (string): Message type constant from <code class="docutils literal notranslate"><span class="pre">nexus_n3.gateway.messaging.message_types</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">payload</span></code> (object): Optional data for the command or event.</p></li>
 </ul>
 </section>
 <section id="readiness-and-initialization">
-<h2>Readiness and Initialization<a class="headerlink" href="#readiness-and-initialization" title="Link to this heading">¶</a></h2>
+<h2>Readiness and Initialization<a class="headerlink" href="#readiness-and-initialization" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple">
 <li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_IS_SERVER_READY</span></code></p>
 <ul class="simple">
@@ -225,7 +225,7 @@ options for the client.</p></li>
 </ol>
 </section>
 <section id="discovery-and-connection">
-<h2>Discovery and Connection<a class="headerlink" href="#discovery-and-connection" title="Link to this heading">¶</a></h2>
+<h2>Discovery and Connection<a class="headerlink" href="#discovery-and-connection" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple" start="7">
 <li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_DISCOVER_SENSORS</span></code></p>
 <ul class="simple">
@@ -275,7 +275,7 @@ options for the client.</p></li>
 </ul>
 </section>
 <section id="start-streaming-tagging">
-<h2>Start Streaming (Tagging)<a class="headerlink" href="#start-streaming-tagging" title="Link to this heading">¶</a></h2>
+<h2>Start Streaming (Tagging)<a class="headerlink" href="#start-streaming-tagging" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple" start="14">
 <li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_START_STREAM_FOR_ALL</span></code></p></li>
 </ol>
@@ -326,7 +326,7 @@ options for the client.</p></li>
 <li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_STREAM_STARTED</span></code></p></li>
 </ol>
 <section id="file-output-structure">
-<h3>File Output Structure<a class="headerlink" href="#file-output-structure" title="Link to this heading">¶</a></h3>
+<h3>File Output Structure<a class="headerlink" href="#file-output-structure" title="Permalink to this heading">¶</a></h3>
 <p>Base directory:</p>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">nexus_n3_outputs</span><span class="o">/&lt;</span><span class="n">site</span><span class="o">&gt;/&lt;</span><span class="n">init_label_or_sys_session_ts</span><span class="o">&gt;/</span>
 </pre></div>
@@ -350,7 +350,7 @@ options for the client.</p></li>
 </section>
 </section>
 <section id="stop-streaming">
-<h2>Stop Streaming<a class="headerlink" href="#stop-streaming" title="Link to this heading">¶</a></h2>
+<h2>Stop Streaming<a class="headerlink" href="#stop-streaming" title="Permalink to this heading">¶</a></h2>
 <ol class="arabic simple" start="15">
 <li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_STOP_STREAM_FOR_ALL</span></code></p></li>
 </ol>
@@ -369,7 +369,7 @@ options for the client.</p></li>
 </ol>
 </section>
 <section id="additional-commands">
-<h2>Additional Commands<a class="headerlink" href="#additional-commands" title="Link to this heading">¶</a></h2>
+<h2>Additional Commands<a class="headerlink" href="#additional-commands" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">CMD_SYSTEM_SETUP</span></code></p>
 <ul>
@@ -402,7 +402,7 @@ options for the client.</p></li>
 </ul>
 </section>
 <section id="event-reference-from-message-types-py">
-<h2>Event Reference (from <code class="docutils literal notranslate"><span class="pre">message_types.py</span></code>)<a class="headerlink" href="#event-reference-from-message-types-py" title="Link to this heading">¶</a></h2>
+<h2>Event Reference (from <code class="docutils literal notranslate"><span class="pre">message_types.py</span></code>)<a class="headerlink" href="#event-reference-from-message-types-py" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">EVT_SERVER_READY</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">EVT_SYSTEM_INITIALIZED</span></code></p></li>
@@ -425,12 +425,12 @@ options for the client.</p></li>
 </ul>
 </section>
 <section id="errors">
-<h2>Errors<a class="headerlink" href="#errors" title="Link to this heading">¶</a></h2>
+<h2>Errors<a class="headerlink" href="#errors" title="Permalink to this heading">¶</a></h2>
 <p>Any command can emit <code class="docutils literal notranslate"><span class="pre">EVT_ERROR</span></code> with a payload string or dict describing the
 failure.</p>
 </section>
 <section id="battery-events">
-<h2>Battery Events<a class="headerlink" href="#battery-events" title="Link to this heading">¶</a></h2>
+<h2>Battery Events<a class="headerlink" href="#battery-events" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">EVT_BATTERY_UPDATE</span></code> payload:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;address&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AA:BB:CC:DD:EE:FF&quot;</span><span class="p">,</span>
@@ -456,7 +456,7 @@ failure.</p>
 </div>
 </section>
 <section id="intermediate-result-payload">
-<h2>Intermediate Result Payload<a class="headerlink" href="#intermediate-result-payload" title="Link to this heading">¶</a></h2>
+<h2>Intermediate Result Payload<a class="headerlink" href="#intermediate-result-payload" title="Permalink to this heading">¶</a></h2>
 <p>Intermediate executor results are normalized as:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;algorithm_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;standard_loading_intensity&quot;</span><span class="p">,</span>
@@ -485,7 +485,7 @@ using <code class="docutils literal notranslate"><span class="pre">kind:</span> 
 </div>
 </section>
 <section id="consolidated-result-payload">
-<h2>Consolidated Result Payload<a class="headerlink" href="#consolidated-result-payload" title="Link to this heading">¶</a></h2>
+<h2>Consolidated Result Payload<a class="headerlink" href="#consolidated-result-payload" title="Permalink to this heading">¶</a></h2>
 <p>Consolidation executor results are normalized as:</p>
 <div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
 <span class="w">  </span><span class="nt">&quot;subject_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;subject1&quot;</span><span class="p">,</span>
@@ -596,7 +596,7 @@ using <code class="docutils literal notranslate"><span class="pre">kind:</span> 
                     </a>
                     and
                     <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
-                        Sphinx 8.1.3
+                        Sphinx 7.1.0
                     </a>
                 </small>
             </div>
@@ -604,9 +604,9 @@ using <code class="docutils literal notranslate"><span class="pre">kind:</span> 
     </div>
         </div>
     </footer>
-        <script src="../_static/documentation_options.js?v=01f34227"></script>
-        <script src="../_static/doctools.js?v=9bcbadda"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="../_static/copybutton.js?v=f281be69"></script>
         <script type="text/javascript" src="../_static/dist/theme.js"></script>

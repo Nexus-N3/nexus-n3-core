@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html class="no-js" lang="en" data-content_root="../">
+<html class="no-js" lang="en" data-content_root="">
 <head>
     <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-        <title>nexus_n3.distributed &mdash; NexusN3 Edge Core</title>
+        <title>nexus_n3.distributed &mdash; Nexus N3 Core</title>
     
     <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
       <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
-            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="top" title="Nexus N3 Core" href="#" />
     </head>
 <body>
     <script type="text/javascript" src="../_static/dist/blocking.js"></script>
@@ -28,7 +28,7 @@
                         <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
                             class="logo-img"
                         />
-                        NexusN3 Edge Core
+                        Nexus N3 Core
                     </a>
                 
                 
@@ -121,15 +121,15 @@
                     <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
                         <main role="main" id="main">
     <section id="nexus-n3-distributed">
-<h1>nexus_n3.distributed<a class="headerlink" href="#nexus-n3-distributed" title="Link to this heading">¶</a></h1>
+<h1>nexus_n3.distributed<a class="headerlink" href="#nexus-n3-distributed" title="Permalink to this heading">¶</a></h1>
 <section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">nexus_n3.distributed</span></code> provides master/worker coordination. The master routes
 commands and aggregates events; workers execute commands locally and forward
 results back.</p>
 </section>
 <section id="key-classes-and-apis">
-<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Link to this heading">¶</a></h2>
+<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">MasterNode(registry,</span> <span class="pre">usb_disk_manager,</span> <span class="pre">router_port=6000,</span> <span class="pre">mdns_hostname=None)</span></code></p>
 <ul>
@@ -158,7 +158,7 @@ results back.</p>
 </ul>
 </section>
 <section id="message-flow">
-<h2>Message Flow<a class="headerlink" href="#message-flow" title="Link to this heading">¶</a></h2>
+<h2>Message Flow<a class="headerlink" href="#message-flow" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>Worker discovers master via mDNS and registers over ZMQ</p></li>
 <li><p>Master assigns subjects to nodes and routes <code class="docutils literal notranslate"><span class="pre">CMD_*</span></code> messages</p></li>
@@ -170,7 +170,7 @@ results back.</p>
 </ul>
 </section>
 <section id="subject-assignment">
-<h2>Subject Assignment<a class="headerlink" href="#subject-assignment" title="Link to this heading">¶</a></h2>
+<h2>Subject Assignment<a class="headerlink" href="#subject-assignment" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>If <strong>no workers</strong> are registered, all subjects are assigned to the <strong>master</strong></p></li>
 <li><p>If <strong>one or more workers</strong> are registered, subjects are assigned <strong>round-robin to workers only</strong></p></li>
@@ -178,14 +178,14 @@ results back.</p>
 </ul>
 </section>
 <section id="node-liveness">
-<h2>Node Liveness<a class="headerlink" href="#node-liveness" title="Link to this heading">¶</a></h2>
+<h2>Node Liveness<a class="headerlink" href="#node-liveness" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>Master updates its own <code class="docutils literal notranslate"><span class="pre">last_seen</span></code> so it stays <code class="docutils literal notranslate"><span class="pre">active</span></code> in the admin UI</p></li>
 <li><p>Workers auto-reconnect by re-discovering the master when the ZMQ connection goes quiet</p></li>
 </ul>
 </section>
 <section id="key-files">
-<h2>Key Files<a class="headerlink" href="#key-files" title="Link to this heading">¶</a></h2>
+<h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.distributed/master_node.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.distributed/worker_node.py</span></code></p></li>
@@ -267,7 +267,7 @@ results back.</p>
                     </a>
                     and
                     <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
-                        Sphinx 8.1.3
+                        Sphinx 7.1.0
                     </a>
                 </small>
             </div>
@@ -275,9 +275,9 @@ results back.</p>
     </div>
         </div>
     </footer>
-        <script src="../_static/documentation_options.js?v=01f34227"></script>
-        <script src="../_static/doctools.js?v=9bcbadda"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="../_static/copybutton.js?v=f281be69"></script>
         <script type="text/javascript" src="../_static/dist/theme.js"></script>

@@ -2,14 +2,16 @@
 
 ## Overview
 `nexus_n3.azure_bridge` provides the optional Azure IoT Hub integration layer
-for NexusN3 Edge Core. It connects the local runtime to IoT Hub for:
+for Nexus N3 Core. It connects the local runtime to IoT Hub for:
 
 - direct method handling
 - reported-property updates
 - session archive upload after stream finalization
 - remote-control enable/disable state
 
-The bridge can run standalone or in-process via `nexus_n3_server.py --bridge azure_bridge`.
+The bridge can run standalone or in-process via
+`nexus_n3_server.py --bridge azure_bridge` or
+`nexus-n3-core --bridge azure_bridge`.
 
 ## Key Classes and APIs
 - `AzureBridgeService`

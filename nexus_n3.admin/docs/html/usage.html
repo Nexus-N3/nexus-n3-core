@@ -1,21 +1,21 @@
 <!DOCTYPE html>
-<html class="no-js" lang="en" data-content_root="./">
+<html class="no-js" lang="en" data-content_root="">
 <head>
     <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-        <title>Usage &mdash; NexusN3 Edge Core</title>
+        <title>Usage &mdash; Nexus N3 Core</title>
     
     <link rel="stylesheet" type="text/css" href="_static/dist/fontawesome.css" />
       <link rel="stylesheet" type="text/css" href="_static/dist/theme.css?v=310cf088" />
       <link rel="stylesheet" type="text/css" href="_static/copybutton.css?v=76b2166b" />
             <link rel="index" title="Index" href="genindex.html" />
             <link rel="search" title="Search" href="search.html" />
-            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="top" title="Nexus N3 Core" href="#" />
             <link rel="next" title="Deployment" href="deployment.html" />
-            <link rel="prev" title="NexusN3 Edge Core" href="index.html" />
+            <link rel="prev" title="Nexus N3 Core" href="index.html" />
     </head>
 <body>
     <script type="text/javascript" src="_static/dist/blocking.js"></script>
@@ -30,7 +30,7 @@
                         <img src="_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
                             class="logo-img"
                         />
-                        NexusN3 Edge Core
+                        Nexus N3 Core
                     </a>
                 
                 
@@ -123,10 +123,10 @@
                     <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
                         <main role="main" id="main">
     <section id="usage">
-<h1>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h1>
+<h1>Usage<a class="headerlink" href="#usage" title="Permalink to this heading">¶</a></h1>
 <section id="product-shape">
-<h2>Product Shape<a class="headerlink" href="#product-shape" title="Link to this heading">¶</a></h2>
-<p>NexusN3 Edge Core is the runtime layer for:</p>
+<h2>Product Shape<a class="headerlink" href="#product-shape" title="Permalink to this heading">¶</a></h2>
+<p>Nexus N3 Core is the runtime layer for:</p>
 <ul class="simple">
 <li><p>gateway and command/event handling</p></li>
 <li><p>sensor discovery, connection, and streaming</p></li>
@@ -140,26 +140,41 @@ repository. They are delivered as installed plugins under the configured plugin
 root.</p>
 </section>
 <section id="install">
-<h2>Install<a class="headerlink" href="#install" title="Link to this heading">¶</a></h2>
-<p>Create a virtual environment and install the core runtime:</p>
+<h2>Install<a class="headerlink" href="#install" title="Permalink to this heading">¶</a></h2>
+<p>Create a virtual environment and install the core runtime from a source
+checkout:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>venv<span class="w"> </span>.venv
 <span class="nb">source</span><span class="w"> </span>.venv/bin/activate
 pip<span class="w"> </span>install<span class="w"> </span>-U<span class="w"> </span>pip
 pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span>.
 </pre></div>
 </div>
-<p>For packaged installs, build a wheel with:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>build
+<p>For a packaged install from PyPI or TestPyPI, use:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>nexus-n3-core
 </pre></div>
 </div>
 </section>
 <section id="runtime-environment">
-<h2>Runtime Environment<a class="headerlink" href="#runtime-environment" title="Link to this heading">¶</a></h2>
+<h2>Runtime Environment<a class="headerlink" href="#runtime-environment" title="Permalink to this heading">¶</a></h2>
 <p>Shared runtime configuration lives in:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code> for local development</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime-example.env</span></code> as the tracked template for local development</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code> as the local untracked copy</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">/etc/nexus-n3/runtime.env</span></code> for deployed systems</p></li>
 </ul>
+<p>For an installed package, place your runtime configuration at:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>/etc/nexus-n3/runtime.env
+</pre></div>
+</div>
+<p>Or point the runtime at a different file with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nb">export</span><span class="w"> </span><span class="nv">NEXUS_N3_ENV_FILE</span><span class="o">=</span>/path/to/runtime.env
+</pre></div>
+</div>
+<p>To copy the current local development config into the standard deployed path:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>mkdir<span class="w"> </span>-p<span class="w"> </span>/etc/nexus-n3
+sudo<span class="w"> </span>cp<span class="w"> </span>/home/mike/Desktop/apps/dev/rs-nexus-project/nexus-n3-core/config/runtime.env<span class="w"> </span>/etc/nexus-n3/runtime.env
+</pre></div>
+</div>
 <p>This file is the source of truth for:</p>
 <ul class="simple">
 <li><p>plugin root and optional dev bootstrap list</p></li>
@@ -173,12 +188,22 @@ can use:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py
 </pre></div>
 </div>
-<p>if the required values are already set in <code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code>.</p>
+<p>if the required values are already set in your local <code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code>.</p>
+<p>After installing from PyPI or TestPyPI, use:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>nexus-n3-core
+</pre></div>
+</div>
 </section>
 <section id="run-the-full-system">
-<h2>Run The Full System<a class="headerlink" href="#run-the-full-system" title="Link to this heading">¶</a></h2>
+<h2>Run The Full System<a class="headerlink" href="#run-the-full-system" title="Permalink to this heading">¶</a></h2>
 <p>Minimal local run:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py
+</pre></div>
+</div>
+<p>If no site is configured in <code class="docutils literal notranslate"><span class="pre">runtime.env</span></code> and you do not pass <code class="docutils literal notranslate"><span class="pre">--site</span></code>, the
+runtime uses <code class="docutils literal notranslate"><span class="pre">local</span></code> as the default site label for output paths.</p>
+<p>Installed-package run:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>nexus-n3-core
 </pre></div>
 </div>
 <p>On non-Linux development hosts, including Windows laptops, the runtime uses the
@@ -194,6 +219,10 @@ deployment concerns and are not part of the Windows development/runtime path.</p
 </ul>
 <p>Standalone runtime with admin UI:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--role<span class="w"> </span>standalone<span class="w"> </span>--admin<span class="w"> </span>--admin-host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--admin-port<span class="w"> </span><span class="m">9000</span>
+</pre></div>
+</div>
+<p>Installed-package equivalent:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>nexus-n3-core<span class="w"> </span>--role<span class="w"> </span>standalone<span class="w"> </span>--admin<span class="w"> </span>--admin-host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--admin-port<span class="w"> </span><span class="m">9000</span>
 </pre></div>
 </div>
 <p>Standalone runtime with Azure bridge:</p>
@@ -216,9 +245,9 @@ deployment concerns and are not part of the Windows development/runtime path.</p
 but <code class="docutils literal notranslate"><span class="pre">zeromq_gateway</span></code> is the only supported value.</p>
 </section>
 <section id="plugins">
-<h2>Plugins<a class="headerlink" href="#plugins" title="Link to this heading">¶</a></h2>
+<h2>Plugins<a class="headerlink" href="#plugins" title="Permalink to this heading">¶</a></h2>
 <section id="current-model">
-<h3>Current Model<a class="headerlink" href="#current-model" title="Link to this heading">¶</a></h3>
+<h3>Current Model<a class="headerlink" href="#current-model" title="Permalink to this heading">¶</a></h3>
 <p>Plugins are installed into <code class="docutils literal notranslate"><span class="pre">NEXUS_N3_PLUGIN_ROOT</span></code> and discovered from the
 runtime catalog there.</p>
 <p>Production/operator-facing artifacts are:</p>
@@ -240,14 +269,14 @@ the requested sensors and algorithms are already installed and compatible, but
 it does not act as the discovery source for selectable plugin options.</p>
 </section>
 <section id="developer-workflow">
-<h3>Developer Workflow<a class="headerlink" href="#developer-workflow" title="Link to this heading">¶</a></h3>
+<h3>Developer Workflow<a class="headerlink" href="#developer-workflow" title="Permalink to this heading">¶</a></h3>
 <p>High-level flow:</p>
 <ol class="arabic">
 <li><p>scaffold or edit a plugin in <code class="docutils literal notranslate"><span class="pre">nexus-n3-plugin-catalog/</span></code></p></li>
 <li><p>build a <code class="docutils literal notranslate"><span class="pre">.rsnxplugin</span></code> bundle with <code class="docutils literal notranslate"><span class="pre">nexus-n3-plugin-tooling</span></code></p></li>
 <li><p>install that bundle from <code class="docutils literal notranslate"><span class="pre">nexus-n3-core</span></code>, for example:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>nexus_n3.plugins<span class="w"> </span>install<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movesense-0.1.2.rsnxplugin<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>/path/to/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movesense-0.1.2.rsnxplugin<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--plugin-root<span class="w"> </span>/opt/nexus-n3-plugins
 </pre></div>
 </div>
@@ -267,19 +296,19 @@ or installed independently with:</p>
 </div>
 </section>
 <section id="plugin-tooling">
-<h3>Plugin Tooling<a class="headerlink" href="#plugin-tooling" title="Link to this heading">¶</a></h3>
+<h3>Plugin Tooling<a class="headerlink" href="#plugin-tooling" title="Permalink to this heading">¶</a></h3>
 <p><code class="docutils literal notranslate"><span class="pre">nexus-n3-plugin-tooling</span></code> is the build-side repository. Its job is to:</p>
 <ul class="simple">
 <li><p>scaffold sensor and algorithm plugin repos</p></li>
 <li><p>build <code class="docutils literal notranslate"><span class="pre">.rsnxplugin</span></code> bundles</p></li>
 <li><p>provide focused development harnesses</p></li>
 </ul>
-<p>Installation and runtime discovery are owned by NexusN3 Edge Core through
+<p>Installation and runtime discovery are owned by Nexus N3 Core through
 <code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins</span></code>.</p>
 </section>
 </section>
 <section id="ble-backends">
-<h2>BLE Backends<a class="headerlink" href="#ble-backends" title="Link to this heading">¶</a></h2>
+<h2>BLE Backends<a class="headerlink" href="#ble-backends" title="Permalink to this heading">¶</a></h2>
 <p>The sensor manager supports two runtime-selectable BLE backends behind the same
 plugin-facing BLE adapter contract:</p>
 <ul class="simple">
@@ -289,6 +318,11 @@ plugin-facing BLE adapter contract:</p>
 <p>Select the backend at startup if needed:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--ble-backend<span class="w"> </span>bleak
 python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--ble-backend<span class="w"> </span>nexus_ble_gateway
+</pre></div>
+</div>
+<p>Installed-package equivalents:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>nexus-n3-core<span class="w"> </span>--ble-backend<span class="w"> </span>bleak
+nexus-n3-core<span class="w"> </span>--ble-backend<span class="w"> </span>nexus_ble_gateway
 </pre></div>
 </div>
 <p>The backend choice does not require sensor plugin or sensor spec changes.</p>
@@ -312,7 +346,7 @@ GATEWAY_READ_TIMEOUT_S=5.0
 it uses the serial gateway rather than host BLE stack integration.</p>
 </section>
 <section id="file-output">
-<h2>File Output<a class="headerlink" href="#file-output" title="Link to this heading">¶</a></h2>
+<h2>File Output<a class="headerlink" href="#file-output" title="Permalink to this heading">¶</a></h2>
 <p>The core writes data generically through the file manager rather than through
 sensor-specific storage code.</p>
 <p>Outputs are organized under:</p>
@@ -334,7 +368,7 @@ that active output path onto the managed removable disk mount. On non-Linux
 hosts, file output remains local-only.</p>
 </section>
 <section id="diagnostics">
-<h2>Diagnostics<a class="headerlink" href="#diagnostics" title="Link to this heading">¶</a></h2>
+<h2>Diagnostics<a class="headerlink" href="#diagnostics" title="Permalink to this heading">¶</a></h2>
 <p>Enable low-overhead pipeline diagnostics only when needed:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--diagnostics
 </pre></div>
@@ -346,7 +380,7 @@ hosts, file output remains local-only.</p>
 <p>Set <code class="docutils literal notranslate"><span class="pre">NEXUS_PERF_LOG=1</span></code> to enable periodic performance logging.</p>
 </section>
 <section id="deployment-paths">
-<h2>Deployment Paths<a class="headerlink" href="#deployment-paths" title="Link to this heading">¶</a></h2>
+<h2>Deployment Paths<a class="headerlink" href="#deployment-paths" title="Permalink to this heading">¶</a></h2>
 <p>See:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/ANSIBLE_DEPLOYMENT.md</span></code></p></li>
@@ -361,7 +395,7 @@ hosts, file output remains local-only.</p>
 </main>
                         <nav aria-label="Page navigation" class="py-4 my-5 clearfix font-weight-bold border-top">
     <a class="float-left" href="index.html" title="Previous">
-        <span aria-hidden="true">←&nbsp;</span>NexusN3 Edge Core
+        <span aria-hidden="true">←&nbsp;</span>Nexus N3 Core
     </a>
     <a class="float-right" href="deployment.html" title="Next">
         Deployment <span aria-hidden="true">&nbsp;→</span>
@@ -445,7 +479,7 @@ hosts, file output remains local-only.</p>
                     </a>
                     and
                     <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
-                        Sphinx 8.1.3
+                        Sphinx 7.1.0
                     </a>
                 </small>
             </div>
@@ -453,9 +487,9 @@ hosts, file output remains local-only.</p>
     </div>
         </div>
     </footer>
-        <script src="_static/documentation_options.js?v=01f34227"></script>
-        <script src="_static/doctools.js?v=9bcbadda"></script>
-        <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=2389946f"></script>
+        <script src="_static/doctools.js?v=888ff710"></script>
+        <script src="_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="_static/copybutton.js?v=f281be69"></script>
         <script type="text/javascript" src="_static/dist/theme.js"></script>

@@ -1,6 +1,6 @@
 # Deployment
 
-NexusN3 Edge Core supports these deployment paths:
+Nexus N3 Core supports these deployment paths:
 
 ## Manual Deployment
 

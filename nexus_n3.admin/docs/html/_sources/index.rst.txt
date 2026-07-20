@@ -1,7 +1,7 @@
-NexusN3 Edge Core
-=================
+Nexus N3 Core
+=============
 
-Welcome to the NexusN3 Edge Core documentation.
+Welcome to the Nexus N3 Core documentation.
 
 .. toctree::
    :maxdepth: 2
@@ -18,17 +18,17 @@ Welcome to the NexusN3 Edge Core documentation.
    :caption: Module Guides
 
    modules/client_message_flow
-   modules/nexus_n3.gateway
-   modules/nexus_n3.sensor_manager
-   modules/nexus_n3.plugins
-   modules/nexus_n3.compute_manager
-   modules/nexus_n3.core
-   modules/nexus_n3.file_manager
-   modules/nexus_n3.bridge
-   modules/nexus_n3.azure_bridge
-   modules/nexus_n3.distributed
-   modules/nexus_n3.logger
-   modules/nexus_n3.admin
+   modules/nexus_n3_gateway
+   modules/nexus_n3_sensor_manager
+   modules/nexus_n3_plugins
+   modules/nexus_n3_compute_manager
+   modules/nexus_n3_core
+   modules/nexus_n3_file_manager
+   modules/nexus_n3_bridge
+   modules/nexus_n3_azure_bridge
+   modules/nexus_n3_distributed
+   modules/nexus_n3_logger
+   modules/nexus_n3_admin
    modules/nexus_n3_examples
-   modules/nexus_n3.data_file_offload
+   modules/nexus_n3_data_file_offload
    modules/nexus_n3_tests

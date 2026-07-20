@@ -15,15 +15,18 @@ New operators should be able to:
 ### 1. Start The Runtime
 
 ```bash
-python nexus_n3_server.py
+nexus-n3-core
 ```
+
+This assumes the runtime is configured through `/etc/nexus-n3/runtime.env` or
+an override file selected with `NEXUS_N3_ENV_FILE`.
 
 ### 2. Confirm Admin Access
 
 Start with admin enabled if needed:
 
 ```bash
-python nexus_n3_server.py --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
+nexus-n3-core --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
 ```
 
 ### 3. Confirm Plugin Discovery

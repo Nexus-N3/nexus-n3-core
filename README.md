@@ -24,13 +24,50 @@ built-in runtime implementations. They are delivered as installed plugins.
 - plugin build and scaffold tooling: `nexus-n3-plugin-tooling`
 - plugin development workspace: `nexus-n3-plugin-catalog/`
 
-## Runtime Configuration
+## Installation
+
+Use an isolated Python environment. A system-wide install can pick up unrelated
+global packages and break imports before Nexus N3 Core starts.
+
+Recommended local install with `venv`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install nexus-n3-core
+```
+
+Alternative install with `pipx`:
+
+```bash
+pipx install nexus-n3-core
+```
 
 Runtime configuration typically lives in:
 
 - `config/runtime-example.env` as the tracked template for local development
 - `config/runtime.env` as the local untracked copy
 - `/etc/nexus-n3/runtime.env` for deployed systems
+
+For an installed package, place your runtime configuration at:
+
+```bash
+/etc/nexus-n3/runtime.env
+```
+
+Or point the runtime at a different file with:
+
+```bash
+export NEXUS_N3_ENV_FILE=/path/to/runtime.env
+```
+
+To copy the current local development config into the standard deployed path:
+
+```bash
+sudo mkdir -p /etc/nexus-n3
+sudo cp /home/mike/Desktop/apps/dev/rs-nexus-project/nexus-n3-core/config/runtime.env /etc/nexus-n3/runtime.env
+```
 
 This file controls:
 
@@ -47,12 +84,34 @@ environment can start with:
 python nexus_n3_server.py
 ```
 
+After installing from PyPI or TestPyPI, use:
+
+```bash
+nexus-n3-core
+```
+
+The installed console command forwards the same flags as the source entry point.
+For example:
+
+```bash
+nexus-n3-core --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
+```
+
 ## Running The Runtime
 
 Minimal local run:
 
 ```bash
 python nexus_n3_server.py
+```
+
+If no site is configured in `runtime.env` and you do not pass `--site`, the
+runtime uses `local` as the default site label for output paths.
+
+Installed-package run:
+
+```bash
+nexus-n3-core
 ```
 
 On non-Linux development hosts, including Windows laptops, the runtime stays on
@@ -72,6 +131,12 @@ Standalone with admin UI:
 
 ```bash
 python nexus_n3_server.py --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
+```
+
+Installed-package equivalent:
+
+```bash
+nexus-n3-core --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
 ```
 
 Standalone with Azure bridge:
@@ -205,6 +270,15 @@ When using `nexus_ble_gateway`, set `GATEWAY_SERIAL_PORT` for the host OS:
 
 On Windows, this is the preferred BLE path because it uses the serial gateway
 rather than host BLE stack integration.
+
+## Troubleshooting
+
+If startup fails with an error like
+`ImportError: cannot import name 'appengine' from 'urllib3.contrib'`, the
+Python environment is mixing an old `requests-toolbelt` install with
+`urllib3 2.x`. This is an environment conflict, not a Nexus N3 Core CLI issue.
+
+Use a fresh `venv` or `pipx` environment instead of a system-wide install.
 
 ## File Output
 

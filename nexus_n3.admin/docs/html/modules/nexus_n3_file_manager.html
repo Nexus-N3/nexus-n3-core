@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html class="no-js" lang="en" data-content_root="../">
+<html class="no-js" lang="en" data-content_root="">
 <head>
     <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-        <title>nexus_n3.file_manager &mdash; NexusN3 Edge Core</title>
+        <title>nexus_n3.file_manager &mdash; Nexus N3 Core</title>
     
     <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
       <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
-            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="top" title="Nexus N3 Core" href="#" />
     </head>
 <body>
     <script type="text/javascript" src="../_static/dist/blocking.js"></script>
@@ -28,7 +28,7 @@
                         <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
                             class="logo-img"
                         />
-                        NexusN3 Edge Core
+                        Nexus N3 Core
                     </a>
                 
                 
@@ -121,9 +121,9 @@
                     <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
                         <main role="main" id="main">
     <section id="nexus-n3-file-manager">
-<h1>nexus_n3.file_manager<a class="headerlink" href="#nexus-n3-file-manager" title="Link to this heading">¶</a></h1>
+<h1>nexus_n3.file_manager<a class="headerlink" href="#nexus-n3-file-manager" title="Permalink to this heading">¶</a></h1>
 <section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">nexus_n3.file_manager</span></code> manages session directories and writes raw and computed
 sensor data to disk. It also finalizes a session into a local zip archive after
 stream stop.</p>
@@ -132,7 +132,7 @@ implement their own storage layout in the core; they emit samples/results and
 the file manager persists them through the common session structure.</p>
 </section>
 <section id="key-classes-and-apis">
-<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Link to this heading">¶</a></h2>
+<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">FileManager(site,</span> <span class="pre">base_dir=&quot;nexus_n3_outputs&quot;)</span></code></p>
 <ul>
@@ -159,7 +159,7 @@ the file manager persists them through the common session structure.</p>
 </ul>
 </section>
 <section id="message-flow">
-<h2>Message Flow<a class="headerlink" href="#message-flow" title="Link to this heading">¶</a></h2>
+<h2>Message Flow<a class="headerlink" href="#message-flow" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">Core.start_stream_*()</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">FileManager.start_stream()</span></code> creates paths</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Subject.ingest_sample()</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">enqueue_block()</span></code> for raw CSV blocks</p></li>
@@ -171,7 +171,7 @@ the file manager persists them through the common session structure.</p>
 </ul>
 </section>
 <section id="session-finalization">
-<h2>Session Finalization<a class="headerlink" href="#session-finalization" title="Link to this heading">¶</a></h2>
+<h2>Session Finalization<a class="headerlink" href="#session-finalization" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>Active outputs are written under:</p>
 <ul>
@@ -188,7 +188,7 @@ directory is removed.</p></li>
 </ul>
 </section>
 <section id="generic-output-mechanisms">
-<h2>Generic Output Mechanisms<a class="headerlink" href="#generic-output-mechanisms" title="Link to this heading">¶</a></h2>
+<h2>Generic Output Mechanisms<a class="headerlink" href="#generic-output-mechanisms" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>raw samples -&gt; CSV block writes</p></li>
 <li><p>real-time compute results -&gt; NDJSON</p></li>
@@ -198,7 +198,7 @@ directory is removed.</p></li>
 </ul>
 </section>
 <section id="key-files">
-<h2>Key Files<a class="headerlink" href="#key-files" title="Link to this heading">¶</a></h2>
+<h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.file_manager/FileManager.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.file_manager/session_archive.py</span></code></p></li>
@@ -278,7 +278,7 @@ directory is removed.</p></li>
                     </a>
                     and
                     <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
-                        Sphinx 8.1.3
+                        Sphinx 7.1.0
                     </a>
                 </small>
             </div>
@@ -286,9 +286,9 @@ directory is removed.</p></li>
     </div>
         </div>
     </footer>
-        <script src="../_static/documentation_options.js?v=01f34227"></script>
-        <script src="../_static/doctools.js?v=9bcbadda"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="../_static/copybutton.js?v=f281be69"></script>
         <script type="text/javascript" src="../_static/dist/theme.js"></script>

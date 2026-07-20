@@ -1,19 +1,19 @@
 <!DOCTYPE html>
-<html class="no-js" lang="en" data-content_root="../">
+<html class="no-js" lang="en" data-content_root="">
 <head>
     <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-        <title>nexus_n3.gateway &mdash; NexusN3 Edge Core</title>
+        <title>nexus_n3.gateway &mdash; Nexus N3 Core</title>
     
     <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
       <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
       <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
-            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="top" title="Nexus N3 Core" href="#" />
     </head>
 <body>
     <script type="text/javascript" src="../_static/dist/blocking.js"></script>
@@ -28,7 +28,7 @@
                         <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
                             class="logo-img"
                         />
-                        NexusN3 Edge Core
+                        Nexus N3 Core
                     </a>
                 
                 
@@ -121,9 +121,9 @@
                     <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
                         <main role="main" id="main">
     <section id="nexus-n3-gateway">
-<h1>nexus_n3.gateway<a class="headerlink" href="#nexus-n3-gateway" title="Link to this heading">¶</a></h1>
+<h1>nexus_n3.gateway<a class="headerlink" href="#nexus-n3-gateway" title="Permalink to this heading">¶</a></h1>
 <section id="overview">
-<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<h2>Overview<a class="headerlink" href="#overview" title="Permalink to this heading">¶</a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">nexus_n3.gateway</span></code> handles external communication. A <code class="docutils literal notranslate"><span class="pre">GatewayInterface</span></code>
 implementation receives client commands and publishes system events. The
 <code class="docutils literal notranslate"><span class="pre">Server</span></code> wires the gateway to the <code class="docutils literal notranslate"><span class="pre">MessageHandler</span></code> and the <code class="docutils literal notranslate"><span class="pre">SystemEventBus</span></code>.
@@ -133,7 +133,7 @@ host supports the hot-disk workflow. On Windows and other non-Linux hosts, the
 server still runs normally but stays on local output storage.</p>
 </section>
 <section id="key-classes-and-apis">
-<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Link to this heading">¶</a></h2>
+<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">Server(gateway,</span> <span class="pre">usb_disk_manager=None)</span></code></p>
 <ul>
@@ -164,9 +164,9 @@ server still runs normally but stays on local output storage.</p>
 </ul>
 </section>
 <section id="runtime-environment">
-<h2>Runtime Environment<a class="headerlink" href="#runtime-environment" title="Link to this heading">¶</a></h2>
+<h2>Runtime Environment<a class="headerlink" href="#runtime-environment" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code> in local development</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code> in local development, typically created from <code class="docutils literal notranslate"><span class="pre">config/runtime-example.env</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">/etc/nexus-n3/runtime.env</span></code> in deployed systems</p></li>
 <li><p>gateway-specific variables in that file:</p>
 <ul>
@@ -176,7 +176,7 @@ server still runs normally but stays on local output storage.</p>
 </ul>
 </section>
 <section id="message-flow">
-<h2>Message Flow<a class="headerlink" href="#message-flow" title="Link to this heading">¶</a></h2>
+<h2>Message Flow<a class="headerlink" href="#message-flow" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p>Client -&gt; gateway -&gt; <code class="docutils literal notranslate"><span class="pre">MessageHandler.handle()</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">MessageHandler</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">Core</span></code> (standalone/worker) OR <code class="docutils literal notranslate"><span class="pre">MasterNode</span></code> dispatcher</p></li>
@@ -187,7 +187,7 @@ server still runs normally but stays on local output storage.</p>
 </ul>
 </section>
 <section id="key-files">
-<h2>Key Files<a class="headerlink" href="#key-files" title="Link to this heading">¶</a></h2>
+<h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.gateway/server.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.gateway/messaging/message_handler.py</span></code></p></li>
@@ -269,7 +269,7 @@ server still runs normally but stays on local output storage.</p>
                     </a>
                     and
                     <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
-                        Sphinx 8.1.3
+                        Sphinx 7.1.0
                     </a>
                 </small>
             </div>
@@ -277,9 +277,9 @@ server still runs normally but stays on local output storage.</p>
     </div>
         </div>
     </footer>
-        <script src="../_static/documentation_options.js?v=01f34227"></script>
-        <script src="../_static/doctools.js?v=9bcbadda"></script>
-        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script src="../_static/doctools.js?v=888ff710"></script>
+        <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
         <script src="../_static/copybutton.js?v=f281be69"></script>
         <script type="text/javascript" src="../_static/dist/theme.js"></script>
