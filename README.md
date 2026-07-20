@@ -1,10 +1,7 @@
-# NexusN3 Edge Core
+# Nexus N3 Core
 
-NexusN3 Edge Core is the runtime layer for sensor acquisition, plugin-backed
-processing, session orchestration, and edge deployment.
-
-The repository name is currently `nexus-n3-core`, but the product/runtime name
-described by this codebase is NexusN3 Edge Core.
+Nexus N3 Core is the runtime layer for sensor acquisition, plugin-backed
+processing, session orchestration, and host deployment.
 
 ## Overview
 
@@ -24,12 +21,12 @@ built-in runtime implementations. They are delivered as installed plugins.
 ## Repositories
 
 - core runtime: this repository
-- plugin build/scaffold tooling: `nexus-n3-plugin-tooling`
-- local development plugin workspace: `nexus-n3-plugin-catalog/`
+- plugin build and scaffold tooling: `nexus-n3-plugin-tooling`
+- plugin development workspace: `nexus-n3-plugin-catalog/`
 
 ## Runtime Configuration
 
-Shared runtime configuration lives in:
+Runtime configuration typically lives in:
 
 - `config/runtime.env` for local development
 - `/etc/nexus-n3/runtime.env` for deployed systems
@@ -42,14 +39,14 @@ This file controls:
 - Azure bridge settings
 - admin/runtime settings
 
-Because startup now reads the runtime env file automatically, a configured local
+Because startup reads the runtime env file automatically, a configured local
 environment can start with:
 
 ```bash
 python nexus_n3_server.py
 ```
 
-## Running The Full System
+## Running The Runtime
 
 Minimal local run:
 
@@ -62,7 +59,7 @@ the local `nexus_n3_outputs/` path. The removable USB hot-disk workflow is
 disabled automatically there.
 
 Other host-setup features such as access-point mode and kiosk setup are Linux
-deployment concerns and are not part of the Windows development/runtime path.
+host concerns and are not part of the Windows development/runtime path.
 
 That means a Windows development run should already:
 
@@ -105,9 +102,9 @@ python nexus_n3_server.py --role ai --node-id ai_A
 
 ## Plugin Model
 
-### Production Artifact
+### Runtime Artifact
 
-The only production/operator-facing plugin artifact is:
+The plugin artifact consumed by the runtime is:
 
 - `.rsnxplugin`
 
@@ -128,7 +125,7 @@ High-level plugin workflow:
      /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movesense-0.1.2.rsnxplugin \
      --plugin-root /opt/nexus-n3-plugins
    ```
-4. start NexusN3 Edge Core
+4. start Nexus N3 Core
 
 Examples:
 
@@ -151,7 +148,7 @@ The runtime can also bootstrap a configured plugin list before startup through:
 - building `.rsnxplugin` bundles
 - local development harnesses
 
-NexusN3 Edge Core is responsible for:
+Nexus N3 Core is responsible for:
 
 - installing bundles
 - maintaining plugin catalogs
@@ -209,7 +206,7 @@ file output remains local-only.
 When a session is finalized, the session directory is zipped locally and the
 source directory is removed.
 
-## Deployment
+## Deployment And Operations
 
 Deployment documentation lives under `deployment/guides/`:
 
@@ -225,7 +222,18 @@ Use the manual guide when you want to:
 - install the built core wheel
 - install built `.rsnxplugin` bundles
 - configure `runtime.env`
-- start the system without Ansible or Docker
+- start the runtime without Ansible or Docker
+
+## Project Scope
+
+This repository focuses on the runtime and its plugin execution model.
+
+It does not try to bundle all sensor logic directly into the core package.
+Sensor and algorithm implementations are expected to be delivered as plugins,
+installed through `nexus_n3.plugins`, and discovered at runtime.
+
+This separation keeps the runtime smaller, makes host responsibilities clearer,
+and supports independent plugin development and release workflows.
 
 ## Documentation
 
