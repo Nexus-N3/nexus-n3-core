@@ -101,6 +101,28 @@ python nexus_n3_server.py --role ai --node-id ai_A
 `zeromq_gateway` is the supported local gateway. The server still accepts
 `--gateway`, but `zeromq_gateway` is the only supported value.
 
+## Sample Session Client
+
+For a user-editable example that drives a live session against a running
+server, use:
+
+```bash
+python run_sample_session.py --stream 60
+```
+
+This script is intended as a starting point rather than a fixed regression
+test. Edit `SAMPLE_SUBJECTS` in [run_sample_session.py](/home/mike/Desktop/apps/dev/rs-nexus-project/nexus-n3-core/run_sample_session.py)
+to match your own sensors, locations, and compute setup.
+
+Useful staged runs:
+
+```bash
+python run_sample_session.py --discover
+python run_sample_session.py --connect
+python run_sample_session.py --identify
+python run_sample_session.py --stream 60
+```
+
 ## Plugin Model
 
 ### Runtime Artifact

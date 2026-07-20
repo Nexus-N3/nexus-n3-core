@@ -10,9 +10,12 @@ import zmq
 from nexus_n3.gateway.messaging import message_types as mt
 
 
-class Client:
+class SampleSessionClient:
     """
-    Example Nexus N3 Core client using ZeroMQ.
+    User-editable sample client for running a session against a live Nexus N3 server.
+
+    Adjust SAMPLE_SUBJECTS below to match the sensors, locations, and algorithms
+    you want to exercise in your own environment.
     """
 
     def __init__(
@@ -22,15 +25,12 @@ class Client:
         stop_stage="full",
         stream_seconds=20,
     ):
-
         self.ctx = zmq.Context()
 
-        # PUB socket for sending commands to the server
         self.cmd_pub = self.ctx.socket(zmq.PUB)
         self.cmd_pub.setsockopt(zmq.LINGER, 0)
         self.cmd_pub.connect(cmd_pub_addr)
 
-        # SUB socket for receiving events from the server
         self.evt_sub = self.ctx.socket(zmq.SUB)
         self.evt_sub.setsockopt(zmq.LINGER, 0)
         self.evt_sub.setsockopt(zmq.RCVTIMEO, 250)
@@ -62,13 +62,11 @@ class Client:
         self._init_cadence_csv()
 
     def start(self):
-        """Start the client event loop in a background thread."""
         self._running = True
         self._event_thread = threading.Thread(target=self._event_loop, daemon=True)
         self._event_thread.start()
 
     def _event_loop(self):
-        """Background loop that listens for gateway events."""
         while self._running:
             try:
                 msg = self.evt_sub.recv_json()
@@ -79,8 +77,8 @@ class Client:
                 if not self._running:
                     break
                 print("ZeroMQ error in event loop")
-            except Exception as e:
-                print("Error receiving event:", e)
+            except Exception as exc:
+                print("Error receiving event:", exc)
 
     def handle_event(self, event: dict):
         print("SYSTEM EVENT:", event.get("type"))
@@ -89,10 +87,12 @@ class Client:
         payload = event.get("payload", {})
 
         if evt_type == mt.EVT_SERVER_READY:
-            self.send_command({
-                "type": mt.CMD_INIT_SYSTEM,
-                "payload": {"subjects": self.subjects, "init_label": "Anna_bdc"},
-            })
+            self.send_command(
+                {
+                    "type": mt.CMD_INIT_SYSTEM,
+                    "payload": {"subjects": self.subjects, "init_label": "sample_session"},
+                }
+            )
 
         elif evt_type == mt.EVT_SYSTEM_INITIALIZED:
             self.send_command({"type": mt.CMD_DISCOVER_SENSORS})
@@ -116,13 +116,10 @@ class Client:
                 self._disconnect_then_stop()
                 return
 
-            # Run identify sequence once after first connection event.
             if not self.identify_sent:
                 self.identify_sent = True
                 threading.Thread(target=self._run_identify_sequence, daemon=True).start()
 
-            # Some setups do not emit EVT_SENSOR_IDENTIFIED reliably.
-            # For identify stage, disconnect after issuing identify commands.
             if self.stop_stage == "identify" and not self.identify_shutdown_started:
                 self.identify_shutdown_started = True
                 threading.Thread(target=self._identify_then_disconnect, daemon=True).start()
@@ -155,14 +152,14 @@ class Client:
                 return
 
         elif evt_type == mt.EVT_SENSOR_DISCONNECTED:
-            print("Sensor's Disconnect", payload)
+            print("Sensor disconnected", payload)
             self.connected = False
             if self.awaiting_disconnect_stop:
                 self.stop()
                 return
             if self.stop_stage == "full":
                 self.stop()
-        
+
         elif evt_type == mt.EVT_COMPUTE_RESULT:
             now = time.monotonic()
             key = (
@@ -193,7 +190,6 @@ class Client:
                     f"inferred_rate_hz={inferred_rate_hz:.2f} [{status}]"
                 )
 
-        # to view the results
         elif evt_type == mt.EVT_INTERMEDIATE_RESULT:
             print("intermediate window received")
 
@@ -202,11 +198,12 @@ class Client:
             self.stop()
 
     def _handle_stream_sequence(self):
-        """Start streaming after identify sequence finishes."""
-        self.send_command({
-            "type": mt.CMD_START_STREAM_FOR_ALL,
-            "payload": {"tag": "test_activity"},
-        })
+        self.send_command(
+            {
+                "type": mt.CMD_START_STREAM_FOR_ALL,
+                "payload": {"tag": "sample_session"},
+            }
+        )
 
     def _run_identify_sequence(self):
         identify_targets = []
@@ -224,11 +221,16 @@ class Client:
             return
 
         for idx, (subject_id, location) in enumerate(identify_targets, start=1):
-            print(f"[IDENTIFY {idx}/{total}] subject={subject_id} location={location} for {self.identify_wait_seconds}s")
-            self.send_command({
-                "type": mt.CMD_IDENTIFY_SENSOR,
-                "payload": {"subject_id": subject_id, "location": location},
-            })
+            print(
+                f"[IDENTIFY {idx}/{total}] subject={subject_id} "
+                f"location={location} for {self.identify_wait_seconds}s"
+            )
+            self.send_command(
+                {
+                    "type": mt.CMD_IDENTIFY_SENSOR,
+                    "payload": {"subject_id": subject_id, "location": location},
+                }
+            )
             time.sleep(self.identify_wait_seconds)
 
         print("Identify sequence complete.")
@@ -243,16 +245,13 @@ class Client:
         print("[VIEWER COUNTDOWN] complete")
 
     def _stop_stream_after_duration(self):
-        """Stop streaming after configured duration starting from EVT_STREAM_STARTED."""
         time.sleep(self.stream_seconds)
         self.send_command({"type": mt.CMD_STOP_STREAM_FOR_ALL})
 
     def send_command(self, command: dict):
-        """Send a command message to the gateway."""
         self.cmd_pub.send_json(command)
 
     def _disconnect_then_stop(self):
-        """Disconnect sensors first, then stop when disconnection event arrives."""
         if self.connected:
             self.awaiting_disconnect_stop = True
             self.send_command({"type": mt.CMD_DISCONNECT_ALL})
@@ -260,13 +259,12 @@ class Client:
             self.stop()
 
     def _identify_then_disconnect(self):
-        """Allow identify action to run briefly, then disconnect and stop."""
         time.sleep(3)
         self._disconnect_then_stop()
 
     def _init_cadence_csv(self):
-        with self._cadence_log_lock, open(self.cadence_csv_path, "w", newline="") as f:
-            writer = csv.writer(f)
+        with self._cadence_log_lock, open(self.cadence_csv_path, "w", newline="") as handle:
+            writer = csv.writer(handle)
             writer.writerow(
                 [
                     "logged_at",
@@ -281,8 +279,8 @@ class Client:
             )
 
     def _write_cadence_row(self, payload, result_count, cadence_seconds, status):
-        with self._cadence_log_lock, open(self.cadence_csv_path, "a", newline="") as f:
-            writer = csv.writer(f)
+        with self._cadence_log_lock, open(self.cadence_csv_path, "a", newline="") as handle:
+            writer = csv.writer(handle)
             writer.writerow(
                 [
                     datetime.now().isoformat(timespec="seconds"),
@@ -297,7 +295,6 @@ class Client:
             )
 
     def stop(self):
-        """Stop the client and clean up ZeroMQ resources."""
         with self._stop_lock:
             if not self._running:
                 return
@@ -320,7 +317,9 @@ class Client:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Nexus N3 Core local PC staged test plan (sequential identify)")
+    parser = argparse.ArgumentParser(
+        description="Nexus N3 sample session client for a running server"
+    )
     stages = parser.add_mutually_exclusive_group()
     stages.add_argument("--discover", action="store_true", help="Run until discovery then stop")
     stages.add_argument("--connect", action="store_true", help="Run until connect then stop")
@@ -329,9 +328,28 @@ def parse_args():
         "--stream",
         type=int,
         metavar="SECONDS",
-        help="Run through streaming and stop after SECONDS (example: --stream 60)",
+        help="Run through streaming and stop after SECONDS",
     )
     return parser.parse_args()
+
+
+# Edit this example session configuration to match your own device layout.
+SAMPLE_SUBJECTS = [
+    {
+        "subject_id": "subject1",
+        "sensors": [
+            {
+                "local_name": "Movella DOT",
+                "number_of": 2,
+                "compute_algorithm": {
+                    "name": "standard_loading_intensity",
+                    "inputs": {"gravity": 9.80665},
+                },
+                "locations": ["LEFT_ANKLE", "RIGHT_ANKLE"],
+            }
+        ],
+    },
+]
 
 
 if __name__ == "__main__":
@@ -351,30 +369,10 @@ if __name__ == "__main__":
             raise ValueError("--stream must be a positive integer")
         stream_seconds = args.stream
 
-    subjects = [
-       {
-            "subject_id": "subject1",
-            "sensors": [
-                {
-                    "local_name": "Movella DOT", 
-                    "number_of": 2,
-                    "compute_algorithm": 
-                        { 
-                            "name": "standard_loading_intensity",
-                            "inputs": {
-                                "gravity": 9.80665
-                            }
-                        },
-                    "locations": ["LEFT_ANKLE", "RIGHT_ANKLE"],
-                }
-            ],
-        },
-    ]
-
-    client = Client(stop_stage=stop_stage, stream_seconds=stream_seconds)
-    client.subjects = subjects
+    client = SampleSessionClient(stop_stage=stop_stage, stream_seconds=stream_seconds)
+    client.subjects = SAMPLE_SUBJECTS
     client.start()
-    time.sleep(1)  # allow sockets to connect
+    time.sleep(1)
 
     client.send_command({"type": mt.CMD_IS_SERVER_READY})
 
