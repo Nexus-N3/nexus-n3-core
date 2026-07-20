@@ -114,9 +114,9 @@ bash stop_services.sh
 
 ## When To Prefer Another Guide
 
-- Use [MANUAL_DEPLOYMENT.md](/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-core/deployment/guides/MANUAL_DEPLOYMENT.md)
+- Use [MANUAL_DEPLOYMENT.md](./MANUAL_DEPLOYMENT.md)
   when you want the full host-side install process from wheel and bundles.
-- Use [ANSIBLE_DEPLOYMENT.md](/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-core/deployment/guides/ANSIBLE_DEPLOYMENT.md)
+- Use [ANSIBLE_DEPLOYMENT.md](./ANSIBLE_DEPLOYMENT.md)
   when you want a managed multi-node rollout with service installation.
-- Use [DOCKER_DEPLOYMENT.md](/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-core/deployment/guides/DOCKER_DEPLOYMENT.md)
+- Use [DOCKER_DEPLOYMENT.md](./DOCKER_DEPLOYMENT.md)
   for containerized runtime or dev deployment.

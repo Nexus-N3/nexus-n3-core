@@ -19,6 +19,7 @@ venv/
 env/
 .env/
 .Python
+config/runtime.env
 
 # -------------------------------
 # Editor / IDE files

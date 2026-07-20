@@ -1,7 +1,7 @@
 # Runtime Config
 
-This directory is the single source of truth for `nexus-n3-core` runtime
-environment variables during local development.
+This directory contains the tracked runtime configuration template for
+`nexus-n3-core` local development.
 
 The runtime loads configuration in this order:
 
@@ -9,8 +9,9 @@ The runtime loads configuration in this order:
 2. `config/runtime.env`
 3. `/etc/nexus-n3/runtime.env`
 
-`config/runtime.env` is the local development baseline. Production deployments
-should render the same variable set into `/etc/nexus-n3/runtime.env`.
+`config/runtime-example.env` is the tracked local development template. Copy it
+to `config/runtime.env` for local runs. Production deployments should render
+the same variable set into `/etc/nexus-n3/runtime.env`.
 
 ## Host vs Docker Paths
 
@@ -22,7 +23,7 @@ Some path variables differ between host execution and Docker execution.
 Example:
 
 - Host development plugin tree might be:
-  `/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog`
+  `/path/to/nexus-n3-plugin-catalog`
 - In Docker, that same host directory is mounted as:
   `/workspace/nexus-n3-plugin-catalog`
 
@@ -73,7 +74,7 @@ container, but not for a direct host run.
 - This should point at the directory that contains `sensors/` and
   `algorithms/`.
 - Host example:
-  `/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog`
+  `/path/to/nexus-n3-plugin-catalog`
 - Docker example:
   `/workspace/nexus-n3-plugin-catalog`
 

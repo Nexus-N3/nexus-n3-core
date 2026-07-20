@@ -90,8 +90,8 @@ nexusn3-plugin build \
 ```
 
 nexusn3-plugin build \
-  --plugin-root /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/sensors/nexus-n3-sensor-movella-dot \
-  --output-dir /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/sensors
+  --plugin-root /path/to/nexus-n3-plugin-catalog/sensors/nexus-n3-sensor-movella-dot \
+  --output-dir /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors
 
 Build the reference algorithm plugin:
 
@@ -105,8 +105,8 @@ nexusn3-plugin build \
 ```
 
 nexusn3-plugin build \
-  --plugin-root /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/algorithms/nexus-n3-algorithm-standard-loading-intensity\
-  --output-dir /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/algorithms
+  --plugin-root /path/to/nexus-n3-plugin-catalog/algorithms/nexus-n3-algorithm-standard-loading-intensity \
+  --output-dir /path/to/nexus-n3-plugin-catalog/plugin-builds/algorithms
 
 this is by default now as it makes sense. it doesnt make sense to depend on system packages. that defeats the object.
 For offline-complete bundles, include third-party dependency wheels explicitly:
@@ -196,14 +196,14 @@ source .venv/bin/activate
 python -m nexus_n3.plugins install /path/to/nexus-n3-sensor-movella-dot-<version>.rsnxplugin --plugin-root /opt/nexus-n3-plugins
 
 SENSOR EXAMPLE
-python -m nexus_n3.plugins install /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movella-dot-0.1.0.rsnxplugin --plugin-root /opt/nexus-n3-plugins
+python -m nexus_n3.plugins install /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movella-dot-0.1.0.rsnxplugin --plugin-root /opt/nexus-n3-plugins
 
 
 python -m nexus_n3.plugins install /path/to/nexus-n3-algorithm-standard-loading-intensity-<version>.rsnxplugin --plugin-root /opt/nexus-n3-plugins
 
 ALGO EXAMPLE
 
-python -m nexus_n3.plugins install /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/algorithms/nexus-n3-algorithm-standard-loading-intensity-0.1.0.rsnxplugin --plugin-root /opt/nexus-n3-plugins
+python -m nexus_n3.plugins install /path/to/nexus-n3-plugin-catalog/plugin-builds/algorithms/nexus-n3-algorithm-standard-loading-intensity-0.1.0.rsnxplugin --plugin-root /opt/nexus-n3-plugins
 
 
 ```

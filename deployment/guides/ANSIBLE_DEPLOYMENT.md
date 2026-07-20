@@ -261,7 +261,7 @@ ansible-playbook -i inventory.ini playbooks/deploy_plugin_bundles.yml -e nexus_d
 
 For a quick targeted plugin rollout outside a full Ansible playbook flow, use:
 
-- [rollout_plugin_bundle.sh](/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-core/deployment/rollout_plugin_bundle.sh)
+- [rollout_plugin_bundle.sh](../rollout_plugin_bundle.sh)
 
 That script copies one built `.rsnxplugin` bundle to selected nodes and runs the
 existing installer locally on those targets.

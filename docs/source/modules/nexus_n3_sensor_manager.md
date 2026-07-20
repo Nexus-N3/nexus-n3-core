@@ -66,7 +66,7 @@ sensor-spec changes.
   - `python nexus_n3_server.py --ble-backend bleak`
   - `python nexus_n3_server.py --ble-backend nexus_ble_gateway`
 - Shared runtime env file:
-  - `config/runtime.env` locally
+  - `config/runtime.env` locally, typically created from `config/runtime-example.env`
   - `/etc/nexus-n3/runtime.env` in deployed systems
 - Main gateway transport settings:
   - `GATEWAY_SERIAL_PORT`

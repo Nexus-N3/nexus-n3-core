@@ -53,7 +53,7 @@ Resolution order:
 Development example:
 
 ```text
-/home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugins
+/path/to/nexus-n3-plugins
 ```
 
 ## Phase 1 Layout
@@ -121,7 +121,7 @@ Install one or more dev plugins directly from the source tree workspace:
 
 ```bash
 python -m nexus_n3.plugins install-dev \
-  --nexus-n3-plugin-catalog-root /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog \
+  --nexus-n3-plugin-catalog-root /path/to/nexus-n3-plugin-catalog \
   --plugin movella-dot \
   --plugin standard-loading-intensity \
   --plugin-root /opt/nexus-n3-plugins

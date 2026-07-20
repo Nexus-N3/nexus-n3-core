@@ -24,7 +24,7 @@ server still runs normally but stays on local output storage.
   - `ZeroMQGateway` (local PUB/SUB transport)
 
 ## Runtime Environment
-- `config/runtime.env` in local development
+- `config/runtime.env` in local development, typically created from `config/runtime-example.env`
 - `/etc/nexus-n3/runtime.env` in deployed systems
 - gateway-specific variables in that file:
   - `ZEROMQ_CMD_BIND` / `ZEROMQ_EVENT_BIND`

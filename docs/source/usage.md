@@ -36,7 +36,8 @@ python -m build
 
 Shared runtime configuration lives in:
 
-- `config/runtime.env` for local development
+- `config/runtime-example.env` as the tracked template for local development
+- `config/runtime.env` as the local untracked copy
 - `/etc/nexus-n3/runtime.env` for deployed systems
 
 This file is the source of truth for:
@@ -54,7 +55,7 @@ can use:
 python nexus_n3_server.py
 ```
 
-if the required values are already set in `config/runtime.env`.
+if the required values are already set in your local `config/runtime.env`.
 
 ## Run The Full System
 
@@ -146,7 +147,7 @@ High-level flow:
 
    ```bash
    python -m nexus_n3.plugins install \
-     /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movesense-0.1.2.rsnxplugin \
+     /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movesense-0.1.2.rsnxplugin \
      --plugin-root /opt/nexus-n3-plugins
    ```
 4. run `python nexus_n3_server.py`

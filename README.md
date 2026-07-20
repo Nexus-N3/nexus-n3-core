@@ -28,7 +28,8 @@ built-in runtime implementations. They are delivered as installed plugins.
 
 Runtime configuration typically lives in:
 
-- `config/runtime.env` for local development
+- `config/runtime-example.env` as the tracked template for local development
+- `config/runtime.env` as the local untracked copy
 - `/etc/nexus-n3/runtime.env` for deployed systems
 
 This file controls:
@@ -122,7 +123,7 @@ High-level plugin workflow:
 
    ```bash
    python -m nexus_n3.plugins install \
-     /home/mike/Desktop/apps/dev/nexus-n3-project/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movesense-0.1.2.rsnxplugin \
+     /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movesense-0.1.2.rsnxplugin \
      --plugin-root /opt/nexus-n3-plugins
    ```
 4. start Nexus N3 Core
