@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en" data-content_root="../">
+<head>
+    <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+        <title>Client Message Flow &mdash; NexusN3 Edge Core</title>
+    
+    <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
+      <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+            <link rel="index" title="Index" href="../genindex.html" />
+            <link rel="search" title="Search" href="../search.html" />
+            <link rel="top" title="NexusN3 Edge Core" href="#" />
+            <link rel="next" title="nexus_n3_examples" href="nexus_n3_examples.html" />
+            <link rel="prev" title="Operations User Guide" href="../operations_user_guide.html" />
+    </head>
+<body>
+    <script type="text/javascript" src="../_static/dist/blocking.js"></script>
+    <header class="container-fluid bg-primary">
+        <a class="btn btn-sm btn-light skip-to-content-link" href="#main">Skip to content</a>
+        <div class="container-fluid">
+            <div class="navbar navbar-expand-lg navbar-dark font-weight-bold">
+                    <a href="../index.html"
+                        title="Wagtail"
+                        class="logo navbar-brand"
+                    >
+                        <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
+                            class="logo-img"
+                        />
+                        NexusN3 Edge Core
+                    </a>
+                
+                
+                <button class="navbar-toggler btn btn-primary d-lg-none" type="button" data-toggle="collapse" data-target="#collapseSidebar" aria-expanded="false" aria-controls="collapseExample">
+                    <span class="navbar-toggler-icon"></span>
+                    <span class="sr-only">menu</span>
+                </button>
+            </div>
+        </div>
+    </header>
+    <div class="container-fluid">
+        <div class="row">
+            <aside class="col-12 col-lg-3 sidebar-container">
+                <div id="collapseSidebar" class="collapse sticky-top d-lg-block pt-5 pr-lg-4">
+<div id="searchbox" class="searchbox mb-6 px-1" role="search">
+    <form id="search-form" action="../search.html" autocomplete="off" method="get" role="search">
+        <div class="input-group">
+            <div class="input-group-prepend">
+                <div class="input-group-text border-right-0 bg-white py-3 pl-3 pr-2"><span class="fas fa-search"></span></div>
+            </div>
+            <input class="form-control py-3 pr-3 pl-1 h-100 border-left-0" type="search" name="q" placeholder="Search documentation" aria-label="Search documentation" id="searchinput" />
+        </div>
+        <input type="hidden" name="check_keywords" value="yes" />
+        <input type="hidden" name="area" value="default" />
+    </form>
+</div><div class="site-toc">
+    <nav class="toc mt-3" aria-label="Main menu">
+        <p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../training.html">Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../operations_user_guide.html">Operations User Guide</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_tests.html">nexus_n3_tests</a></li>
+</ul>
+
+    </nav>
+    <template data-toggle-item-template>
+        <button class="btn btn-sm btn-link toctree-expand" type="button">
+            <span class="sr-only">Toggle menu contents</span>
+        </button>
+    </template>
+</div>
+                    <div class="d-lg-none border-bottom">
+                        
+                    </div>
+                </div>
+            </aside>
+            <div class="col-12 col-lg-9 pt-5">
+                <header class="row align-items-baseline">
+                    <div class="col">
+                        <nav aria-label="breadcrumb">
+    <ol class="breadcrumb m-0 p-0 bg-transparent">
+        <li class="breadcrumb-item"><a href="../index.html">Docs</a></li>
+        <li class="breadcrumb-item active" aria-current="page">Client Message Flow</li>
+    </ol>
+</nav>
+                    </div>
+                    <div class="col-sm-12 col-lg-auto mt-3 mt-lg-3">
+                        <noscript>
+                            <p>JavaScript is required to toggle light/dark mode..</p>
+                        </noscript>
+                        <button id="wagtail-theme" class="btn btn-sm btn-light text-decoration-none" type="button">
+                            <span class="dark-only"><i class="fas fa-sun"></i> Light mode</span>
+                            <span class="light-only"><i class="fas fa-moon"></i> Dark mode</span>
+                        </button>
+    <a class="btn btn-sm btn-light text-decoration-none" href="https://github.com/wagtail/sphinx_wagtail_theme/blob/main/docs/modules/client_message_flow.md" rel="nofollow">
+        <span class="btn-icon"><span class="fab fa-github"></span></span>
+        <span class="btn-text">Edit on GitHub</span>
+    </a>
+    <a class="btn btn-sm btn-light text-decoration-none" href="../_sources/modules/client_message_flow.md.txt" rel="nofollow">
+        <span class="btn-icon"><span class="fas fa-code"></span></span>
+        <span class="btn-text">View source</span>
+    </a>
+                        
+                    </div>
+                </header>
+                <div class="row" >
+                    <div class="col-12">
+                        <hr class="w-100 my-4">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
+                        <main role="main" id="main">
+    <section id="client-message-flow">
+<h1>Client Message Flow<a class="headerlink" href="#client-message-flow" title="Link to this heading">¶</a></h1>
+<p>This guide describes the command/event flow and documents all message types
+defined in <code class="docutils literal notranslate"><span class="pre">message_types.py</span></code>. It is intended for application teams building
+a control client.</p>
+<section id="common-fields">
+<h2>Common Fields<a class="headerlink" href="#common-fields" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> (string): Message type constant from <code class="docutils literal notranslate"><span class="pre">nexus_n3.gateway.messaging.message_types</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">payload</span></code> (object): Optional data for the command or event.</p></li>
+</ul>
+</section>
+<section id="readiness-and-initialization">
+<h2>Readiness and Initialization<a class="headerlink" href="#readiness-and-initialization" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_IS_SERVER_READY</span></code></p>
+<ul class="simple">
+<li><p>Payload: none</p></li>
+</ul>
+</li>
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_SERVER_READY</span></code></p>
+<ul class="simple">
+<li><p>Payload:</p>
+<ul>
+<li><p>When ready: <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;msg&quot;:</span> <span class="pre">&quot;System</span> <span class="pre">Server</span> <span class="pre">Ready&quot;,</span> <span class="pre">&quot;supported_sensors&quot;:</span> <span class="pre">[{</span> <span class="pre">&quot;name&quot;:</span> <span class="pre">&quot;&lt;sensor&gt;&quot;,</span> <span class="pre">&quot;locations&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;computations&quot;:</span> <span class="pre">[{</span> <span class="pre">&quot;name&quot;:</span> <span class="pre">&quot;&lt;algorithm&gt;&quot;,</span> <span class="pre">&quot;inputs&quot;:</span> <span class="pre">{</span> <span class="pre">...</span> <span class="pre">}</span> <span class="pre">}]</span> <span class="pre">}],</span> <span class="pre">&quot;supported_algorithms&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;supported_gateways&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;supported_bridges&quot;:</span> <span class="pre">[...]</span> <span class="pre">}</span></code></p></li>
+<li><p>When not ready: <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;msg&quot;:</span> <span class="pre">&quot;System</span> <span class="pre">Server</span> <span class="pre">NOT</span> <span class="pre">Ready&quot;</span> <span class="pre">}</span></code></p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_GET_DEVICE_INFO</span></code></p>
+<ul class="simple">
+<li><p>Payload: none</p></li>
+</ul>
+</li>
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_DEVICE_INFO</span></code></p>
+<ul class="simple">
+<li><p>Payload:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">device</span></code>: control-center oriented runtime identity fields such as role, active bridge, software version, and optional IoT Hub device id</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">admin_summary</span></code>: server status, uptime, remote-control flag, and USB mount state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">capabilities</span></code>: supported sensors, algorithms, gateways, and bridges</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plugin_inventory</span></code>: first-pass installed sensor/algorithm inventory plus summary counts</p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ol>
+<p>Clients should use <code class="docutils literal notranslate"><span class="pre">EVT_SERVER_READY</span></code> and/or <code class="docutils literal notranslate"><span class="pre">EVT_DEVICE_INFO</span></code> as the source of
+truth for selectable sensors and algorithms before sending <code class="docutils literal notranslate"><span class="pre">CMD_INIT_SYSTEM</span></code>.
+Do not build a new session from a cached or hard-coded plugin list when the
+runtime plugin set may have changed.</p>
+<ol class="arabic simple" start="5">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_INIT_SYSTEM</span></code></p>
+<ul class="simple">
+<li><p>Payload:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">subjects</span></code> (required): list of subject configs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">init_label</span></code> (optional): top-level session label (client should include any
+“who_” prefix; system appends a timestamp)</p></li>
+</ul>
+</li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">init_label</span></code> is missing, system uses <code class="docutils literal notranslate"><span class="pre">sys_session_&lt;ts&gt;</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CMD_INIT_SYSTEM</span></code> validates the requested sensors and algorithms against
+the currently installed plugin catalog. It does not discover new plugin
+options for the client.</p></li>
+</ul>
+</li>
+</ol>
+<p>Example:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;init_system&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;init_label&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Anna_bdc&quot;</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;subjects&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;subject_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;subject1&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;sensors&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">          </span><span class="p">{</span>
+<span class="w">            </span><span class="nt">&quot;local_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Movella DOT&quot;</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">&quot;number_of&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">            </span><span class="nt">&quot;compute_algorithm&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">              </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;standard_loading_intensity&quot;</span><span class="p">,</span>
+<span class="w">              </span><span class="nt">&quot;inputs&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;gravity&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">9.80665</span><span class="w"> </span><span class="p">}</span>
+<span class="w">            </span><span class="p">},</span>
+<span class="w">            </span><span class="nt">&quot;locations&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;LEFT_ANKLE&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;RIGHT_ANKLE&quot;</span><span class="p">]</span>
+<span class="w">          </span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="6">
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_SYSTEM_INITIALIZED</span></code></p>
+<ul class="simple">
+<li><p>Payload: status string (e.g., <code class="docutils literal notranslate"><span class="pre">&quot;System</span> <span class="pre">initialised</span> <span class="pre">with</span> <span class="pre">1</span> <span class="pre">subject(s)&quot;</span></code>)</p></li>
+</ul>
+</li>
+</ol>
+</section>
+<section id="discovery-and-connection">
+<h2>Discovery and Connection<a class="headerlink" href="#discovery-and-connection" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple" start="7">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_DISCOVER_SENSORS</span></code></p>
+<ul class="simple">
+<li><p>Payload: none</p></li>
+</ul>
+</li>
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_SENSORS_DISCOVERED</span></code></p>
+<ul class="simple">
+<li><p>Payload: list of subjects with discovered sensors.</p></li>
+</ul>
+</li>
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_DISCOVER_SENSORS_FOR_SUBJECTS</span></code></p>
+<ul class="simple">
+<li><p>Payload:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">subject_ids</span></code> (required): list of subject IDs</p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_SENSORS_DISCOVERED_FOR_SUBJECT</span></code></p></li>
+</ol>
+<ul class="simple">
+<li><p>Payload: discovery info for the specific subject.</p></li>
+</ul>
+<ol class="arabic simple" start="11">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_CONNECT_TO_ALL</span></code> or <code class="docutils literal notranslate"><span class="pre">CMD_CONNECT_SUBJECTS</span></code></p></li>
+</ol>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">CMD_CONNECT_SUBJECTS</span></code> payload:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">subject_ids</span></code> (required): list of subject IDs</p></li>
+</ul>
+</li>
+</ul>
+<ol class="arabic simple" start="12">
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_SENSOR_CONNECTED</span></code></p></li>
+<li><p>(Optional) Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_IDENTIFY_SENSOR</span></code></p></li>
+</ol>
+<ul class="simple">
+<li><p>Payload:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">subject_id</span></code> (required)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location</span></code> (required)</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="start-streaming-tagging">
+<h2>Start Streaming (Tagging)<a class="headerlink" href="#start-streaming-tagging" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple" start="14">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_START_STREAM_FOR_ALL</span></code></p></li>
+</ol>
+<ul class="simple">
+<li><p>Payload (optional):</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">tag</span></code>: apply to all subjects</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tags</span></code>: map of <code class="docutils literal notranslate"><span class="pre">subject_id</span> <span class="pre">-&gt;</span> <span class="pre">tag</span></code> (per-subject override)</p></li>
+</ul>
+</li>
+</ul>
+<p>If tags are missing:</p>
+<ul class="simple">
+<li><p>Tag defaults to <code class="docutils literal notranslate"><span class="pre">sys</span></code></p></li>
+<li><p>Tag directory becomes <code class="docutils literal notranslate"><span class="pre">sys_&lt;ts&gt;</span></code></p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;start_stream_for_all&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;tag&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;run&quot;</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>Per-subject tags:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;start_stream_for_all&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;payload&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;tags&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;subject1&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;run&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;subject2&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;walk&quot;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<ol class="arabic simple" start="15">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_START_STREAM_FOR_SUBJECTS</span></code></p></li>
+</ol>
+<ul class="simple">
+<li><p>Payload:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">subject_ids</span></code> (required): list of subject IDs</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tag</span></code> (optional)</p></li>
+</ul>
+</li>
+</ul>
+<ol class="arabic simple" start="16">
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_STREAM_STARTED</span></code></p></li>
+</ol>
+<section id="file-output-structure">
+<h3>File Output Structure<a class="headerlink" href="#file-output-structure" title="Link to this heading">¶</a></h3>
+<p>Base directory:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">nexus_n3_outputs</span><span class="o">/&lt;</span><span class="n">site</span><span class="o">&gt;/&lt;</span><span class="n">init_label_or_sys_session_ts</span><span class="o">&gt;/</span>
+</pre></div>
+</div>
+<p>Per subject:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">raw</span><span class="o">/&lt;</span><span class="n">location</span><span class="o">&gt;</span><span class="n">_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">csv</span>
+<span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">real_time</span><span class="o">/</span><span class="n">algorithm_</span><span class="o">&lt;</span><span class="n">algo</span><span class="o">&gt;</span><span class="n">__location_</span><span class="o">&lt;</span><span class="n">location</span><span class="o">&gt;</span><span class="n">__address_</span><span class="o">&lt;</span><span class="n">address</span><span class="o">&gt;</span><span class="n">__stage_real_time__activity_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">__timestamp_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">ndjson</span>
+<span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">intermediate</span><span class="o">/</span><span class="n">algorithm_</span><span class="o">&lt;</span><span class="n">algo</span><span class="o">&gt;</span><span class="n">__stage_intermediate_time__activity_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">__timestamp_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">ndjson</span>
+<span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">consolidated</span><span class="o">/</span><span class="n">algorithm_</span><span class="o">&lt;</span><span class="n">algo</span><span class="o">&gt;</span><span class="n">__stage_consolidated_time__activity_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">__timestamp_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">ndjson</span>
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">init_label</span></code> always receives a timestamp suffix.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tag_ts</span></code> is the tag with a timestamp suffix (e.g., <code class="docutils literal notranslate"><span class="pre">run_20250119_102030</span></code>).</p></li>
+<li><p>Real-time results are per subject + algorithm + sensor address/location.</p></li>
+<li><p>Intermediate and consolidated results are per subject + algorithm.</p></li>
+<li><p>Computed NDJSON names include <code class="docutils literal notranslate"><span class="pre">algorithm</span></code>, <code class="docutils literal notranslate"><span class="pre">stage</span></code>, <code class="docutils literal notranslate"><span class="pre">activity</span></code>, and <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">location</span></code> and <code class="docutils literal notranslate"><span class="pre">address</span></code> are included only for real-time sensor-level files.</p></li>
+</ul>
+</section>
+</section>
+<section id="stop-streaming">
+<h2>Stop Streaming<a class="headerlink" href="#stop-streaming" title="Link to this heading">¶</a></h2>
+<ol class="arabic simple" start="15">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_STOP_STREAM_FOR_ALL</span></code></p></li>
+</ol>
+<ul class="simple">
+<li><p>Payload: none</p></li>
+</ul>
+<p>or</p>
+<ol class="arabic simple" start="15">
+<li><p>Client -&gt; <code class="docutils literal notranslate"><span class="pre">CMD_STOP_STREAM_FOR_SUBJECTS</span></code></p></li>
+</ol>
+<ul class="simple">
+<li><p>Payload: <code class="docutils literal notranslate"><span class="pre">subject_ids</span></code> (required): list of subject IDs</p></li>
+</ul>
+<ol class="arabic simple" start="16">
+<li><p>Server -&gt; <code class="docutils literal notranslate"><span class="pre">EVT_STREAM_STOPPED</span></code></p></li>
+</ol>
+</section>
+<section id="additional-commands">
+<h2>Additional Commands<a class="headerlink" href="#additional-commands" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">CMD_SYSTEM_SETUP</span></code></p>
+<ul>
+<li><p>Payload: <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;file_path&quot;:</span> <span class="pre">&lt;path</span> <span class="pre">or</span> <span class="pre">null&gt;,</span> <span class="pre">&quot;network_path&quot;:</span> <span class="pre">&lt;path</span> <span class="pre">or</span> <span class="pre">null&gt;</span> <span class="pre">}</span></code></p></li>
+<li><p>Typically issued by the server on startup.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CMD_UPDATE_FILE_PATH</span></code></p>
+<ul>
+<li><p>Payload: <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;file_path&quot;:</span> <span class="pre">&lt;path</span> <span class="pre">or</span> <span class="pre">null&gt;</span> <span class="pre">}</span></code></p></li>
+<li><p>Broadcast when USB paths change.</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CMD_DISCONNECT_ALL</span></code></p>
+<ul>
+<li><p>Payload: none</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CMD_DISCONNECT_SUBJECTS</span></code></p>
+<ul>
+<li><p>Payload: <code class="docutils literal notranslate"><span class="pre">subject_ids</span></code> (required): list of subject IDs</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CMD_CHECK_BATTERY</span></code></p>
+<ul>
+<li><p>Payload: <code class="docutils literal notranslate"><span class="pre">{</span> <span class="pre">&quot;scan_timeout&quot;:</span> <span class="pre">&lt;seconds&gt;,</span> <span class="pre">&quot;read_timeout&quot;:</span> <span class="pre">&lt;seconds&gt;</span> <span class="pre">}</span></code></p></li>
+<li><p>Discovers BLE sensors with battery notify capability, reads battery, disconnects.</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="event-reference-from-message-types-py">
+<h2>Event Reference (from <code class="docutils literal notranslate"><span class="pre">message_types.py</span></code>)<a class="headerlink" href="#event-reference-from-message-types-py" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SERVER_READY</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SYSTEM_INITIALIZED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SENSORS_DISCOVERED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SENSORS_DISCOVERED_FOR_SUBJECT</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SENSOR_CONNECTED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SENSOR_DISCONNECTED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_STREAM_STARTED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_STREAM_STOPPED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SENSOR_IDENTIFIED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_SENSOR_MANGER_INITIALISED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_BATTERY_UPDATE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_BATTERY_CHECK</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_COMPUTE_RESULT</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_INTERMEDIATE_RESULT</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_CONSOLIDATED_RESULT</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_ERROR</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_USB_DISK_INSERTED</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">EVT_USB_DISK_REMOVED</span></code></p></li>
+</ul>
+</section>
+<section id="errors">
+<h2>Errors<a class="headerlink" href="#errors" title="Link to this heading">¶</a></h2>
+<p>Any command can emit <code class="docutils literal notranslate"><span class="pre">EVT_ERROR</span></code> with a payload string or dict describing the
+failure.</p>
+</section>
+<section id="battery-events">
+<h2>Battery Events<a class="headerlink" href="#battery-events" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">EVT_BATTERY_UPDATE</span></code> payload:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;address&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AA:BB:CC:DD:EE:FF&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;battery_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">57</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;is_charging&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">EVT_BATTERY_CHECK</span></code> payload:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;timestamp&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-02-06T12:34:56.789012&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;address&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AA:BB:CC:DD:EE:FF&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;Movella DOT&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;ok&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;battery_level&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">57</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;is_charging&quot;</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="intermediate-result-payload">
+<h2>Intermediate Result Payload<a class="headerlink" href="#intermediate-result-payload" title="Link to this heading">¶</a></h2>
+<p>Intermediate executor results are normalized as:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;algorithm_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;standard_loading_intensity&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;stage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;intermediate_time&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;address&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AA:BB:CC&quot;</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;...&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">data</span></code> object is algorithm-specific, but the <code class="docutils literal notranslate"><span class="pre">results</span></code> list is consistent
+across executors. Some algorithms may add comparison entries to <code class="docutils literal notranslate"><span class="pre">results</span></code>
+using <code class="docutils literal notranslate"><span class="pre">kind:</span> <span class="pre">&quot;comparison&quot;</span></code> and a <code class="docutils literal notranslate"><span class="pre">pair</span></code> field.</p>
+<p>If an executor supports comparisons, it may also return comparison entries:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;subject_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;subject1&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;comparison&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;pair&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="s2">&quot;LEFT_ANKLE&quot;</span><span class="p">,</span><span class="w"> </span><span class="s2">&quot;RIGHT_ANKLE&quot;</span><span class="p">],</span>
+<span class="w">      </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;0-3&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">105.0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;y&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">98.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;z&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">101.2</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;mag&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">100.4</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+<section id="consolidated-result-payload">
+<h2>Consolidated Result Payload<a class="headerlink" href="#consolidated-result-payload" title="Link to this heading">¶</a></h2>
+<p>Consolidation executor results are normalized as:</p>
+<div class="highlight-json notranslate"><div class="highlight"><pre><span></span><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;subject_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;subject1&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;algorithm_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;standard_loading_intensity&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;stage&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;consolidated_time&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;results&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;kind&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;sensor_summary&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;address&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;AA:BB:CC&quot;</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;window_count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;data&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;0-3&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">          </span><span class="nt">&quot;x&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nt">&quot;count&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">24</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;mean&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.12</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;min&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.01</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;max&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.31</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;p50&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.11</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;p95&quot;</span><span class="p">:</span><span class="w"> </span><span class="mf">0.29</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</section>
+</section>
+
+</main>
+                        <nav aria-label="Page navigation" class="py-4 my-5 clearfix font-weight-bold border-top">
+    <a class="float-left" href="../operations_user_guide.html" title="Previous">
+        <span aria-hidden="true">←&nbsp;</span>Operations User Guide
+    </a>
+    <a class="float-right" href="nexus_n3_examples.html" title="Next">
+        nexus_n3_examples <span aria-hidden="true">&nbsp;→</span>
+    </a>
+</nav>
+                    </div>
+                    
+                    <nav class="col-12 col-lg-3 pb-4">
+                        <div class="sticky-top toc page-toc" aria-labelledby="page-toc-heading">
+                            <p class="font-weight-bold" id="page-toc-heading">Page contents</p>
+                            <ul>
+<li><a class="reference internal" href="#">Client Message Flow</a><ul>
+<li><a class="reference internal" href="#common-fields">Common Fields</a></li>
+<li><a class="reference internal" href="#readiness-and-initialization">Readiness and Initialization</a></li>
+<li><a class="reference internal" href="#discovery-and-connection">Discovery and Connection</a></li>
+<li><a class="reference internal" href="#start-streaming-tagging">Start Streaming (Tagging)</a><ul>
+<li><a class="reference internal" href="#file-output-structure">File Output Structure</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#stop-streaming">Stop Streaming</a></li>
+<li><a class="reference internal" href="#additional-commands">Additional Commands</a></li>
+<li><a class="reference internal" href="#event-reference-from-message-types-py">Event Reference (from <code class="docutils literal notranslate"><span class="pre">message_types.py</span></code>)</a></li>
+<li><a class="reference internal" href="#errors">Errors</a></li>
+<li><a class="reference internal" href="#battery-events">Battery Events</a></li>
+<li><a class="reference internal" href="#intermediate-result-payload">Intermediate Result Payload</a></li>
+<li><a class="reference internal" href="#consolidated-result-payload">Consolidated Result Payload</a></li>
+</ul>
+</li>
+</ul>
+
+                        </div>
+                    </nav>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+    <footer class="container-fluid bg-primary text-light">
+        <div class="container">
+            <div class="row">
+        <div class="col p-4">
+            
+                <nav aria-label="Footer">
+                    <ul class="nav justify-content-center mb-2">
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/features/">Features</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/about-wagtail/"> About Wagtail</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/services/"> Services</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/blog/"> Blog</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/packages/"> Packages</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/developers/"> Developers</a></li>
+                        
+                    </ul>
+                </nav>
+            
+            <div class="text-center">
+                    &copy; Copyright 2026, Mike Crooks
+            </div>
+            <div class="text-center text-white-50 font-italic mt-3">
+                <small>
+                    Created using
+                    <a class="text-white" href="https://github.com/wagtail/sphinx_wagtail_theme" rel="nofollow" target="_blank">
+                        Sphinx Wagtail Theme 6.5.0
+                    </a>
+                    and
+                    <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
+                        Sphinx 8.1.3
+                    </a>
+                </small>
+            </div>
+        </div>
+    </div>
+        </div>
+    </footer>
+        <script src="../_static/documentation_options.js?v=01f34227"></script>
+        <script src="../_static/doctools.js?v=9bcbadda"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script type="text/javascript" src="../_static/dist/theme.js"></script>
+        <script type="text/javascript" src="../_static/dist/vendor.js"></script>
+        <script type="text/javascript" src="../_static/searchtools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script type="text/javascript">
+            document.addEventListener('DOMContentLoaded', function() { Search.loadIndex("../searchindex.js"); });
+        </script>
+        <script type="text/javascript" id="searchindexloader"></script>
+    </body>
+</html>

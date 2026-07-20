@@ -1,0 +1,6 @@
+---
+- name: Deploy nexus-n3-core release and plugin bundles
+  hosts: "{{ nexus_deploy_hosts | default('master') }}"
+  become: true
+  roles:
+    - role: nexus_release

@@ -1,0 +1,160 @@
+- name: Check local release artifact
+  ansible.builtin.stat:
+    path: "{{ nexus_release_local_path }}"
+  delegate_to: localhost
+  become: false
+  register: nexus_release_local_stat
+
+- name: Fail if local release artifact is missing
+  ansible.builtin.fail:
+    msg: "Missing release artifact at {{ nexus_release_local_path }}"
+  when: not nexus_release_local_stat.stat.exists
+
+- name: Check local nexus server script
+  ansible.builtin.stat:
+    path: "{{ nexus_server_local_path }}"
+  delegate_to: localhost
+  become: false
+  register: nexus_server_local_stat
+
+- name: Fail if local nexus server script is missing
+  ansible.builtin.fail:
+    msg: "Missing nexus_n3_server.py at {{ nexus_server_local_path }}"
+  when: not nexus_server_local_stat.stat.exists
+
+
+
+- name: Ensure install root exists
+  ansible.builtin.file:
+    path: "{{ nexus_install_root }}"
+    state: directory
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0755"
+
+- name: Fail if AMQP URL is missing for LavinMQ gateway
+  ansible.builtin.fail:
+    msg: "Set nexus_amqp_url in Ansible host/group vars when using lavinmq_gateway"
+  when:
+    - nexus_gateway == "lavinmq_gateway"
+    - nexus_amqp_url | length == 0
+
+- name: Fail if Azure bridge settings are incomplete when bridge is enabled
+  ansible.builtin.fail:
+    msg: "Set nexus_azure_iot_connection_string and nexus_azure_iot_device_id in Ansible host/group vars"
+  when:
+    - nexus_azure_bridge_enabled | bool
+    - nexus_azure_iot_connection_string | length == 0 or nexus_azure_iot_device_id | length == 0
+
+- name: Fail if BLE gateway serial port is missing when gateway backend is enabled
+  ansible.builtin.fail:
+    msg: "Set nexus_ble_gateway_serial_port in Ansible host/group vars when nexus_ble_backend is nexus_ble_gateway"
+  when:
+    - nexus_ble_backend == "nexus_ble_gateway"
+    - nexus_ble_gateway_serial_port | length == 0
+
+- name: Ensure env directory exists
+  ansible.builtin.file:
+    path: "{{ nexus_env_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Upload shared runtime env file
+  ansible.builtin.template:
+    src: runtime_env.j2
+    dest: "{{ nexus_runtime_env_remote_path }}"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart nexus-n3
+
+- name: Create virtualenv
+  ansible.builtin.command: >
+    python3 -m venv {% if nexus_venv_system_site_packages | bool %}--system-site-packages {% endif %}{{ nexus_venv_path }}
+  args:
+    creates: "{{ nexus_venv_path }}/bin/activate"
+
+- name: Upload nexus-n3-core release artifact
+  ansible.builtin.copy:
+    src: "{{ nexus_release_local_path }}"
+    dest: "{{ nexus_release_remote_path }}"
+    mode: "0644"
+  notify: Restart nexus-n3
+
+- name: Install nexus-n3-core into virtualenv
+  ansible.builtin.pip:
+    name: "{{ nexus_release_remote_path }}"
+    virtualenv: "{{ nexus_venv_path }}"
+    virtualenv_command: "python3 -m venv{% if nexus_venv_system_site_packages | bool %} --system-site-packages{% endif %}"
+    state: present
+    extra_args: "--force-reinstall"
+  notify: Restart nexus-n3
+
+- name: Upload nexus_n3_server.py
+  ansible.builtin.copy:
+    src: "{{ nexus_server_local_path }}"
+    dest: "{{ nexus_install_root }}/nexus_n3_server.py"
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0755"
+  notify: Restart nexus-n3
+
+- name: Check local admin UI assets
+  ansible.builtin.stat:
+    path: "{{ nexus_admin_local_path }}"
+  delegate_to: localhost
+  become: false
+  register: nexus_admin_local_stat
+
+- name: Upload admin UI assets
+  ansible.builtin.copy:
+    src: "{{ nexus_admin_local_path }}/"
+    dest: "{{ nexus_admin_remote_path }}/"
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0755"
+  notify: Restart nexus-n3
+  when: nexus_admin_local_stat.stat.exists
+
+- name: Install role-appropriate plugin bundles
+  ansible.builtin.include_tasks: plugin_bundles.yml
+
+- name: Install systemd service
+  ansible.builtin.template:
+    src: nexus-n3.service.j2
+    dest: "/etc/systemd/system/{{ nexus_service_name }}.service"
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart nexus-n3
+
+- name: Enable nexus-n3 service
+  ansible.builtin.systemd:
+    name: "{{ nexus_service_name }}"
+    enabled: true
+    state: started
+
+- name: Check ufw status for worker router
+  ansible.builtin.command: ufw status
+  register: nexus_release_ufw_status
+  changed_when: false
+  failed_when: false
+  when: nexus_role in ["master", "ai"]
+
+- name: Allow worker router port (TCP 6000) through ufw
+  ansible.builtin.command: ufw allow 6000/tcp
+  register: nexus_release_ufw_allow_router
+  changed_when: "'Skipping' not in nexus_release_ufw_allow_router.stdout"
+  when:
+    - nexus_role == "master"
+    - "'Status: active' in nexus_release_ufw_status.stdout"
+
+- name: Allow AI compute port through ufw
+  ansible.builtin.command: "ufw allow {{ nexus_compute_port }}/tcp"
+  register: nexus_release_ufw_allow_compute
+  changed_when: "'Skipping' not in nexus_release_ufw_allow_compute.stdout"
+  when:
+    - nexus_role == "ai"
+    - "'Status: active' in nexus_release_ufw_status.stdout"

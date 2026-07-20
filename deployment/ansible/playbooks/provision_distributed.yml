@@ -1,0 +1,4 @@
+---
+- import_playbook: provision_master.yml
+- import_playbook: provision_workers.yml
+- import_playbook: provision_ai_nodes.yml

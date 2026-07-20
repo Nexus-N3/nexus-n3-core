@@ -1,0 +1,66 @@
+nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.0.7-py3-none-any.whl"
+nexus_release_remote_path: "/tmp/{{ nexus_release_local_path | basename }}"
+nexus_install_root: /opt/nexus-n3-core
+nexus_venv_path: "{{ nexus_install_root }}/venv"
+nexus_venv_system_site_packages: true
+nexus_server_local_path: "{{ inventory_dir }}/../../nexus_n3_server.py"
+nexus_env_dir: /etc/nexus-n3
+nexus_runtime_env_remote_path: "{{ nexus_env_dir }}/runtime.env"
+nexus_site: nexus_n3_site
+nexus_customer_id: ""
+nexus_site_id: "{{ nexus_site }}"
+nexus_site_name: "{{ nexus_site }}"
+nexus_neia_apps_catalog_url: "http://127.0.0.1:8050/api/v1/apps/catalog"
+nexus_gateway: zeromq_gateway
+nexus_ble_backend: bleak
+nexus_ble_gateway_serial_port: ""
+nexus_ble_gateway_baudrate: 1000000
+nexus_ble_gateway_protocol_version: 1
+nexus_ble_gateway_connect_timeout_s: 15.0
+nexus_ble_gateway_subscribe_timeout_s: 5.0
+nexus_ble_gateway_write_timeout_s: 5.0
+nexus_ble_gateway_read_timeout_s: 5.0
+nexus_role: standalone
+nexus_node_id: ""
+nexus_use_async: true
+nexus_azure_bridge_enabled: false
+nexus_azure_bridge_remote_control: false
+nexus_azure_iot_connection_string: ""
+nexus_azure_iot_device_id: ""
+nexus_azure_bridge_local_cmd_addr: "tcp://127.0.0.1:5555"
+nexus_azure_bridge_local_evt_addr: "tcp://127.0.0.1:5556"
+nexus_azure_bridge_use_websockets: true
+nexus_azure_bridge_keep_alive: 120
+nexus_azure_bridge_connection_retry_interval: 15
+nexus_azure_bridge_state_file: /tmp/nexus_n3.azure_bridge_state.json
+nexus_azure_iot_upload_container: nexusn3-session-uploads
+nexus_admin_enabled: true
+nexus_admin_host: 0.0.0.0
+nexus_admin_port: 9000
+nexus_admin_display_profile: ""
+nexus_perf_log: false
+nexus_admin_local_path: "{{ inventory_dir }}/../../nexus_n3.admin"
+nexus_admin_remote_path: "{{ nexus_install_root }}/nexus_n3.admin"
+nexus_amqp_url: ""
+nexus_zeromq_cmd_bind: "tcp://*:5555"
+nexus_zeromq_event_bind: "tcp://*:5556"
+nexus_lavinmq_bridge_local_cmd_addr: "tcp://127.0.0.1:5555"
+nexus_lavinmq_bridge_local_evt_addr: "tcp://127.0.0.1:5556"
+nexus_compute_port: 7001
+nexus_service_name: nexus-n3
+nexus_service_user: "{{ ansible_user }}"
+nexus_service_group: "{{ ansible_user }}"
+nexus_plugin_catalog_root: ""
+nexus_plugin_root: /opt/nexus-n3-plugins
+nexus_plugin_use_system_site_packages: true
+nexus_plugin_bundle_root: "{{ inventory_dir }}/../../../plugin-builds"
+nexus_sensor_plugin_bundle_root: "{{ nexus_plugin_bundle_root }}/sensors"
+nexus_algorithm_plugin_bundle_root: "{{ nexus_plugin_bundle_root }}/algorithms"
+nexus_plugin_bundle_staging_root: /tmp/nexus-n3-plugin-bundles
+nexus_sensor_plugin_bundles: []
+nexus_algorithm_plugin_bundles: []
+nexus_robot_config_path: /etc/nexus-n3/robot.yaml
+nexus_install_sensor_plugins: "{{ nexus_role in ['standalone', 'master', 'worker'] }}"
+nexus_install_algorithm_plugins: true
+nexus_plugin_installer_python: "{{ nexus_venv_path }}/bin/python"
+nexus_plugin_installer_module: nexus_n3.plugins

@@ -1,0 +1,53 @@
+- name: Master node setup
+  hosts: master
+  become: true
+  pre_tasks:
+    - name: Require Linux hosts for host provisioning
+      ansible.builtin.assert:
+        that:
+          - ansible_system == "Linux"
+        fail_msg: >-
+          Host provisioning is supported only on Linux targets.
+          Use the release deployment playbooks for software rollout, and keep
+          Windows hosts as development environments only.
+  roles:
+    - nexus_dependencies
+    - role: nexus_kiosk
+      tags:
+        - nexus_kiosk
+    - role: nexus_usb_hotplug
+      tags:
+        - nexus_usb_hotplug
+    - nexus_access_point
+    - nexus_smb_share
+
+- name: Worker node setup
+  hosts: workers
+  become: true
+  pre_tasks:
+    - name: Require Linux hosts for host provisioning
+      ansible.builtin.assert:
+        that:
+          - ansible_system == "Linux"
+        fail_msg: >-
+          Host provisioning is supported only on Linux targets.
+          Use the release deployment playbooks for software rollout, and keep
+          Windows hosts as development environments only.
+  roles:
+    - nexus_dependencies
+    - nexus_worker_smb
+
+- name: AI node setup
+  hosts: ai_nodes
+  become: true
+  pre_tasks:
+    - name: Require Linux hosts for host provisioning
+      ansible.builtin.assert:
+        that:
+          - ansible_system == "Linux"
+        fail_msg: >-
+          Host provisioning is supported only on Linux targets.
+          Use the release deployment playbooks for software rollout, and keep
+          Windows hosts as development environments only.
+  roles:
+    - nexus_dependencies

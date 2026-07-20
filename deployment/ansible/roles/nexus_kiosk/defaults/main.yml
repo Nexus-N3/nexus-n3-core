@@ -1,0 +1,22 @@
+nexus_kiosk_user: nexusn3
+nexus_kiosk_url: "http://localhost:8050"
+nexus_kiosk_browser_cmd: "chromium-browser"
+nexus_kiosk_browser_args:
+  - "--ozone-platform=wayland"
+  - "--kiosk"
+  - "--incognito"
+  - "--user-data-dir=/tmp/nexusn3-kiosk-profile"
+  - "--disk-cache-dir=/tmp/nexusn3-kiosk-cache"
+  - "--disable-application-cache"
+  - "--noerrdialogs"
+  - "--disable-infobars"
+nexus_kiosk_autologin: true
+nexus_kiosk_disable_sleep: true
+nexus_kiosk_remove_autostart: true
+nexus_kiosk_packages:
+  - chromium-browser
+  - curl
+  - xdg-desktop-portal
+  - xdg-desktop-portal-gnome
+  - xdg-desktop-portal-gtk
+  - dbus-x11

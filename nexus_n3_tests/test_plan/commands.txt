@@ -1,0 +1,9 @@
+python -m nexus_n3_tests.test_plan.test_1_local_pc --discover
+python -m nexus_n3_tests.test_plan.test_1_local_pc --connect
+python -m nexus_n3_tests.test_plan.test_1_local_pc --identify
+python -m nexus_n3_tests.test_plan.test_1_local_pc --stream 60
+
+python -m nexus_n3_tests.test_plan.test_2_local_pc --discover
+python -m nexus_n3_tests.test_plan.test_2_local_pc --connect
+python -m nexus_n3_tests.test_plan.test_2_local_pc --identify
+python -m nexus_n3_tests.test_plan.test_2_local_pc --stream 60

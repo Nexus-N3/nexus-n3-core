@@ -1,0 +1,18 @@
+[Unit]
+Description=Nexus N3 Core Worker Node %i
+After=network.target
+After=nexus_n3_master.service
+Requires=nexus_n3_master.service
+
+[Service]
+ExecStartPre=/bin/sleep 3
+Type=simple
+WorkingDirectory=%h/Desktop/apps/dev/nexus-n3-project/nexus-n3-core
+Environment=NEXUS_N3_ENV_FILE=/etc/nexus-n3/runtime.env
+EnvironmentFile=-/etc/nexus-n3/runtime.env
+ExecStart=/usr/bin/env python3 %h/Desktop/apps/dev/nexus-n3-project/nexus-n3-core/nexus_n3_server.py --role worker --node-id %i
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

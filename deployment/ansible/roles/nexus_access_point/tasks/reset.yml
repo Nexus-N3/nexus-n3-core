@@ -1,0 +1,34 @@
+- name: Stop and disable AP services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop:
+    - hostapd
+    - dnsmasq
+  failed_when: false
+
+- name: Reset failed AP services
+  ansible.builtin.command: systemctl reset-failed hostapd dnsmasq
+  failed_when: false
+
+- name: Remove AP configuration files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/hostapd/hostapd.conf
+    - /etc/dnsmasq.d/nexusn3-ap.conf
+    - /etc/NetworkManager/conf.d/99-nexusn3-ap.conf
+    - /etc/systemd/system/nexusn3-ap-ip.service
+  failed_when: false
+
+- name: Reload systemd after reset
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart NetworkManager after reset
+  ansible.builtin.service:
+    name: NetworkManager
+    state: restarted
+  failed_when: false

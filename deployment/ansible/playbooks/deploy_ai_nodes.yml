@@ -1,0 +1,6 @@
+---
+- name: Deploy nexus-n3-core AI nodes
+  hosts: "{{ nexus_deploy_hosts | default('ai_nodes') }}"
+  become: true
+  roles:
+    - role: nexus_release

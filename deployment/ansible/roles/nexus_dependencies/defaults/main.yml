@@ -1,0 +1,14 @@
+nexus_dependencies_packages:
+  - python3
+  - python3-venv
+  - python3-dev
+  - python3-pip
+  - python3-six
+  - python3-dbus
+  - avahi-daemon
+  - exfatprogs
+  - nfs-common
+  - nfs-kernel-server
+  - hostapd
+  - dnsmasq
+  - wireguard

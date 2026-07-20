@@ -1,0 +1,2 @@
+python -m nexus_n3_tests.usb_camera.test_1_discover
+python -m nexus_n3_tests.usb_camera.test_2_start_and_stop

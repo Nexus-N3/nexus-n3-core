@@ -1,0 +1,6 @@
+---
+- name: Deploy nexus-n3-core worker nodes
+  hosts: "{{ nexus_deploy_hosts | default('workers') }}"
+  become: true
+  roles:
+    - role: nexus_release

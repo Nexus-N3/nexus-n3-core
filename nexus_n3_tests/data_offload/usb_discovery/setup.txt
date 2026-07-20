@@ -1,0 +1,99 @@
+remove fstab
+sudo nano /etc/fstab
+UUID=A416579C16576DF4  /exports  ntfs-3g  defaults,uid=1000,gid=1000,umask=000,allow_other,n>
+
+
+
+# this stops the password requirement
+sudo visudo -f /etc/sudoers.d/nexus-n3 (drop in file)
+mike ALL=(root) NOPASSWD: \
+    /bin/mount -t nfs *, \
+    /bin/mount --bind *, \
+    /bin/umount /exports
+
+sudo -l (verify)
+
+Matching Defaults entries for mike on Nexus-N3-App-Server:
+    env_reset, mail_badpass,
+    secure_path=/usr/local/sbin\:/usr/local/bin\:/usr/sbin\:/usr/bin\:/sbin\:/bin\:/snap/bin,
+    use_pty
+
+User mike may run the following commands on Nexus-N3-App-Server:
+    (ALL : ALL) ALL
+    (root) NOPASSWD: /bin/mount -t nfs *, /bin/mount --bind *, /bin/umount /exports
+mike@rs-app-server:~$ 
+
+
+# this isnt quite right
+
+# 1. Identify the USB disk
+lsblk -f
+sudo blkid /dev/sdX1        # replace sdX1 with your actual device (e.g., sda1)
+
+# 2. Prepare /exports for mounting
+sudo mkdir -p /exports
+sudo chown mike:mike /exports
+
+# 3. Update /etc/fstab to mount USB to /exports
+sudo nano /etc/fstab
+# Add or update line:
+# UUID=A416579C16576DF4  /exports  ntfs-3g  defaults,uid=1000,gid=1000,dmask=002,fmask=113,allow_other,nofail 0 0
+
+# 4. Unmount any existing mounts
+sudo umount -l /exports 2>/dev/null
+sudo umount -l "/media/mike/New Volume" 2>/dev/null
+
+# 5. Mount all fstab entries
+sudo mount -a
+mount | grep /exports
+
+# 6. Prepare nexus_n3_outputs folder on the USB
+mkdir -p /exports/nexus_n3_outputs
+sudo chown -R mike:mike /exports/nexus_n3_outputs
+
+# 7. Test write permissions
+touch /exports/nexus_n3_outputs/test.txt
+ls -l /exports/nexus_n3_outputs
+
+# 8. Setup NFS server on master node
+sudo apt install -y nfs-kernel-server
+sudo mkdir -p /exports/nexus_n3_outputs
+sudo chown -R mike:mike /exports/nexus_n3_outputs
+
+# 9. Bind the USB folder (if using old mount path temporarily)
+sudo mount --bind "/media/mike/New Volume/nexus_n3_outputs" /exports/nexus_n3_outputs
+
+# 10. Configure NFS exports
+sudo nano /etc/exports
+# Add line:
+# /exports/nexus_n3_outputs *(rw,sync,no_subtree_check,no_root_squash)
+
+# 11. Apply NFS export settings and restart server
+sudo exportfs -ra
+sudo systemctl restart nfs-kernel-server
+
+
+Now the USB disk / folder is shared
+
+
+## fix ?
+
+lsblk -f
+sudo umount "/media/mike/New Volume"
+sudo mount /dev/sda1 /exports/nexus_n3_outputs
+sudo chown -R mike:mike /exports/nexus_n3_outputs
+
+# attempt to reset everything
+pkill -f nexus_n3
+pkill -f python
+
+safer python option
+ps aux | grep python
+kill -9 <pid>
+
+ss -ltnp | grep 6000
+ss -ltnp | grep 5556
+kill -9 <pid>
+rm -rf /tmp/zmq*
+reset
+

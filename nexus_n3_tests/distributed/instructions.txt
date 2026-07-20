@@ -1,0 +1,15 @@
+
+
+python -m nexus_n3_tests.distributed.test_1_node_ip_discover
+python -m nexus_n3_tests.distributed.test_2_node_advertise
+python -m nexus_n3_tests.distributed.test_3_master
+python -m nexus_n3_tests.distributed.test_4_worker 192.168.55.1 worker_A
+
+-- main regsitration example / test
+
+in terminal 1:
+
+python -m nexus_n3_tests.distributed.auto_discovery.master
+
+in terminal 2:
+python -m nexus_n3_tests.distributed.auto_discovery.worker node_A

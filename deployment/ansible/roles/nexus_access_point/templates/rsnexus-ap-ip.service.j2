@@ -1,0 +1,13 @@
+[Unit]
+Description=Nexus N3 Core AP IP configuration
+After=network.target
+Before=hostapd.service dnsmasq.service
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/ip link set {{ nexus_ap_interface }} up
+ExecStart=/sbin/ip addr replace {{ nexus_ap_address }} dev {{ nexus_ap_interface }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

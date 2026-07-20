@@ -1,0 +1,2 @@
+python -m nexus_n3_tests.plugins.movesense.test_1_stream
+python -m nexus_n3_tests.plugins.movesense.test_2_start_and_stop

@@ -1,0 +1,143 @@
+- name: Install kiosk packages
+  ansible.builtin.apt:
+    name: "{{ nexus_kiosk_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Configure GDM autologin
+  ansible.builtin.ini_file:
+    path: /etc/gdm3/custom.conf
+    section: daemon
+    option: AutomaticLoginEnable
+    value: "true"
+    create: true
+  when: nexus_kiosk_autologin
+
+- name: Configure GDM autologin user
+  ansible.builtin.ini_file:
+    path: /etc/gdm3/custom.conf
+    section: daemon
+    option: AutomaticLogin
+    value: "{{ nexus_kiosk_user }}"
+    create: true
+  when: nexus_kiosk_autologin
+
+- name: Keep Wayland enabled in GDM
+  ansible.builtin.lineinfile:
+    path: /etc/gdm3/custom.conf
+    regexp: '^#?WaylandEnable='
+    line: '#WaylandEnable=false'
+    create: true
+  when: nexus_kiosk_autologin
+
+- name: Disable GNOME idle/lock settings for kiosk user
+  ansible.builtin.command: "dbus-launch gsettings set {{ item.schema }} {{ item.key }} {{ item.value }}"
+  become: true
+  become_user: "{{ nexus_kiosk_user }}"
+  environment:
+    HOME: "/home/{{ nexus_kiosk_user }}"
+  loop:
+    - { schema: "org.gnome.desktop.session", key: "idle-delay", value: "0" }
+    - { schema: "org.gnome.desktop.screensaver", key: "lock-enabled", value: "false" }
+    - { schema: "org.gnome.desktop.screensaver", key: "ubuntu-lock-on-suspend", value: "false" }
+    - { schema: "org.gnome.settings-daemon.plugins.power", key: "idle-dim", value: "false" }
+    - { schema: "org.gnome.settings-daemon.plugins.power", key: "sleep-inactive-ac-type", value: "'nothing'" }
+    - { schema: "org.gnome.settings-daemon.plugins.power", key: "sleep-inactive-battery-type", value: "'nothing'" }
+  when: nexus_kiosk_disable_sleep
+
+- name: Mask sleep targets to prevent suspend/hibernate
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    masked: true
+    state: stopped
+  loop:
+    - sleep.target
+    - suspend.target
+    - hibernate.target
+    - hybrid-sleep.target
+  when: nexus_kiosk_disable_sleep
+
+- name: Remove legacy autostart entry
+  ansible.builtin.file:
+    path: "/home/{{ nexus_kiosk_user }}/.config/autostart/localhost9000.desktop"
+    state: absent
+  when: nexus_kiosk_remove_autostart
+
+- name: Ensure kiosk script directory exists
+  ansible.builtin.file:
+    path: "/home/{{ nexus_kiosk_user }}/.local/bin"
+    state: directory
+    owner: "{{ nexus_kiosk_user }}"
+    group: "{{ nexus_kiosk_user }}"
+    mode: "0755"
+
+- name: Install kiosk launcher script
+  ansible.builtin.copy:
+    dest: "/home/{{ nexus_kiosk_user }}/.local/bin/nexusn3-kiosk.sh"
+    owner: "{{ nexus_kiosk_user }}"
+    group: "{{ nexus_kiosk_user }}"
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      # Wait briefly for the portal to be ready, then let systemd restart if needed.
+      for i in {1..5}; do
+        systemctl --user is-active --quiet xdg-desktop-portal-gnome.service && break
+        systemctl --user start xdg-desktop-portal-gnome.service >/dev/null 2>&1 || true
+        sleep 1
+      done
+
+      # Block until the kiosk target is reachable so boot order does not matter.
+      until curl -fsS "{{ nexus_kiosk_url }}" >/dev/null; do
+        sleep 2
+      done
+
+      exec {{ nexus_kiosk_browser_cmd }} {% for arg in nexus_kiosk_browser_args %}{{ arg }} {% endfor %}{{ nexus_kiosk_url }}
+
+- name: Ensure user systemd directory exists
+  ansible.builtin.file:
+    path: "/home/{{ nexus_kiosk_user }}/.config/systemd/user"
+    state: directory
+    owner: "{{ nexus_kiosk_user }}"
+    group: "{{ nexus_kiosk_user }}"
+    mode: "0755"
+
+- name: Install kiosk user service
+  ansible.builtin.copy:
+    dest: "/home/{{ nexus_kiosk_user }}/.config/systemd/user/nexusn3-kiosk.service"
+    owner: "{{ nexus_kiosk_user }}"
+    group: "{{ nexus_kiosk_user }}"
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Nexus N3 Core kiosk (Chromium)
+      After=graphical-session.target xdg-desktop-portal-gnome.service
+      Wants=xdg-desktop-portal-gnome.service
+      PartOf=graphical-session.target
+
+      [Service]
+      Type=simple
+      ExecStart=%h/.local/bin/nexusn3-kiosk.sh
+      Restart=always
+      RestartSec=3
+
+      [Install]
+      WantedBy=graphical-session.target
+
+- name: Ensure user graphical-session target wants directory exists
+  ansible.builtin.file:
+    path: "/home/{{ nexus_kiosk_user }}/.config/systemd/user/graphical-session.target.wants"
+    state: directory
+    owner: "{{ nexus_kiosk_user }}"
+    group: "{{ nexus_kiosk_user }}"
+    mode: "0755"
+
+- name: Enable kiosk user service on login
+  ansible.builtin.file:
+    src: "../nexusn3-kiosk.service"
+    dest: "/home/{{ nexus_kiosk_user }}/.config/systemd/user/graphical-session.target.wants/nexusn3-kiosk.service"
+    state: link
+    owner: "{{ nexus_kiosk_user }}"
+    group: "{{ nexus_kiosk_user }}"

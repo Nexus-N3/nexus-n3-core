@@ -1,0 +1,239 @@
+RS_Nexus_OS: Node Discovery, Registration, and Ethernet Architecture
+Author: Mike Crooks
+Date: 2026-01-07
+
+------------------------------------------------------------
+1. Introduction
+
+This document explains how to set up multiple Jetson nodes communicating
+over a direct Ethernet connection for nexus_n3_core. It covers:
+
+- Direct Ethernet networking
+- Master and worker roles
+- BLE adapter ownership
+- Dynamic IP discovery
+- Subject assignment
+- ZeroMQ-based registration and event routing
+- mDNS-based master discovery
+
+------------------------------------------------------------
+2. Direct Ethernet Setup
+
+2.1 Access From PC to Jetson
+
+- Connect Jetson to PC with standard Ethernet cable.
+- Assign static IPs or rely on link-local addresses (169.254.x.x).
+- Use SSH for shell access:
+    ssh jetson_user@192.168.55.2
+- Use SCP / rsync for file transfer.
+- Optionally use VNC or X11 for GUI access.
+- Ethernet provides network connectivity only; does not merge systems.
+
+2.2 Static IP Recommendation
+
+Device | IP           | Netmask
+------ | ------------ | -------
+PC     | 192.168.55.1 | 255.255.255.0
+Jetson | 192.168.55.2 | 255.255.255.0
+
+------------------------------------------------------------
+3. BLE Adapter Assignment Across Jetsons
+
+- BLE devices are exclusive per host.
+- Avoid static BLE addresses; assign subjects to nodes instead.
+- Each Jetson manages BLE adapters for its subjects only.
+- BLE discovery happens locally per node:
+
+```python
+async def on_ble_device_found(device):
+    for subject in local_subjects:
+        if subject.matches(device):
+            subject.attach_sensor(device)
+
+
+Master handles subject assignment and system event publishing.
+
+Master and Worker Architecture
+
+4.1 Roles
+
+Capability	Master	Worker
+ZeroMQ PUB bus	✅	❌
+Subject assignment	✅	❌
+Client connections	✅	❌
+System aggregation	✅	❌
+BLE adapters	Optional	✅
+Compute manager	Optional	✅
+
+Same codebase can run in master or worker mode using a --role flag.
+
+4.2 Worker Registration
+
+Worker discovers its own IP.
+
+Worker discovers master IP (initially hardcoded or via mDNS).
+
+Worker registers with master over ZeroMQ REQ/REP:
+
+req.send_json({
+    "type": "REGISTER",
+    "node_id": NODE_ID,
+    "ip": my_ip
+})
+
+
+Master maintains a NodeRegistry:
+
+registry.register(node_id, ip)
+
+
+NodeRegistry Class
+
+import time
+
+class NodeRegistry:
+    def __init__(self):
+        self.nodes = {}
+
+    def register(self, node_id, ip):
+        self.nodes[node_id] = {
+            "ip": ip,
+            "last_seen": time.time()
+        }
+
+    def get_nodes(self):
+        return self.nodes
+
+    def heartbeat(self, node_id):
+        if node_id in self.nodes:
+            self.nodes[node_id]["last_seen"] = time.time()
+
+
+Dynamic IP Discovery
+
+6.1 Discover Own IP
+
+import socket
+
+def get_local_ip(target_ip="8.8.8.8"):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect((target_ip, 80))
+        return s.getsockname()[0]
+    finally:
+        s.close()
+
+
+6.2 Discover Master via mDNS
+
+Master Advertisement:
+
+from zeroconf import Zeroconf, ServiceInfo
+from util import get_local_ip
+import socket
+
+ip = socket.inet_aton(get_local_ip())
+info = ServiceInfo(
+    "_nexusn3._tcp.local.",
+    "nexus-n3-master._nexusn3._tcp.local.",
+    addresses=[ip],
+    port=5555,
+)
+zc = Zeroconf()
+zc.register_service(info)
+
+
+Worker Discovery:
+
+from zeroconf import Zeroconf, ServiceBrowser
+import socket
+import time
+
+class MasterListener:
+    def __init__(self):
+        self.master_ip = None
+        self.master_port = None
+
+    def add_service(self, zc, type_, name):
+        info = zc.get_service_info(type_, name)
+        if info:
+            self.master_ip = socket.inet_ntoa(info.addresses[0])
+            self.master_port = info.port
+
+def discover_master(timeout=5):
+    zc = Zeroconf()
+    listener = MasterListener()
+    ServiceBrowser(zc, "_nexusn3._tcp.local.", listener)
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        if listener.master_ip:
+            return listener.master_ip, listener.master_port
+        time.sleep(0.1)
+    raise RuntimeError("Master not found via mDNS")
+
+
+Master / Worker Full Test Example
+
+7.1 Master
+
+import zmq
+from registry import NodeRegistry
+from mdns_master import advertise_master
+from util import get_local_ip
+
+PORT = 5555
+zeroconf = advertise_master(PORT)
+ctx = zmq.Context()
+rep = ctx.socket(zmq.REP)
+rep.bind(f"tcp://*:{PORT}")
+
+registry = NodeRegistry()
+while True:
+    msg = rep.recv_json()
+    if msg["type"] == "REGISTER":
+        registry.register(msg["node_id"], msg["ip"])
+        rep.send_json({"status": "OK"})
+
+
+7.2 Worker
+
+import zmq
+from util import get_local_ip
+from mdns_worker import discover_master
+import sys
+
+NODE_ID = sys.argv[1]
+
+my_ip = get_local_ip()
+master_ip, master_port = discover_master()
+ctx = zmq.Context()
+req = ctx.socket(zmq.REQ)
+req.connect(f"tcp://{master_ip}:{master_port}")
+req.send_json({"type": "REGISTER", "node_id": NODE_ID, "ip": my_ip})
+reply = req.recv_json()
+print(f"[WORKER {NODE_ID}] Reply: {reply}")
+
+
+Next Steps
+
+Add heartbeats to NodeRegistry
+
+Add GET_NODES and GET_SUBJECTS messages
+
+Integrate BLE discovery and adapters
+
+Integrate subject assignment and compute manager
+
+Handle master restart + worker re-registration
+
+Key Takeaways
+
+Ethernet only provides connectivity; nodes remain separate processes.
+
+Master manages subject assignment and ZeroMQ PUB bus.
+
+Workers run local BLE adapters, compute, and register with master.
+
+mDNS allows master discovery without hardcoding IPs.
+
+NodeRegistry is the foundation for dynamic, multi-node nexus_n3_core.

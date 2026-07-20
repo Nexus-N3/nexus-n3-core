@@ -1,0 +1,11 @@
+---
+- name: Restart Nexus N3 Core service
+  hosts: "{{ nexus_restart_hosts | default('master') }}"
+  become: true
+  vars:
+    nexus_service_name: nexus-n3
+  tasks:
+    - name: Restart nexus-n3 systemd service
+      ansible.builtin.systemd:
+        name: "{{ nexus_service_name }}"
+        state: restarted

@@ -1,0 +1,71 @@
+- name: Ensure mount directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ nexus_usb_main_mount }}"
+    - "{{ nexus_usb_gui_mount }}"
+
+- name: Install hotplug script
+  ansible.builtin.template:
+    src: nexusn3-hotplug.sh.j2
+    dest: /usr/local/bin/nexusn3-hotplug.sh
+    mode: "0755"
+
+- name: Install safe unplug script
+  ansible.builtin.template:
+    src: nexusn3-usb-safe-unplug.sh.j2
+    dest: /usr/local/bin/nexusn3-usb-safe-unplug.sh
+    mode: "0755"
+
+- name: Allow service user to run USB helper scripts without a password
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/nexusn3-usb
+    mode: "0440"
+    validate: "/usr/sbin/visudo -cf %s"
+    content: |
+      {{ ansible_user }} ALL=(root) NOPASSWD: /usr/local/bin/nexusn3-hotplug.sh
+      {{ ansible_user }} ALL=(root) NOPASSWD: /usr/local/bin/nexusn3-usb-safe-unplug.sh
+
+- name: Configure USB udev rules
+  ansible.builtin.copy:
+    dest: /etc/udev/rules.d/99-nexusn3-usb.rules
+    mode: "0644"
+    content: |
+      ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_FS_LABEL}=="{{ nexus_usb_disk_label }}", RUN+="/usr/bin/systemd-run --no-block --collect /usr/local/bin/nexusn3-hotplug.sh add"
+      ACTION=="remove", SUBSYSTEM=="block", ENV{DEVTYPE}=="partition", ENV{ID_FS_LABEL}=="{{ nexus_usb_disk_label }}", RUN+="/usr/bin/systemd-run --no-block --collect /usr/local/bin/nexusn3-hotplug.sh remove"
+  notify:
+    - Reload udev rules
+    - Trigger udev rules
+
+- name: Ensure NFS export entry exists
+  ansible.builtin.lineinfile:
+    path: /etc/exports
+    line: "{{ nexus_usb_exports_line }}"
+    state: present
+    create: true
+  notify: Reload exports
+
+- name: Check ufw status for NFS rules
+  ansible.builtin.command: ufw status
+  register: nexus_usb_ufw_status
+  changed_when: false
+  failed_when: false
+
+- name: Allow NFS ports through ufw
+  ansible.builtin.command: "ufw allow {{ item }}"
+  register: nexus_usb_ufw_allow
+  changed_when: "'Skipping' not in nexus_usb_ufw_allow.stdout"
+  when: "'Status: active' in nexus_usb_ufw_status.stdout"
+  loop:
+    - 111/tcp
+    - 111/udp
+    - 2049/tcp
+    - 2049/udp
+
+- name: Attempt initial mount if disk is present
+  ansible.builtin.command: /usr/local/bin/nexusn3-hotplug.sh add
+  register: nexus_usb_hotplug_mount
+  failed_when: false
+  changed_when: nexus_usb_hotplug_mount.rc == 0

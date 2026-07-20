@@ -1,0 +1,36 @@
+- name: Install dependency packages
+  ansible.builtin.apt:
+    name: "{{ nexus_dependencies_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check python alternative
+  ansible.builtin.command: update-alternatives --query python
+  register: python_alternatives_status
+  failed_when: false
+  changed_when: false
+
+- name: Install python alternative
+  ansible.builtin.command: update-alternatives --install /usr/bin/python python /usr/bin/python3 10
+  register: python_alternatives_install
+  when: python_alternatives_status.rc != 0
+
+- name: Set python alternative to python3
+  ansible.builtin.command: update-alternatives --set python /usr/bin/python3
+  when: python_alternatives_status.rc == 0 or python_alternatives_install.changed
+
+- name: Check pip alternative
+  ansible.builtin.command: update-alternatives --query pip
+  register: pip_alternatives_status
+  failed_when: false
+  changed_when: false
+
+- name: Install pip alternative
+  ansible.builtin.command: update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 10
+  register: pip_alternatives_install
+  when: pip_alternatives_status.rc != 0
+
+- name: Set pip alternative to pip3
+  ansible.builtin.command: update-alternatives --set pip /usr/bin/pip3
+  when: pip_alternatives_status.rc == 0 or pip_alternatives_install.changed

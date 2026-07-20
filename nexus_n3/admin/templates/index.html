@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% set autorefresh = 5 %}
+
+{% block content %}
+<section class="card">
+  <h1>System Status</h1>
+  <p class="muted">Mode: {{ role }} · Site: {{ site or "unknown" }}</p>
+  <div class="grid status-grid">
+    <div class="tile uptime-tile">
+      <div class="label">Uptime</div>
+      <div class="value" id="uptime" data-uptime="{{ server_status.uptime }}">{{ server_status.uptime }}s</div>
+    </div>
+    <div class="tile">
+      <div class="label">Gateway</div>
+      <div class="value">{{ gateway or "zeromq_gateway" }} (local)</div>
+    </div>
+    <div class="tile">
+      <div class="label">Remote Bridge</div>
+      {% if bridge %}
+        {% set bridge_status = server_status.bridges.get(bridge, {}) %}
+        <div class="value">{{ bridge }} ({{ bridge_scope }})</div>
+        {% if bridge_status.enabled %}
+          <div class="value-sub">
+            {% if bridge_status.running and bridge_status.connected %}
+              Running
+            {% elif bridge_status.running %}
+              Started
+            {% else %}
+              Stopped
+            {% endif %}
+            {% if bridge_status.device_id %}
+              · Device {{ bridge_status.device_id }}
+            {% endif %}
+            {% if bridge_status.remote_control_enabled %}
+              · remote control enabled
+            {% elif bridge == "azure_bridge" %}
+              · local primary
+            {% endif %}
+          </div>
+          {% if bridge == "azure_bridge" and can_manage_azure_bridge %}
+            <div class="actions azure-bridge-actions">
+              {% if bridge_status.remote_control_enabled %}
+                <form method="post" action="/server/azure-bridge/control">
+                  <input type="hidden" name="action" value="disable" />
+                  <button class="button danger" type="submit">Disable Remote Control</button>
+                </form>
+              {% else %}
+                <form method="post" action="/server/azure-bridge/control">
+                  <input type="hidden" name="action" value="enable" />
+                  <button class="button" type="submit">Enable Remote Control</button>
+                </form>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="value-sub">Disabled</div>
+        {% endif %}
+      {% else %}
+        <div class="value">Disabled</div>
+      {% endif %}
+    </div>
+    <div class="tile">
+      <div class="label">Server Status</div>
+      <div class="value">{{ "Running" if server_status.status == "running" else server_status.status }}</div>
+      <div class="value-sub">BLE backend: {{ server_status.ble_backend_label or "bleak" }}</div>
+      <div class="value-sub">
+        BLE transport:
+        {% if server_status.ble_backend_status.status == "ready" %}
+          Ready
+        {% else %}
+          Unavailable
+        {% endif %}
+      </div>
+      {% if server_status.ble_backend_status.detail %}
+        <div class="value-sub">{{ server_status.ble_backend_status.detail }}</div>
+      {% endif %}
+    </div>
+    <div class="tile usb-tile">
+      <div class="label">USB SSD</div>
+      {% if server_status.usb_disk.present %}
+        <div class="value">Attached</div>
+        <div class="value-sub">{{ server_status.usb_disk.path }}</div>
+      {% else %}
+        <div class="value">Not detected</div>
+        <div class="value-sub">/exports/nexus_n3_data/nexus_n3_outputs</div>
+      {% endif %}
+      {% if usb_action_status %}
+        {% if usb_action_status == "mount_success" %}
+          <div class="value-sub">Mount complete.</div>
+        {% elif usb_action_status == "unmount_success" %}
+          <div class="value-sub">Safe unmount complete.</div>
+        {% elif usb_action_status == "mount_failed" %}
+          <div class="value-sub">Mount failed.</div>
+        {% elif usb_action_status == "unmount_failed" %}
+          <div class="value-sub">Safe unmount failed.</div>
+        {% endif %}
+      {% endif %}
+      {% if can_manage_usb_disk %}
+        <div class="actions usb-actions">
+          {% if server_status.usb_disk.present %}
+            <form method="post" action="/server/usb">
+              <input type="hidden" name="action" value="unmount" />
+              <button class="button danger" type="submit" onclick="return confirm('Safely unmount the USB disk?');">Safe Unmount</button>
+            </form>
+          {% else %}
+            <form method="post" action="/server/usb">
+              <input type="hidden" name="action" value="mount" />
+              <button class="button" type="submit">Mount Disk</button>
+            </form>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Nodes</h2>
+  {% if nodes %}
+    <ul class="list">
+      {% for node in nodes %}
+        <li>
+          {{ node.node_id }} · {{ node.role }} · {{ node.state }}
+          {% if node.last_seen_age is not none %}
+            · last {{ node.last_seen_age }}s
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No node data available.</p>
+  {% endif %}
+</section>
+
+{% if can_restart %}
+  <section class="card">
+    <h2>Actions</h2>
+    <div class="actions">
+      {% if bridges %}
+        <form class="gateway-form" method="post" action="/server/switch-bridge">
+          <label for="bridge">Switch Remote Bridge</label>
+          <div class="gateway-controls">
+            <select name="bridge" id="bridge">
+              <option value="__none__" {% if not bridge %}selected{% endif %}>disabled</option>
+              {% for b in bridges %}
+                {% set scope = bridge_scopes.get(b, "unknown") %}
+                <option value="{{ b }}" {% if b == bridge %}selected{% endif %}>{{ b }} ({{ scope }})</option>
+              {% endfor %}
+            </select>
+            <button class="button" type="submit" onclick="return confirm('Switch remote bridge and restart the server?');">Apply</button>
+          </div>
+        </form>
+      {% endif %}
+      <form class="restart-form" method="post" action="/server/restart">
+        <button class="button danger" type="submit" onclick="return confirm('Restart the Nexus server?');">Restart Server</button>
+      </form>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}

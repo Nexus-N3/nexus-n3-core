@@ -1,0 +1,5 @@
+nexus_worker_nfs_server: nexus-n3-master.local
+nexus_worker_nfs_export: /exports/nexus_n3_data
+nexus_worker_mount_point: /exports/nexus_n3_data
+nexus_worker_nfs_opts: rw,_netdev,x-systemd.automount,vers=4,proto=tcp
+nexus_worker_mount_state: present

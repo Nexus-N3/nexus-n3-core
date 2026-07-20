@@ -1,0 +1,9 @@
+---
+- name: Deploy plugin bundles only
+  hosts: "{{ nexus_deploy_hosts | default('master:workers:ai_nodes') }}"
+  become: true
+  tasks:
+    - name: Install role-appropriate plugin bundles only
+      ansible.builtin.include_role:
+        name: nexus_release
+        tasks_from: plugin_bundles.yml

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Nexus N3 Core Admin</title>
+  <link rel="stylesheet" href="/static/admin.css?v=13" />
+</head>
+<body class="{{ display_profile_class | default('') }}" data-autorefresh="{{ autorefresh | default(0) }}">
+  {% set plugin_install_status = request.query_params.get("plugin_install") %}
+  {% set plugin_install_message = request.query_params.get("plugin_install_message") %}
+  <header class="header">
+    <div class="brand">Nexus N3 Core Admin - release v{{ release_version | default("unknown") }}</div>
+    <div class="meta">{{ role | upper }}{% if site %} · {{ site }}{% endif %}</div>
+  </header>
+
+  <nav class="nav">
+    <a href="/" class="nav-link">Dashboard</a>
+    <button type="button" class="nav-link nav-button" id="open-plugin-upload">Upload Plugin</button>
+    <a href="/capabilities" class="nav-link">Capabilities</a>
+    <a href="/outputs" class="nav-link">Outputs</a>
+     <a href="/logs" class="nav-link">Logs</a>
+    <a href="/docs" class="nav-link">Docs</a>
+  </nav>
+
+  <main class="content">
+    {% if plugin_install_status and plugin_install_message %}
+      <div class="notice {% if plugin_install_status == 'error' %}warn{% endif %}">
+        {{ plugin_install_message }}
+      </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <div class="modal-shell" id="plugin-upload-modal" hidden>
+    <div class="modal-backdrop" data-close-plugin-upload></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="plugin-upload-title">
+      <div class="modal-header">
+        <div>
+          <h2 id="plugin-upload-title">Install Plugin Bundle</h2>
+          <p class="muted">Select a built <code>.rsnxplugin</code> file and install it into this system.</p>
+        </div>
+        <button type="button" class="button-inline" data-close-plugin-upload>Close</button>
+      </div>
+      <form method="post" action="/plugins/install" enctype="multipart/form-data" class="plugin-upload-form">
+        <input type="hidden" name="next_path" value="{{ request.url.path }}" />
+        <label class="file-field">
+          <span class="label">Plugin Bundle</span>
+          <input type="file" name="bundle" accept=".rsnxplugin" required />
+        </label>
+        <p class="muted">Only files with the <code>.rsnxplugin</code> extension are allowed.</p>
+        <p class="notice plugin-install-progress" id="plugin-install-progress" hidden>
+          Installing plugin bundle. This can take a little while while the plugin environment is prepared.
+        </p>
+        <div class="actions">
+          <button class="button" type="submit" id="plugin-install-submit">Install Plugin</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const refreshSeconds = parseInt(document.body.dataset.autorefresh || "0", 10);
+    if (refreshSeconds > 0) {
+      setInterval(() => window.location.reload(), refreshSeconds * 1000);
+    }
+
+    const uptimeEl = document.getElementById("uptime");
+    if (uptimeEl) {
+      const startUptime = parseInt(uptimeEl.dataset.uptime || "0", 10);
+      let elapsed = 0;
+      setInterval(() => {
+        elapsed += 1;
+        uptimeEl.textContent = `${startUptime + elapsed}s`;
+      }, 1000);
+    }
+
+    const pluginUploadModal = document.getElementById("plugin-upload-modal");
+    const pluginUploadOpen = document.getElementById("open-plugin-upload");
+    const pluginUploadCloseItems = document.querySelectorAll("[data-close-plugin-upload]");
+    const pluginUploadForm = document.querySelector(".plugin-upload-form");
+    const pluginInstallSubmit = document.getElementById("plugin-install-submit");
+    const pluginInstallProgress = document.getElementById("plugin-install-progress");
+
+    const openPluginUpload = () => {
+      if (!pluginUploadModal) {
+        return;
+      }
+      pluginUploadModal.hidden = false;
+      document.body.classList.add("modal-open");
+    };
+
+    const closePluginUpload = () => {
+      if (!pluginUploadModal) {
+        return;
+      }
+      pluginUploadModal.hidden = true;
+      document.body.classList.remove("modal-open");
+    };
+
+    if (pluginUploadOpen) {
+      pluginUploadOpen.addEventListener("click", openPluginUpload);
+    }
+
+    pluginUploadCloseItems.forEach((item) => {
+      item.addEventListener("click", closePluginUpload);
+    });
+
+    if (pluginUploadForm) {
+      pluginUploadForm.addEventListener("submit", () => {
+        if (pluginInstallProgress) {
+          pluginInstallProgress.hidden = false;
+        }
+        if (pluginInstallSubmit) {
+          pluginInstallSubmit.disabled = true;
+          pluginInstallSubmit.textContent = "Installing...";
+        }
+      });
+    }
+
+  </script>
+</body>
+</html>

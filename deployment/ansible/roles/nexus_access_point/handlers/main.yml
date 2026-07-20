@@ -1,0 +1,9 @@
+- name: Restart hostapd
+  ansible.builtin.service:
+    name: hostapd
+    state: restarted
+
+- name: Restart dnsmasq
+  ansible.builtin.service:
+    name: dnsmasq
+    state: restarted

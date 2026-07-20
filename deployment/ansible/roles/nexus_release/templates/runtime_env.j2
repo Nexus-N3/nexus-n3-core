@@ -1,0 +1,42 @@
+# nexus-n3-core shared runtime environment
+NEXUS_N3_NEIA_APPS_CATALOG_URL={{ nexus_neia_apps_catalog_url }}
+NEXUS_ADMIN_DISPLAY_PROFILE={{ nexus_admin_display_profile }}
+NEXUS_PERF_LOG={{ 1 if nexus_perf_log | bool else 0 }}
+
+NEXUS_N3_PLUGIN_ROOT={{ nexus_plugin_root }}
+NEXUS_N3_PLUGIN_USE_SYSTEM_SITE_PACKAGES={{ 1 if nexus_plugin_use_system_site_packages | bool else 0 }}
+NEXUS_N3_PLUGIN_CATALOG_ROOT={{ nexus_plugin_catalog_root }}
+
+BLE_BACKEND={{ nexus_ble_backend }}
+GATEWAY_SERIAL_PORT={{ nexus_ble_gateway_serial_port }}
+GATEWAY_BAUDRATE={{ nexus_ble_gateway_baudrate }}
+GATEWAY_PROTOCOL_VERSION={{ nexus_ble_gateway_protocol_version }}
+GATEWAY_CONNECT_TIMEOUT_S={{ nexus_ble_gateway_connect_timeout_s }}
+GATEWAY_SUBSCRIBE_TIMEOUT_S={{ nexus_ble_gateway_subscribe_timeout_s }}
+GATEWAY_WRITE_TIMEOUT_S={{ nexus_ble_gateway_write_timeout_s }}
+GATEWAY_READ_TIMEOUT_S={{ nexus_ble_gateway_read_timeout_s }}
+
+ZEROMQ_CMD_BIND={{ nexus_zeromq_cmd_bind }}
+ZEROMQ_EVENT_BIND={{ nexus_zeromq_event_bind }}
+
+AMQP_URL={{ nexus_amqp_url }}
+LAVINMQ_BRIDGE_LOCAL_CMD_ADDR={{ nexus_lavinmq_bridge_local_cmd_addr }}
+LAVINMQ_BRIDGE_LOCAL_EVT_ADDR={{ nexus_lavinmq_bridge_local_evt_addr }}
+
+AZURE_IOT_CONNECTION_STRING={{ nexus_azure_iot_connection_string }}
+AZURE_IOT_DEVICE_ID={{ nexus_azure_iot_device_id }}
+AZURE_IOT_CUSTOMER_ID={{ nexus_customer_id }}
+AZURE_IOT_SITE_ID={{ nexus_site_id }}
+AZURE_IOT_SITE_NAME={{ nexus_site_name }}
+AZURE_IOT_SITE={{ nexus_site }}
+AZURE_IOT_UPLOAD_CONTAINER={{ nexus_azure_iot_upload_container }}
+AZURE_BRIDGE_LOCAL_CMD_ADDR={{ nexus_azure_bridge_local_cmd_addr }}
+AZURE_BRIDGE_LOCAL_EVT_ADDR={{ nexus_azure_bridge_local_evt_addr }}
+AZURE_BRIDGE_REMOTE_CONTROL_ENABLED={{ 1 if nexus_azure_bridge_remote_control | bool else 0 }}
+AZURE_BRIDGE_STATE_FILE={{ nexus_azure_bridge_state_file }}
+AZURE_BRIDGE_USE_WEBSOCKETS={{ 1 if nexus_azure_bridge_use_websockets | bool else 0 }}
+AZURE_BRIDGE_KEEP_ALIVE={{ nexus_azure_bridge_keep_alive }}
+AZURE_BRIDGE_CONNECTION_RETRY_INTERVAL={{ nexus_azure_bridge_connection_retry_interval }}
+AZURE_BRIDGE_UPLOAD_RETRY_INTERVAL={{ nexus_azure_bridge_upload_retry_interval }}
+
+NEXUS_N3_ROBOT_CONFIG={{ nexus_robot_config_path }}

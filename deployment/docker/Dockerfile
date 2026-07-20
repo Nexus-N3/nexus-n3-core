@@ -1,0 +1,19 @@
+FROM python:3.10-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1
+ENV NEXUS_N3_PLUGIN_ROOT=/opt/nexus-n3-plugins
+ENV NEXUS_N3_PLUGIN_USE_SYSTEM_SITE_PACKAGES=1
+
+WORKDIR /app
+
+COPY nexus-n3-core /app/nexus-n3-core
+COPY nexus-n3-plugin-tooling /app/nexus-n3-plugin-tooling
+
+WORKDIR /app/nexus-n3-core
+
+RUN python -m pip install --upgrade pip setuptools wheel build \
+    && python -m pip install -r requirements.txt \
+    && python -m pip install -e .
+
+ENTRYPOINT ["/bin/bash", "/app/nexus-n3-core/deployment/docker/entrypoint.sh"]

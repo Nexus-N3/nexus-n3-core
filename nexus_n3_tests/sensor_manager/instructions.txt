@@ -1,0 +1,13 @@
+python -m nexus_n3.sensor_manager.tests.test_1_manager_loop
+python -m nexus_n3.sensor_manager.tests.test_2_discover_and_connect
+python -m nexus_n3.sensor_manager.tests.test_3_enable_notifications
+python -m nexus_n3.sensor_manager.tests.test_4_identify
+python -m nexus_n3.sensor_manager.tests.test_5_start_stop
+python -m nexus_n3.sensor_manager.tests.test_6_logger
+python -m nexus_n3_tests.sensor_manager.test_7_packet_monitor --sensor-count 1
+python -m nexus_n3_tests.sensor_manager.test_7_packet_monitor --sensor-count 2
+python -m nexus_n3_tests.sensor_manager.test_7_packet_monitor --sensor-count 4
+python -m nexus_n3_tests.sensor_manager.test_7_packet_monitor --sensor-count 6
+python -m nexus_n3_tests.sensor_manager.test_7_packet_monitor --sensor-count 7
+python -m nexus_n3_tests.sensor_manager.test_7_packet_monitor --sensor-count 8
+python -m nexus_n3_tests.sensor_manager.test_8_startup_retry_monitor --sensor-count 6

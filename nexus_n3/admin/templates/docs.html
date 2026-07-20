@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Documentation</h1>
+  {% if available %}
+    <div class="docs-frame">
+      <iframe src="/docs-static/index.html" title="Nexus N3 Core Docs"></iframe>
+    </div>
+  {% else %}
+    <p class="muted">Docs not built. Run <code>make html</code> in the docs folder.</p>
+  {% endif %}
+</section>
+{% endblock %}

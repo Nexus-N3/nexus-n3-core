@@ -1,0 +1,23 @@
+- name: Ensure NFS client tools are installed
+  ansible.builtin.apt:
+    name: nfs-common
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure mount point exists
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /exports
+    - "{{ nexus_worker_mount_point }}"
+
+- name: Configure NFS automount to master
+  ansible.builtin.mount:
+    path: "{{ nexus_worker_mount_point }}"
+    src: "{{ nexus_worker_nfs_server }}:{{ nexus_worker_nfs_export }}"
+    fstype: nfs
+    opts: "{{ nexus_worker_nfs_opts }}"
+    state: "{{ nexus_worker_mount_state }}"

@@ -1,0 +1,2 @@
+Nexus N3 Core Azure Bridge upload smoke test.
+This file is used to validate IoT Hub file upload to Blob Storage.

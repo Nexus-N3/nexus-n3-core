@@ -1,0 +1,70 @@
+# -------------------------------
+# Python
+# -------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.egg
+*.whl
+dist/
+build/
+
+# -------------------------------
+# Virtual environments
+# -------------------------------
+venv/
+env/
+.env/
+.Python
+
+# -------------------------------
+# Editor / IDE files
+# -------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# -------------------------------
+# Sphinx documentation build
+# -------------------------------
+docs/build/
+docs/_build/
+docs/html/
+docs/doctrees/
+docs/html/_sources/
+docs/html/_static/
+docs/html/.buildinfo
+docs/html/genindex.html
+docs/html/index.html
+docs/html/objects.inv
+docs/html/py-modindex.html
+docs/html/search.html
+docs/html/searchindex.js
+
+# -------------------------------
+# Data / outputs (sensor recordings)
+# -------------------------------
+rs_nexus_outputs/
+*.csv
+
+# -------------------------------
+# Logs
+# -------------------------------
+*.log
+
+# -------------------------------
+# Local deployment secrets
+# -------------------------------
+deployment/ansible/host_vars/*.secrets.yml
+
+# -------------------------------
+# OS files
+# -------------------------------
+.DS_Store
+Thumbs.db

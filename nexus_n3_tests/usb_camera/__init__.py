@@ -1,0 +1,1 @@
+"""USB camera test package."""

@@ -1,0 +1,16 @@
+nexus_ap_set_nm_unmanaged: true
+nexus_usb_uid: 1000
+nexus_usb_gid: 1000
+nexus_role: standalone # standalone or master
+nexus_gateway: zeromq_gateway 
+nexus_kiosk_url: http://localhost:8050
+nexus_site: local_home
+nexus_site_id: local_home
+nexus_site_name: "Local Home"
+nexus_customer_id: "customer-dlr"
+nexus_azure_bridge_enabled: true
+nexus_azure_bridge_remote_control: true
+nexus_azure_iot_device_id: "rs-nexus-pironmax-001"
+nexus_admin_enabled: true
+nexus_ble_backend: nexus_ble_gateway
+nexus_ble_gateway_serial_port: /dev/serial/by-id/usb-SEGGER_J-Link_001057755524-if02

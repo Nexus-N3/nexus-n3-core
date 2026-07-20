@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <div class="header-row">
+    <div>
+      <h1>Outputs</h1>
+      <p class="muted">{{ outputs_source }}</p>
+      {% if site %}
+        <p class="muted">Site: {{ site }}</p>
+      {% endif %}
+      {% if transfer_status %}
+        {% if transfer_status == "success" %}
+          <p class="notice">Transfer complete. Copied {{ transfer_copied }} file(s), skipped {{ transfer_skipped }}, errors {{ transfer_errors }}.</p>
+        {% elif transfer_status == "no_usb" %}
+          <p class="notice warn">USB disk not detected.</p>
+        {% elif transfer_status == "missing_local" %}
+          <p class="notice warn">Local outputs directory is missing.</p>
+        {% elif transfer_status == "already_on_usb" %}
+          <p class="notice warn">Outputs already on USB. No transfer needed.</p>
+        {% else %}
+          <p class="notice warn">Transfer failed.</p>
+        {% endif %}
+      {% endif %}
+      {% if usb_action_status %}
+        {% if usb_action_status == "mount_success" %}
+          <p class="notice">USB disk mounted for browsing.</p>
+        {% elif usb_action_status == "unmount_success" %}
+          <p class="notice">USB disk safely unmounted.</p>
+        {% elif usb_action_status == "mount_failed" %}
+          <p class="notice warn">USB disk mount failed.</p>
+        {% elif usb_action_status == "unmount_failed" %}
+          <p class="notice warn">USB disk safe unmount failed.</p>
+        {% endif %}
+      {% endif %}
+      <p class="muted">Refresh manually to update the list.</p>
+    </div>
+    <div class="actions">
+      {% if can_manage_usb_disk %}
+        {% if server_status.usb_disk.present %}
+          <form method="post" action="/outputs/usb">
+            <input type="hidden" name="action" value="unmount" />
+            <button class="button danger" type="submit" onclick="return confirm('Safely unmount the USB disk?');">Safe Unmount</button>
+          </form>
+        {% else %}
+          <form method="post" action="/outputs/usb">
+            <input type="hidden" name="action" value="mount" />
+            <button class="button" type="submit">Mount Disk</button>
+          </form>
+        {% endif %}
+      {% endif %}
+      {% if server_status.usb_disk.present %}
+        <form method="post" action="/outputs/transfer-local">
+          <button class="button" type="submit" onclick="return confirm('Transfer local outputs to the USB disk?');">Transfer Local Data</button>
+        </form>
+      {% else %}
+        <span class="muted">USB not detected</span>
+      {% endif %}
+      {% if path %}
+        <a class="button" href="/outputs">Root</a>
+        <a class="button" href="/outputs?path={{ path }}">Refresh</a>
+        <a class="button" href="/outputs/download-zip?path={{ path }}">Download Zip</a>
+      {% else %}
+        <a class="button" href="/outputs">Refresh</a>
+        <a class="button" href="/outputs/download-zip">Download Zip</a>
+      {% endif %}
+    </div>
+  </div>
+  <ul class="list">
+    {% for entry in entries %}
+      <li>
+        {% if entry.is_dir %}
+          <a href="/outputs?path={{ entry.path }}">{{ entry.name }}/</a>
+        {% else %}
+          <span>{{ entry.name }}</span>
+          <a class="button-inline" href="/outputs/download?path={{ entry.path }}">Download</a>
+          <form class="inline" method="post" action="/outputs/delete">
+            <input type="hidden" name="path" value="{{ entry.path }}" />
+            <button class="button-inline danger" type="submit">Delete</button>
+          </form>
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

@@ -1,0 +1,22 @@
+services:
+  nexus-n3-core:
+    build:
+      context: ../../..
+      dockerfile: nexus-n3-core/deployment/docker/Dockerfile.runtime
+    environment:
+      NEXUS_N3_ENV_FILE: /etc/nexus-n3/runtime.env
+      NEXUS_N3_PLUGIN_BUNDLE_DIR: /srv/nexus-n3/plugin-bundles
+    volumes:
+      - /srv/nexus-n3/config/runtime.env:/etc/nexus-n3/runtime.env:ro
+      - /srv/nexus-n3/plugin-bundles:/srv/nexus-n3/plugin-bundles:ro
+      - /srv/nexus-n3/outputs:/app/nexus-n3-core/nexus_n3_outputs
+      - nexus_n3_plugin_root:/opt/nexus-n3-plugins
+    ports:
+      - "5555:5555"
+      - "5556:5556"
+      - "9000:9000"
+    command:
+      - --admin
+
+volumes:
+  nexus_n3_plugin_root:

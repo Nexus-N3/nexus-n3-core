@@ -1,0 +1,65 @@
+- name: Install CIFS client tools
+  ansible.builtin.apt:
+    name: cifs-utils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure mount point exists
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /exports
+    - "{{ nexus_worker_mount_point }}"
+
+- name: Lookup SMB mount uid
+  ansible.builtin.command: "id -u {{ nexus_worker_smb_user }}"
+  register: nexus_worker_smb_uid_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Lookup SMB mount gid
+  ansible.builtin.command: "id -g {{ nexus_worker_smb_user }}"
+  register: nexus_worker_smb_gid_cmd
+  changed_when: false
+  failed_when: false
+
+- name: Set SMB mount uid/gid
+  ansible.builtin.set_fact:
+    nexus_worker_smb_uid: "{{ nexus_worker_smb_uid_cmd.stdout | trim }}"
+    nexus_worker_smb_gid: "{{ nexus_worker_smb_gid_cmd.stdout | trim }}"
+  when:
+    - nexus_worker_smb_uid_cmd.rc == 0
+    - nexus_worker_smb_gid_cmd.rc == 0
+
+- name: Build SMB mount options
+  ansible.builtin.set_fact:
+    nexus_worker_smb_opts_effective: "{{ nexus_worker_smb_opts }},uid={{ nexus_worker_smb_uid }},gid={{ nexus_worker_smb_gid }},{{ nexus_worker_smb_mode_opts }}"
+  when:
+    - nexus_worker_smb_uid is defined
+    - nexus_worker_smb_gid is defined
+
+- name: Build SMB mount options fallback
+  ansible.builtin.set_fact:
+    nexus_worker_smb_opts_effective: "{{ nexus_worker_smb_opts }}"
+  when: nexus_worker_smb_opts_effective is not defined
+
+- name: Configure SMB automount to master
+  ansible.builtin.mount:
+    path: "{{ nexus_worker_mount_point }}"
+    src: "//{{ nexus_worker_smb_server }}/{{ nexus_worker_smb_share }}"
+    fstype: cifs
+    opts: "{{ nexus_worker_smb_opts_effective }}"
+    state: "{{ nexus_worker_mount_state }}"
+
+- name: Reload systemd for fstab automounts
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: Restart remote-fs target
+  ansible.builtin.systemd:
+    name: remote-fs.target
+    state: started
+  failed_when: false

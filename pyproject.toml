@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64,<80", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexus-n3-core"
+version = "0.1.0"
+description = "Nexus N3 Core is the central software component of the Nexus N3 toolchain. It coordinates sensors, algorithms, data capture, local processing, plugins, and operational workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["nexus_n3_tests*", "nexus_n3.robots.tests*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+nexus_n3.admin = ["templates/*.html", "static/*", "docs/html/**"]
+nexus_n3.robots = ["config.yaml", "**/*.yaml", "**/*.yml"]

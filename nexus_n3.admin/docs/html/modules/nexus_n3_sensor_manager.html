@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html class="no-js" lang="en" data-content_root="../">
+<head>
+    <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+        <title>nexus_n3.sensor_manager &mdash; NexusN3 Edge Core</title>
+    
+    <link rel="stylesheet" type="text/css" href="../_static/dist/fontawesome.css" />
+      <link rel="stylesheet" type="text/css" href="../_static/dist/theme.css?v=310cf088" />
+      <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
+            <link rel="index" title="Index" href="../genindex.html" />
+            <link rel="search" title="Search" href="../search.html" />
+            <link rel="top" title="NexusN3 Edge Core" href="#" />
+    </head>
+<body>
+    <script type="text/javascript" src="../_static/dist/blocking.js"></script>
+    <header class="container-fluid bg-primary">
+        <a class="btn btn-sm btn-light skip-to-content-link" href="#main">Skip to content</a>
+        <div class="container-fluid">
+            <div class="navbar navbar-expand-lg navbar-dark font-weight-bold">
+                    <a href="../index.html"
+                        title="Wagtail"
+                        class="logo navbar-brand"
+                    >
+                        <img src="../_static/img/wagtail-logo-circle.svg" width="45" height="59" alt="Wagtail"
+                            class="logo-img"
+                        />
+                        NexusN3 Edge Core
+                    </a>
+                
+                
+                <button class="navbar-toggler btn btn-primary d-lg-none" type="button" data-toggle="collapse" data-target="#collapseSidebar" aria-expanded="false" aria-controls="collapseExample">
+                    <span class="navbar-toggler-icon"></span>
+                    <span class="sr-only">menu</span>
+                </button>
+            </div>
+        </div>
+    </header>
+    <div class="container-fluid">
+        <div class="row">
+            <aside class="col-12 col-lg-3 sidebar-container">
+                <div id="collapseSidebar" class="collapse sticky-top d-lg-block pt-5 pr-lg-4">
+<div id="searchbox" class="searchbox mb-6 px-1" role="search">
+    <form id="search-form" action="../search.html" autocomplete="off" method="get" role="search">
+        <div class="input-group">
+            <div class="input-group-prepend">
+                <div class="input-group-text border-right-0 bg-white py-3 pl-3 pr-2"><span class="fas fa-search"></span></div>
+            </div>
+            <input class="form-control py-3 pr-3 pl-1 h-100 border-left-0" type="search" name="q" placeholder="Search documentation" aria-label="Search documentation" id="searchinput" />
+        </div>
+        <input type="hidden" name="check_keywords" value="yes" />
+        <input type="hidden" name="area" value="default" />
+    </form>
+</div><div class="site-toc">
+    <nav class="toc mt-3" aria-label="Main menu">
+        <p class="caption" role="heading"><span class="caption-text">Usage</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../usage.html">Usage</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deployment.html">Deployment</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../training.html">Training</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../troubleshooting.html">Troubleshooting</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../operations_user_guide.html">Operations User Guide</a></li>
+</ul>
+<p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="client_message_flow.html">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_tests.html">nexus_n3_tests</a></li>
+</ul>
+
+    </nav>
+    <template data-toggle-item-template>
+        <button class="btn btn-sm btn-link toctree-expand" type="button">
+            <span class="sr-only">Toggle menu contents</span>
+        </button>
+    </template>
+</div>
+                    <div class="d-lg-none border-bottom">
+                        
+                    </div>
+                </div>
+            </aside>
+            <div class="col-12 col-lg-9 pt-5">
+                <header class="row align-items-baseline">
+                    <div class="col">
+                        <nav aria-label="breadcrumb">
+    <ol class="breadcrumb m-0 p-0 bg-transparent">
+        <li class="breadcrumb-item"><a href="../index.html">Docs</a></li>
+        <li class="breadcrumb-item active" aria-current="page">nexus_n3.sensor_manager</li>
+    </ol>
+</nav>
+                    </div>
+                    <div class="col-sm-12 col-lg-auto mt-3 mt-lg-3">
+                        <noscript>
+                            <p>JavaScript is required to toggle light/dark mode..</p>
+                        </noscript>
+                        <button id="wagtail-theme" class="btn btn-sm btn-light text-decoration-none" type="button">
+                            <span class="dark-only"><i class="fas fa-sun"></i> Light mode</span>
+                            <span class="light-only"><i class="fas fa-moon"></i> Dark mode</span>
+                        </button>
+    <a class="btn btn-sm btn-light text-decoration-none" href="https://github.com/wagtail/sphinx_wagtail_theme/blob/main/docs/modules/nexus_n3_sensor_manager.md" rel="nofollow">
+        <span class="btn-icon"><span class="fab fa-github"></span></span>
+        <span class="btn-text">Edit on GitHub</span>
+    </a>
+    <a class="btn btn-sm btn-light text-decoration-none" href="../_sources/modules/nexus_n3_sensor_manager.md.txt" rel="nofollow">
+        <span class="btn-icon"><span class="fas fa-code"></span></span>
+        <span class="btn-text">View source</span>
+    </a>
+                        
+                    </div>
+                </header>
+                <div class="row" >
+                    <div class="col-12">
+                        <hr class="w-100 my-4">
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col-12 col-lg-9 order-last order-lg-first rst-content">
+                        <main role="main" id="main">
+    <section id="nexus-n3-sensor-manager">
+<h1>nexus_n3.sensor_manager<a class="headerlink" href="#nexus-n3-sensor-manager" title="Link to this heading">¶</a></h1>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager</span></code> manages discovery, connection, streaming, and
+standalone battery precheck for plugin-backed sensor instances. It keeps an
+asyncio loop in a background thread and exposes a stable facade API through
+<code class="docutils literal notranslate"><span class="pre">SensorManager</span></code>.</p>
+<p>On Linux, startup clears stale BLE device state before discovery to reduce
+reconnect failures from prior sessions.</p>
+<p>Internally, responsibilities are split into services:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">SensorController</span></code>: command routing/dispatch map</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">AdapterPool</span></code>: adapter creation and sensor grouping</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DiscoveryService</span></code>: discovery/matching/address assignment</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ConnectionService</span></code>: connect/disconnect/setup</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">StreamingService</span></code>: stream start/stop orchestration</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PollingStreamService</span></code>: optional <code class="docutils literal notranslate"><span class="pre">request_sample()</span></code> fallback path</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">BatteryPrecheckService</span></code>: standalone pre-init battery workflow</p></li>
+</ul>
+</section>
+<section id="key-classes-and-apis">
+<h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">SensorManager(system_event_bus=None,</span> <span class="pre">error_cb=None)</span></code></p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">register_listener(event,</span> <span class="pre">callback)</span></code> / <code class="docutils literal notranslate"><span class="pre">get_listener(event)</span></code> / <code class="docutils literal notranslate"><span class="pre">unregister_listener(event)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">init_sensor_manager(sensors_to_init)</span></code></p>
+<ul>
+<li><p>Accepts sensor instances or <code class="docutils literal notranslate"><span class="pre">{sensor,</span> <span class="pre">meta}</span></code> entries; supports location metadata</p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">discover()</span></code> / <code class="docutils literal notranslate"><span class="pre">discover_for_subject(sensors)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">discover_and_connect()</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">connect_all()</span></code> / <code class="docutils literal notranslate"><span class="pre">connect_specific_sensors(addresses)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">disconnect_all()</span></code> / <code class="docutils literal notranslate"><span class="pre">disconnect_addresses(addresses)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">start_all()</span></code> / <code class="docutils literal notranslate"><span class="pre">start_specific_sensors(addresses)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stop_all()</span></code> / <code class="docutils literal notranslate"><span class="pre">stop_specific_sensors(addresses)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">identify(address)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">get_connected_sensors()</span></code> / <code class="docutils literal notranslate"><span class="pre">get_connected_sensor_by_address(address)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">check_battery_preinit(sensor_classes,</span> <span class="pre">scan_timeout=5.0,</span> <span class="pre">read_timeout=10.0)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">stop_manager()</span></code></p></li>
+</ul>
+</li>
+<li><p>Adapters</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">BLEAdapter</span></code> (Bleak host BLE backend)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GatewayBLEAdapter</span></code> (Nexus BLE gateway backend over USB serial)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">USBCameraAdapter</span></code> (V4L2 discovery)</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="ble-backends">
+<h2>BLE Backends<a class="headerlink" href="#ble-backends" title="Link to this heading">¶</a></h2>
+<p>BLE sensors still declare <code class="docutils literal notranslate"><span class="pre">adapter:</span> <span class="pre">BLE</span></code>, but NexusN3 Edge Core now supports two
+runtime-selectable BLE backends behind that single adapter family.</p>
+<section id="bleak">
+<h3><code class="docutils literal notranslate"><span class="pre">bleak</span></code><a class="headerlink" href="#bleak" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Uses the existing local host BLE path through <code class="docutils literal notranslate"><span class="pre">BLEAdapter</span></code></p></li>
+<li><p>Best for simplified deployments, development, and smaller test setups</p></li>
+<li><p>Remains a supported runtime backend</p></li>
+</ul>
+</section>
+<section id="nexus-ble-gateway">
+<h3><code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code><a class="headerlink" href="#nexus-ble-gateway" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Uses <code class="docutils literal notranslate"><span class="pre">GatewayBLEAdapter</span></code> with a shared <code class="docutils literal notranslate"><span class="pre">GatewaySerialClient</span></code></p></li>
+<li><p>Moves BLE transport work to the Nexus BLE gateway over USB serial</p></li>
+<li><p>Preserves the existing plugin contract while adding packet-level gateway
+diagnostics and recovery support</p></li>
+<li><p>Primary production backend for the main gateway-based system</p></li>
+<li><p>Works through the host serial port layer rather than the host BLE stack</p></li>
+<li><p>Can be used on Windows when <code class="docutils literal notranslate"><span class="pre">GATEWAY_SERIAL_PORT</span></code> is set to a Windows serial
+port such as <code class="docutils literal notranslate"><span class="pre">COM3</span></code></p></li>
+<li><p>This is the preferred BLE path on Windows development machines</p></li>
+</ul>
+</section>
+<section id="runtime-selection">
+<h3>Runtime Selection<a class="headerlink" href="#runtime-selection" title="Link to this heading">¶</a></h3>
+<p>Backend selection is made once at server startup and does not require plugin or
+sensor-spec changes.</p>
+<ul class="simple">
+<li><p>CLI:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">nexus_n3_server.py</span> <span class="pre">--ble-backend</span> <span class="pre">bleak</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">nexus_n3_server.py</span> <span class="pre">--ble-backend</span> <span class="pre">nexus_ble_gateway</span></code></p></li>
+</ul>
+</li>
+<li><p>Shared runtime env file:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">config/runtime.env</span></code> locally</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">/etc/nexus-n3/runtime.env</span></code> in deployed systems</p></li>
+</ul>
+</li>
+<li><p>Main gateway transport settings:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">GATEWAY_SERIAL_PORT</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GATEWAY_BAUDRATE</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GATEWAY_PROTOCOL_VERSION</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GATEWAY_CONNECT_TIMEOUT_S</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GATEWAY_SUBSCRIBE_TIMEOUT_S</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GATEWAY_WRITE_TIMEOUT_S</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">GATEWAY_READ_TIMEOUT_S</span></code></p></li>
+</ul>
+</li>
+</ul>
+<p>Examples:</p>
+<ul class="simple">
+<li><p>Linux: <code class="docutils literal notranslate"><span class="pre">GATEWAY_SERIAL_PORT=/dev/serial/by-id/...</span></code></p></li>
+<li><p>Windows: <code class="docutils literal notranslate"><span class="pre">GATEWAY_SERIAL_PORT=COM3</span></code></p></li>
+</ul>
+<p>The selected BLE backend is exposed in runtime status and the admin UI. When
+the gateway backend is selected, the admin UI also reports whether the gateway
+serial device is currently available.</p>
+<p><code class="docutils literal notranslate"><span class="pre">bleak</span></code> remains available mainly for development/testing. Its host-platform
+behavior is owned by Bleak itself.</p>
+</section>
+</section>
+<section id="message-flow">
+<h2>Message Flow<a class="headerlink" href="#message-flow" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">Core._init_sensor_manager()</span></code> resolves installed sensor plugin classes and passes sensor instances and metadata</p></li>
+<li><p>Commands are queued to the manager loop and dispatched by <code class="docutils literal notranslate"><span class="pre">SensorController</span></code></p></li>
+<li><p>Discovery -&gt; adapter scan -&gt; name matching -&gt; address assignment -&gt; callbacks to <code class="docutils literal notranslate"><span class="pre">Core</span></code></p></li>
+<li><p>Connect -&gt; adapter connect -&gt; sensor setup hook</p></li>
+<li><p>Streaming -&gt; sensor stream hooks (<code class="docutils literal notranslate"><span class="pre">start_stream</span></code>/<code class="docutils literal notranslate"><span class="pre">stop_stream</span></code>) -&gt; <code class="docutils literal notranslate"><span class="pre">on_data</span></code></p></li>
+<li><p>Polling fallback (<code class="docutils literal notranslate"><span class="pre">request_sample</span></code>) remains available but optional</p></li>
+<li><p>Battery check runs as a standalone pre-init BLE flow and returns
+<code class="docutils literal notranslate"><span class="pre">{&quot;sensors&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;errors&quot;:</span> <span class="pre">{...}}</span></code></p></li>
+</ul>
+<p>The manager remains transport-generic. Sensor protocol logic, parsing, and any
+optional <code class="docutils literal notranslate"><span class="pre">consume_input</span></code> behavior live inside the installed sensor plugins.</p>
+</section>
+<section id="key-files">
+<h2>Key Files<a class="headerlink" href="#key-files" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/SensorManager.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/sensor_controller.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapter_pool.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/discovery_service.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/connection_service.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/streaming_service.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/polling_stream_service.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/battery_precheck_service.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/ble_adapter.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/gateway_ble_adapter.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/gateway_ble_client.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/ble_runtime_config.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/usb_camera_adapter.py</span></code></p></li>
+</ul>
+</section>
+</section>
+
+</main>
+                        
+                    </div>
+                    
+                    <nav class="col-12 col-lg-3 pb-4">
+                        <div class="sticky-top toc page-toc" aria-labelledby="page-toc-heading">
+                            <p class="font-weight-bold" id="page-toc-heading">Page contents</p>
+                            <ul>
+<li><a class="reference internal" href="#">nexus_n3.sensor_manager</a><ul>
+<li><a class="reference internal" href="#overview">Overview</a></li>
+<li><a class="reference internal" href="#key-classes-and-apis">Key Classes and APIs</a></li>
+<li><a class="reference internal" href="#ble-backends">BLE Backends</a><ul>
+<li><a class="reference internal" href="#bleak"><code class="docutils literal notranslate"><span class="pre">bleak</span></code></a></li>
+<li><a class="reference internal" href="#nexus-ble-gateway"><code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code></a></li>
+<li><a class="reference internal" href="#runtime-selection">Runtime Selection</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#message-flow">Message Flow</a></li>
+<li><a class="reference internal" href="#key-files">Key Files</a></li>
+</ul>
+</li>
+</ul>
+
+                        </div>
+                    </nav>
+                    
+                </div>
+            </div>
+        </div>
+    </div>
+    <footer class="container-fluid bg-primary text-light">
+        <div class="container">
+            <div class="row">
+        <div class="col p-4">
+            
+                <nav aria-label="Footer">
+                    <ul class="nav justify-content-center mb-2">
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/features/">Features</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/about-wagtail/"> About Wagtail</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/services/"> Services</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/blog/"> Blog</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/packages/"> Packages</a></li>
+                        
+                            
+                            
+                            <li class="nav-item"><a class="nav-link text-light"  href="https://wagtail.org/developers/"> Developers</a></li>
+                        
+                    </ul>
+                </nav>
+            
+            <div class="text-center">
+                    &copy; Copyright 2026, Mike Crooks
+            </div>
+            <div class="text-center text-white-50 font-italic mt-3">
+                <small>
+                    Created using
+                    <a class="text-white" href="https://github.com/wagtail/sphinx_wagtail_theme" rel="nofollow" target="_blank">
+                        Sphinx Wagtail Theme 6.5.0
+                    </a>
+                    and
+                    <a class="text-white" href="https://www.sphinx-doc.org/" rel="nofollow" target="_blank">
+                        Sphinx 8.1.3
+                    </a>
+                </small>
+            </div>
+        </div>
+    </div>
+        </div>
+    </footer>
+        <script src="../_static/documentation_options.js?v=01f34227"></script>
+        <script src="../_static/doctools.js?v=9bcbadda"></script>
+        <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
+        <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
+        <script src="../_static/copybutton.js?v=f281be69"></script>
+        <script type="text/javascript" src="../_static/dist/theme.js"></script>
+        <script type="text/javascript" src="../_static/dist/vendor.js"></script>
+        <script type="text/javascript" src="../_static/searchtools.js"></script>
+        <script type="text/javascript" src="../_static/language_data.js"></script>
+        <script type="text/javascript">
+            document.addEventListener('DOMContentLoaded', function() { Search.loadIndex("../searchindex.js"); });
+        </script>
+        <script type="text/javascript" id="searchindexloader"></script>
+    </body>
+</html>

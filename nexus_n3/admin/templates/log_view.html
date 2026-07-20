@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% set autorefresh = 5 %}
+
+{% block content %}
+<section class="card">
+  <h1>{{ name }}</h1>
+  <div class="actions">
+    <a class="button" href="/logs">Back</a>
+  </div>
+  <p class="muted">Auto-refreshing every 5 seconds.</p>
+  <pre class="log">{{ content }}</pre>
+</section>
+{% endblock %}

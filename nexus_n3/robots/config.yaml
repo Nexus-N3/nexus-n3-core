@@ -1,0 +1,19 @@
+## ansible will render this file to /etc/nexus-n3/robot.yaml
+
+# is this node a robot? 
+# If is_robot: false, the module should not open UART or process motion commands.
+is_robot: false
+
+robot:
+  id: nexus-rover-01 # unique identifier for the robot that can be used by azure IOT hub
+  type: wave_rover
+
+transport:
+  type: mock
+
+protocol:
+  type: waveshare_uart
+
+motion:
+  default_speed: 0.4
+  stop_on_disconnect_ms: 1000

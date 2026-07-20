@@ -1,0 +1,7 @@
+nexus_worker_smb_server: nexus-n3-master.local
+nexus_worker_smb_share: nexus_n3_data
+nexus_worker_mount_point: /exports/nexus_n3_data
+nexus_worker_smb_opts: rw,_netdev,x-systemd.automount,vers=3.0,guest
+nexus_worker_smb_mode_opts: file_mode=0775,dir_mode=0775
+nexus_worker_smb_user: "{{ ansible_user }}"
+nexus_worker_mount_state: present

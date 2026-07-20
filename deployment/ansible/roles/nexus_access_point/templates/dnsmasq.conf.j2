@@ -1,0 +1,8 @@
+interface={{ nexus_ap_interface }}
+bind-dynamic
+domain-needed
+bogus-priv
+port=0
+
+# DHCP range for clients (no external routing)
+dhcp-range={{ nexus_ap_dhcp_range_start }},{{ nexus_ap_dhcp_range_end }},{{ nexus_ap_dhcp_netmask }},{{ nexus_ap_dhcp_lease }}

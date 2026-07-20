@@ -1,0 +1,41 @@
+# 1. Identify the USB disk
+lsblk -f
+sudo blkid
+
+# 2. Unmount any old mounts
+sudo umount -l /exports 2>/dev/null
+sudo umount -l "/media/mike/New Volume" 2>/dev/null
+
+# 3. Create mount point
+sudo mkdir -p /exports
+sudo chown mike:mike /exports
+
+# 4. Edit fstab to auto-mount USB at /exports
+sudo nano /etc/fstab
+# Add or update the line (replace UUID with your USB disk UUID):
+# UUID=A416579C16576DF4  /exports  ntfs-3g  defaults,uid=1000,gid=1000,dmask=002,fmask=113,allow_other,nofail 0 0
+
+# 5. Mount the disk
+sudo mount -a
+mount | grep /exports
+
+# 6. Create nexus_n3_outputs folder on the USB
+mkdir -p /exports/nexus_n3_outputs
+sudo chown -R mike:mike /exports/nexus_n3_outputs
+
+# 7. Test write permissions
+touch /exports/nexus_n3_outputs/test.txt
+ls -l /exports/nexus_n3_outputs
+
+# 8. Install NFS server
+sudo apt update
+sudo apt install -y nfs-kernel-server
+
+# 9. Configure NFS export
+sudo nano /etc/exports
+# Add the line:
+# /exports/nexus_n3_outputs *(rw,sync,no_subtree_check,no_root_squash)
+
+# 10. Apply NFS export changes
+sudo exportfs -ra
+sudo systemctl restart nfs-kernel-server

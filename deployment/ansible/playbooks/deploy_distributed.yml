@@ -1,0 +1,6 @@
+---
+- name: Deploy nexus-n3-core distributed nodes
+  hosts: master:workers:ai_nodes
+  become: true
+  roles:
+    - role: nexus_release

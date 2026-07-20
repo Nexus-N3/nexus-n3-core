@@ -1,0 +1,4 @@
+nexus_smb_share_name: nexus_n3_data
+nexus_smb_share_path: /exports/nexus_n3_data
+nexus_smb_share_user: nexusn3
+nexus_smb_share_group: nexusn3

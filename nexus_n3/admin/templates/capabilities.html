@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block content %}
+<section class="card">
+  <h1>Supported Capabilities</h1>
+  <p class="muted">Available sensors, algorithms, and gateways for this build, including installed plugin identity.</p>
+</section>
+
+<section class="card">
+  <h2>Sensors</h2>
+  {% if sensors %}
+    <ul class="list">
+      {% for item in sensors %}
+        <li>
+          <div>
+            <div>{{ item.runtime_name }}</div>
+            <div class="muted">
+              plugin: {{ item.plugin_display_name }}
+              {% if item.version %} · v{{ item.version }}{% endif %}
+              {% if item.plugin_id %} · id={{ item.plugin_id }}{% endif %}
+            </div>
+          </div>
+          {% if item.locations %}
+            <span>· locations: {{ item.locations | join(", ") }}</span>
+          {% endif %}
+          {% if item.computations %}
+            <span>· algorithms: {{ item.computations | map(attribute="name") | join(", ") }}</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No sensors registered.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Algorithms</h2>
+  {% if algorithms %}
+    <ul class="list">
+      {% for item in algorithms %}
+        <li>
+          <div>{{ item.runtime_name }}</div>
+          <div class="muted">
+            plugin: {{ item.plugin_display_name }}
+            {% if item.version %} · v{{ item.version }}{% endif %}
+            {% if item.plugin_id %} · id={{ item.plugin_id }}{% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No algorithms registered.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Gateways</h2>
+  {% if gateways %}
+    <ul class="list">
+      {% for item in gateways %}
+        <li>{{ item.name }} · {{ item.scope }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No gateways discovered.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Bridges</h2>
+  {% if bridges %}
+    <ul class="list">
+      {% for item in bridges %}
+        <li>{{ item.name }} · {{ item.scope }}</li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No bridges discovered.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,203 @@
+- name: Ensure plugin bundle staging directory exists
+  ansible.builtin.file:
+    path: "{{ nexus_plugin_bundle_staging_root }}"
+    state: directory
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0755"
+
+- name: Check local sensor plugin bundle root
+  ansible.builtin.stat:
+    path: "{{ nexus_sensor_plugin_bundle_root }}"
+  delegate_to: localhost
+  become: false
+  register: nexus_sensor_bundle_root_stat
+  when: nexus_install_sensor_plugins | bool
+
+- name: Discover local sensor plugin bundles
+  ansible.builtin.command: >
+    find "{{ nexus_sensor_plugin_bundle_root }}" -maxdepth 1 -type f -name "*.rsnxplugin"
+  delegate_to: localhost
+  become: false
+  register: nexus_sensor_bundle_files
+  changed_when: false
+  when:
+    - nexus_install_sensor_plugins | bool
+    - nexus_sensor_bundle_root_stat.stat.exists
+
+- name: Use discovered sensor plugin bundles when list is empty
+  ansible.builtin.set_fact:
+    nexus_sensor_plugin_bundles: "{{ nexus_sensor_bundle_files.stdout_lines | map('basename') | list }}"
+  when:
+    - nexus_install_sensor_plugins | bool
+    - (nexus_sensor_plugin_bundles | length) == 0
+    - nexus_sensor_bundle_root_stat.stat.exists
+
+- name: Fail if sensor bundle root is missing
+  ansible.builtin.fail:
+    msg: "Missing sensor plugin bundle root: {{ nexus_sensor_plugin_bundle_root }}"
+  when:
+    - nexus_install_sensor_plugins | bool
+    - not nexus_sensor_bundle_root_stat.stat.exists
+
+- name: Fail if no sensor plugin bundles were found
+  ansible.builtin.fail:
+    msg: "No sensor plugin bundles found under {{ nexus_sensor_plugin_bundle_root }}"
+  when:
+    - nexus_install_sensor_plugins | bool
+    - (nexus_sensor_plugin_bundles | length) == 0
+
+- name: Check local algorithm plugin bundle root
+  ansible.builtin.stat:
+    path: "{{ nexus_algorithm_plugin_bundle_root }}"
+  delegate_to: localhost
+  become: false
+  register: nexus_algorithm_bundle_root_stat
+  when: nexus_install_algorithm_plugins | bool
+
+- name: Discover local algorithm plugin bundles
+  ansible.builtin.command: >
+    find "{{ nexus_algorithm_plugin_bundle_root }}" -maxdepth 1 -type f -name "*.rsnxplugin"
+  delegate_to: localhost
+  become: false
+  register: nexus_algorithm_bundle_files
+  changed_when: false
+  when:
+    - nexus_install_algorithm_plugins | bool
+    - nexus_algorithm_bundle_root_stat.stat.exists
+
+- name: Use discovered algorithm plugin bundles when list is empty
+  ansible.builtin.set_fact:
+    nexus_algorithm_plugin_bundles: "{{ nexus_algorithm_bundle_files.stdout_lines | map('basename') | list }}"
+  when:
+    - nexus_install_algorithm_plugins | bool
+    - (nexus_algorithm_plugin_bundles | length) == 0
+    - nexus_algorithm_bundle_root_stat.stat.exists
+
+- name: Fail if algorithm bundle root is missing
+  ansible.builtin.fail:
+    msg: "Missing algorithm plugin bundle root: {{ nexus_algorithm_plugin_bundle_root }}"
+  when:
+    - nexus_install_algorithm_plugins | bool
+    - not nexus_algorithm_bundle_root_stat.stat.exists
+
+- name: Fail if no algorithm plugin bundles were found
+  ansible.builtin.fail:
+    msg: "No algorithm plugin bundles found under {{ nexus_algorithm_plugin_bundle_root }}"
+  when:
+    - nexus_install_algorithm_plugins | bool
+    - (nexus_algorithm_plugin_bundles | length) == 0
+
+- name: Upload sensor plugin bundles
+  ansible.builtin.copy:
+    src: "{{ nexus_sensor_plugin_bundle_root }}/{{ item }}"
+    dest: "{{ nexus_plugin_bundle_staging_root }}/{{ item }}"
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0644"
+  loop: "{{ nexus_sensor_plugin_bundles }}"
+  when: nexus_install_sensor_plugins | bool
+
+- name: Read sensor plugin bundle manifests
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json, sys, zipfile
+        with zipfile.ZipFile(sys.argv[1]) as archive:
+            print(json.dumps(json.loads(archive.read("manifest.json").decode("utf-8"))))
+      - "{{ nexus_sensor_plugin_bundle_root }}/{{ item }}"
+  delegate_to: localhost
+  become: false
+  loop: "{{ nexus_sensor_plugin_bundles }}"
+  register: nexus_sensor_bundle_manifest_cmd
+  changed_when: false
+  when: nexus_install_sensor_plugins | bool
+
+- name: Build sensor plugin bundle manifest records
+  ansible.builtin.set_fact:
+    nexus_sensor_bundle_manifest_records: "{{ (nexus_sensor_bundle_manifest_records | default([])) + [ {'bundle_name': item.item, 'manifest': (item.stdout | from_json)} ] }}"
+  loop: "{{ nexus_sensor_bundle_manifest_cmd.results }}"
+  when:
+    - nexus_install_sensor_plugins | bool
+    - item.stdout is defined
+
+- name: Check installed sensor plugin bundle versions
+  ansible.builtin.stat:
+    path: "{{ nexus_plugin_root }}/installed/{{ item.manifest.plugin_id }}/{{ item.manifest.version }}/manifest.json"
+  loop: "{{ nexus_sensor_bundle_manifest_records | default([]) }}"
+  register: nexus_sensor_bundle_installed_stats
+  when: nexus_install_sensor_plugins | bool
+
+- name: Install missing sensor plugin bundles
+  ansible.builtin.command:
+    cmd: >-
+      {{ nexus_plugin_installer_python }}
+      -m {{ nexus_plugin_installer_module }}
+      install
+      {{ nexus_plugin_bundle_staging_root }}/{{ item.item.bundle_name }}
+      --plugin-root {{ nexus_plugin_root }}
+      {% if nexus_plugin_use_system_site_packages | bool %}--system-site-packages{% endif %}
+  loop: "{{ nexus_sensor_bundle_installed_stats.results | default([]) }}"
+  when:
+    - nexus_install_sensor_plugins | bool
+    - not item.stat.exists
+  notify: Restart nexus-n3
+
+- name: Upload algorithm plugin bundles
+  ansible.builtin.copy:
+    src: "{{ nexus_algorithm_plugin_bundle_root }}/{{ item }}"
+    dest: "{{ nexus_plugin_bundle_staging_root }}/{{ item }}"
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0644"
+  loop: "{{ nexus_algorithm_plugin_bundles }}"
+  when: nexus_install_algorithm_plugins | bool
+
+- name: Read algorithm plugin bundle manifests
+  ansible.builtin.command:
+    argv:
+      - python3
+      - -c
+      - |
+        import json, sys, zipfile
+        with zipfile.ZipFile(sys.argv[1]) as archive:
+            print(json.dumps(json.loads(archive.read("manifest.json").decode("utf-8"))))
+      - "{{ nexus_algorithm_plugin_bundle_root }}/{{ item }}"
+  delegate_to: localhost
+  become: false
+  loop: "{{ nexus_algorithm_plugin_bundles }}"
+  register: nexus_algorithm_bundle_manifest_cmd
+  changed_when: false
+  when: nexus_install_algorithm_plugins | bool
+
+- name: Build algorithm plugin bundle manifest records
+  ansible.builtin.set_fact:
+    nexus_algorithm_bundle_manifest_records: "{{ (nexus_algorithm_bundle_manifest_records | default([])) + [ {'bundle_name': item.item, 'manifest': (item.stdout | from_json)} ] }}"
+  loop: "{{ nexus_algorithm_bundle_manifest_cmd.results }}"
+  when:
+    - nexus_install_algorithm_plugins | bool
+    - item.stdout is defined
+
+- name: Check installed algorithm plugin bundle versions
+  ansible.builtin.stat:
+    path: "{{ nexus_plugin_root }}/installed/{{ item.manifest.plugin_id }}/{{ item.manifest.version }}/manifest.json"
+  loop: "{{ nexus_algorithm_bundle_manifest_records | default([]) }}"
+  register: nexus_algorithm_bundle_installed_stats
+  when: nexus_install_algorithm_plugins | bool
+
+- name: Install missing algorithm plugin bundles
+  ansible.builtin.command:
+    cmd: >-
+      {{ nexus_plugin_installer_python }}
+      -m {{ nexus_plugin_installer_module }}
+      install
+      {{ nexus_plugin_bundle_staging_root }}/{{ item.item.bundle_name }}
+      --plugin-root {{ nexus_plugin_root }}
+      {% if nexus_plugin_use_system_site_packages | bool %}--system-site-packages{% endif %}
+  loop: "{{ nexus_algorithm_bundle_installed_stats.results | default([]) }}"
+  when:
+    - nexus_install_algorithm_plugins | bool
+    - not item.stat.exists
+  notify: Restart nexus-n3

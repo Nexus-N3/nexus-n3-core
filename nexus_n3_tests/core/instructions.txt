@@ -1,0 +1,9 @@
+python -m nexus_n3_tests.core.test_1_init
+python -m nexus_n3_tests.core.test_2_discover
+python -m nexus_n3_tests.core.test_3_connect_and_identify
+python -m nexus_n3_tests.core.test_4_start_and_stop
+python -m nexus_n3_tests.core.test_4c_two_sensor_session_30s
+python -m nexus_n3_tests.core.test_4b_start_and_stop_summary
+python -m nexus_n3_tests.core.test_4a_start_stop
+python -m nexus_n3_tests.core.test_5_start_and_stop_subject
+python -m nexus_n3_tests.core.test_6_battery_check

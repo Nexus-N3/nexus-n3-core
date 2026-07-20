@@ -1,0 +1,48 @@
+- name: Install Samba
+  ansible.builtin.apt:
+    name: samba
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure share path exists
+  ansible.builtin.file:
+    path: "{{ nexus_smb_share_path }}"
+    state: directory
+    owner: "{{ nexus_smb_share_user }}"
+    group: "{{ nexus_smb_share_group }}"
+    mode: "0775"
+
+- name: Configure Samba share
+  ansible.builtin.blockinfile:
+    path: /etc/samba/smb.conf
+    marker: "# {mark} Nexus N3 Core SMB share"
+    block: |
+      [{{ nexus_smb_share_name }}]
+      path = {{ nexus_smb_share_path }}
+      browseable = yes
+      read only = no
+      guest ok = yes
+      force user = {{ nexus_smb_share_user }}
+      force group = {{ nexus_smb_share_group }}
+      create mask = 0664
+      directory mask = 0775
+  notify: Restart smbd
+
+- name: Ensure smbd is enabled and running
+  ansible.builtin.service:
+    name: smbd
+    enabled: true
+    state: started
+
+- name: Check ufw status for SMB
+  ansible.builtin.command: ufw status
+  register: nexus_smb_ufw_status
+  changed_when: false
+  failed_when: false
+
+- name: Allow SMB (TCP 445) through ufw
+  ansible.builtin.command: ufw allow 445/tcp
+  register: nexus_smb_ufw_allow
+  changed_when: "'Skipping' not in nexus_smb_ufw_allow.stdout"
+  when: "'Status: active' in nexus_smb_ufw_status.stdout"

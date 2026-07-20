@@ -1,0 +1,113 @@
+- name: Reset AP configuration (manual cleanup)
+  ansible.builtin.include_tasks: reset.yml
+  tags: reset_ap
+
+- name: Configure hostapd
+  ansible.builtin.template:
+    src: hostapd.conf.j2
+    dest: /etc/hostapd/hostapd.conf
+    mode: "0644"
+  notify: Restart hostapd
+
+- name: Unmask hostapd service
+  ansible.builtin.service:
+    name: hostapd
+    masked: false
+
+- name: Point hostapd service to config
+  ansible.builtin.lineinfile:
+    path: /etc/default/hostapd
+    regexp: '^DAEMON_CONF='
+    line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+    create: true
+  notify: Restart hostapd
+
+- name: Configure dnsmasq for AP DHCP
+  ansible.builtin.template:
+    src: dnsmasq.conf.j2
+    dest: /etc/dnsmasq.d/nexusn3-ap.conf
+    mode: "0644"
+  notify: Restart dnsmasq
+
+- name: Configure NetworkManager to ignore AP interface
+  ansible.builtin.template:
+    src: nm-unmanaged.conf.j2
+    dest: /etc/NetworkManager/conf.d/99-nexusn3-ap.conf
+    mode: "0644"
+  when: nexus_ap_set_nm_unmanaged | bool
+
+- name: Check if NetworkManager manages the AP interface
+  ansible.builtin.command: nmcli -g GENERAL.MANAGED dev show {{ nexus_ap_interface }}
+  register: nexus_ap_nm_managed
+  changed_when: false
+  failed_when: false
+  when: nexus_ap_set_nm_unmanaged | bool
+
+- name: Mark AP interface unmanaged in NetworkManager
+  ansible.builtin.command: nmcli dev set {{ nexus_ap_interface }} managed no
+  when:
+    - nexus_ap_set_nm_unmanaged | bool
+    - nexus_ap_nm_managed.stdout | trim == "yes"
+
+- name: Install AP interface IP systemd unit
+  ansible.builtin.template:
+    src: nexusn3-ap-ip.service.j2
+    dest: /etc/systemd/system/nexusn3-ap-ip.service
+    mode: "0644"
+  register: nexus_ap_ip_unit
+  when: nexus_ap_configure_ip | bool
+
+- name: Reload systemd for AP IP unit
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: nexus_ap_ip_unit.changed | default(false)
+
+- name: Enable and start AP IP unit
+  ansible.builtin.systemd:
+    name: nexusn3-ap-ip.service
+    enabled: true
+    state: started
+  when: nexus_ap_configure_ip | bool
+
+- name: Ensure hostapd is enabled
+  ansible.builtin.service:
+    name: hostapd
+    enabled: true
+
+- name: Ensure dnsmasq is enabled
+  ansible.builtin.service:
+    name: dnsmasq
+    enabled: true
+
+- name: Ensure AP IP unit is restarted
+  ansible.builtin.systemd:
+    name: nexusn3-ap-ip.service
+    state: restarted
+  when: nexus_ap_configure_ip | bool
+
+- name: Check ufw status
+  ansible.builtin.command: ufw status
+  register: nexus_ap_ufw_status
+  changed_when: false
+  failed_when: false
+
+- name: Allow DHCP (UDP 67) through ufw
+  ansible.builtin.command: ufw allow 67/udp
+  register: nexus_ap_ufw_allow_dhcp
+  changed_when: "'Skipping' not in nexus_ap_ufw_allow_dhcp.stdout"
+  when: "'Status: active' in nexus_ap_ufw_status.stdout"
+
+- name: Allow admin UI (TCP) through ufw
+  ansible.builtin.command: "ufw allow {{ nexus_admin_port | default(9000) }}/tcp"
+  register: nexus_ap_ufw_allow_admin
+  changed_when: "'Skipping' not in nexus_ap_ufw_allow_admin.stdout"
+  when: "'Status: active' in nexus_ap_ufw_status.stdout"
+
+- name: Disable IP forwarding
+  ansible.builtin.sysctl:
+    name: net.ipv4.ip_forward
+    value: "0"
+    state: present
+    sysctl_set: true
+    reload: true
+  when: nexus_ap_disable_ip_forwarding | bool

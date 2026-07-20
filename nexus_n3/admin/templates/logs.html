@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% set autorefresh = 5 %}
+
+{% block content %}
+<section class="card">
+  <h1>Logs</h1>
+  <p class="muted">Auto-refreshing every 5 seconds.</p>
+  {% if files %}
+    <ul class="list">
+      {% for name in files %}
+        <li><a href="/logs/{{ name }}">{{ name }}</a></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="muted">No log files found.</p>
+  {% endif %}
+</section>
+{% endblock %}

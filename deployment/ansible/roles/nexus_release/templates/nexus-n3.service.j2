@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexus N3 Core ({{ nexus_role }})
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ nexus_service_user }}
+Group={{ nexus_service_group }}
+WorkingDirectory={{ nexus_install_root }}
+Environment=PYTHONUNBUFFERED=1
+Environment=NEXUS_N3_ENV_FILE={{ nexus_runtime_env_remote_path }}
+EnvironmentFile=-{{ nexus_runtime_env_remote_path }}
+ExecStart={{ nexus_venv_path }}/bin/python {{ nexus_install_root }}/nexus_n3_server.py --gateway {{ nexus_gateway }} --site {{ nexus_site }}{% if nexus_customer_id | length > 0 %} --customer-id {{ nexus_customer_id }}{% endif %}{% if nexus_site_id | length > 0 %} --site-id {{ nexus_site_id }}{% endif %}{% if nexus_site_name | length > 0 %} --site-name "{{ nexus_site_name }}"{% endif %}{% if nexus_use_async | bool %} --use-async{% endif %} --role {{ nexus_role }}{% if nexus_node_id | length > 0 %} --node-id {{ nexus_node_id }}{% endif %}{% if nexus_role == "ai" %} --compute-port {{ nexus_compute_port }}{% endif %}{% if nexus_admin_enabled | bool %} --admin{% endif %} --admin-host {{ nexus_admin_host }} --admin-port {{ nexus_admin_port }} --ble-backend {{ nexus_ble_backend }}{% if nexus_azure_bridge_enabled | bool %} --bridge azure_bridge{% endif %}{% if nexus_azure_bridge_remote_control | bool %} --azure-bridge-remote-control{% endif %}
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

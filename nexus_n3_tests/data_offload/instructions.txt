@@ -1,0 +1,4 @@
+python -m nexus_n3_tests.data_offload.test_1_usb_detect
+
+python -m nexus_n3_tests.data_offload.usb_discovery.master
+python -m nexus_n3_tests.data_offload.usb_discovery.worker

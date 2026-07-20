@@ -1,0 +1,16 @@
+interface={{ nexus_ap_interface }}
+ssid={{ nexus_ap_ssid }}
+country_code={{ nexus_ap_country_code }}
+
+hw_mode={{ nexus_ap_hw_mode }}
+channel={{ nexus_ap_channel }}
+
+wmm_enabled=1
+auth_algs=1
+wpa=2
+wpa_passphrase={{ nexus_ap_passphrase }}
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+
+# Keep it local-only; no 802.11r/mesh
+ieee80211n=1
