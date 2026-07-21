@@ -62,6 +62,12 @@ def _neia_apps_catalog_url() -> str:
     return os.getenv("NEXUS_N3_NEIA_APPS_CATALOG_URL", "http://127.0.0.1:8050/api/v1/apps/catalog")
 
 
+def _output_root() -> str:
+    """Return the configured local fallback output root."""
+    load_runtime_env()
+    return os.getenv("NEXUS_N3_OUTPUT_ROOT", "nexus_n3_outputs")
+
+
 def _build_robot_service() -> RobotService | None:
     """Create the optional robot runtime for nodes configured as robots."""
     try:
@@ -333,7 +339,7 @@ async def run_async_server(
     if role == "master":
         gateway = gateway_class(site) # instantiate gateway with a site
         
-        usb_disk_manager = USBDiskManager()
+        usb_disk_manager = USBDiskManager(fallback_dir=_output_root())
         robot_service = _build_robot_service()
         server = Server(
             gateway,
@@ -396,7 +402,7 @@ async def run_async_server(
 
     # this is the defaul standalone mode - its very similar to a master node
     else:
-        usb_disk_manager = USBDiskManager()
+        usb_disk_manager = USBDiskManager(fallback_dir=_output_root())
         gateway = gateway_class(site)
         robot_service = _build_robot_service()
         server = Server(

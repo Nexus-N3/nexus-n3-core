@@ -50,6 +50,22 @@
     group: "{{ nexus_service_group }}"
     mode: "0755"
 
+- name: Ensure local output root exists
+  ansible.builtin.file:
+    path: "{{ nexus_output_root }}"
+    state: directory
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0755"
+
+- name: Ensure log root exists
+  ansible.builtin.file:
+    path: "{{ nexus_log_root }}"
+    state: directory
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0755"
+
 - name: Upload shared runtime env file
   ansible.builtin.template:
     src: runtime_env.j2

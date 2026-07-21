@@ -1,12 +1,16 @@
 """Module-level logger configuration with rotating file output."""
 
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import sys
 
+from nexus_n3.core.runtime_env import load_runtime_env
+
 # ---------------- LOG DIRECTORY ----------------
-LOG_DIR = Path.cwd() / "nexus_n3_logs"
+load_runtime_env()
+LOG_DIR = Path(os.getenv("NEXUS_N3_LOG_ROOT", "nexus_n3_logs"))
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 print(f"Logs directory: {LOG_DIR}")
 

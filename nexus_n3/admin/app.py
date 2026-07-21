@@ -196,8 +196,12 @@ def create_app(state: AdminState) -> FastAPI:
     if docs_build.exists():
         app.mount("/docs-static", StaticFiles(directory=str(docs_build), html=True), name="docs")
 
-    logs_dir = state.project_root / "nexus_n3_logs"
-    outputs_dir = state.project_root / "nexus_n3_outputs"
+    configured_log_root = os.getenv("NEXUS_N3_LOG_ROOT", "").strip()
+    logs_dir = Path(configured_log_root) if configured_log_root else (state.project_root / "nexus_n3_logs")
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    configured_output_root = os.getenv("NEXUS_N3_OUTPUT_ROOT", "").strip()
+    outputs_dir = Path(configured_output_root) if configured_output_root else (state.project_root / "nexus_n3_outputs")
+    outputs_dir.mkdir(parents=True, exist_ok=True)
 
     def _render_template(request: Request, template_name: str, context: dict | None = None) -> HTMLResponse:
         """Render templates with common header context."""
@@ -219,6 +223,7 @@ def create_app(state: AdminState) -> FastAPI:
             candidate = Path(usb_path)
             if candidate.exists() and candidate.is_dir():
                 return candidate
+        outputs_dir.mkdir(parents=True, exist_ok=True)
         return outputs_dir
 
     def _resolve_usb_outputs_dir() -> Path | None:

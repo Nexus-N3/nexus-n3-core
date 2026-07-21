@@ -29,7 +29,7 @@ class AlgorithmHostClient:
     def __init__(self, plugin: InstalledAlgorithmPlugin):
         self.plugin = plugin
         runtime_python = _runtime_python(plugin.runtime_path)
-        project_root = Path(__file__).resolve().parents[2]
+        project_root = Path(__file__).resolve().parents[3]
         env = os.environ.copy()
         current_pythonpath = env.get("PYTHONPATH", "")
         env["PYTHONPATH"] = (

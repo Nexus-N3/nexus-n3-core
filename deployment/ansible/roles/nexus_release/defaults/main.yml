@@ -5,6 +5,8 @@ nexus_venv_path: "{{ nexus_install_root }}/venv"
 nexus_venv_system_site_packages: false
 nexus_env_dir: /etc/nexus-n3
 nexus_runtime_env_remote_path: "{{ nexus_env_dir }}/runtime.env"
+nexus_output_root: "{{ nexus_install_root }}/nexus_n3_outputs"
+nexus_log_root: "{{ nexus_install_root }}/nexus_n3_logs"
 nexus_site: nexus_n3_site
 nexus_customer_id: ""
 nexus_site_id: "{{ nexus_site }}"
