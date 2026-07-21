@@ -5,6 +5,8 @@ NEXUS_PERF_LOG={{ 1 if nexus_perf_log | bool else 0 }}
 
 NEXUS_N3_PLUGIN_ROOT={{ nexus_plugin_root }}
 NEXUS_N3_PLUGIN_USE_SYSTEM_SITE_PACKAGES={{ 1 if nexus_plugin_use_system_site_packages | bool else 0 }}
+NEXUS_N3_BOOTSTRAP_PLUGINS={{ 1 if nexus_plugin_bootstrap_enabled | bool else 0 }}
+NEXUS_N3_BOOTSTRAP_PLUGIN_LIST={{ nexus_plugin_bootstrap_plugin_list }}
 NEXUS_N3_PLUGIN_CATALOG_ROOT={{ nexus_plugin_catalog_root }}
 
 BLE_BACKEND={{ nexus_ble_backend }}
@@ -18,10 +20,6 @@ GATEWAY_READ_TIMEOUT_S={{ nexus_ble_gateway_read_timeout_s }}
 
 ZEROMQ_CMD_BIND={{ nexus_zeromq_cmd_bind }}
 ZEROMQ_EVENT_BIND={{ nexus_zeromq_event_bind }}
-
-AMQP_URL={{ nexus_amqp_url }}
-LAVINMQ_BRIDGE_LOCAL_CMD_ADDR={{ nexus_lavinmq_bridge_local_cmd_addr }}
-LAVINMQ_BRIDGE_LOCAL_EVT_ADDR={{ nexus_lavinmq_bridge_local_evt_addr }}
 
 AZURE_IOT_CONNECTION_STRING={{ nexus_azure_iot_connection_string }}
 AZURE_IOT_DEVICE_ID={{ nexus_azure_iot_device_id }}

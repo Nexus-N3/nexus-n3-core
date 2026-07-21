@@ -201,3 +201,13 @@
     - nexus_install_algorithm_plugins | bool
     - not item.stat.exists
   notify: Restart nexus-n3
+
+- name: Normalize installed plugin ownership for runtime access
+  ansible.builtin.file:
+    path: "{{ nexus_plugin_root }}"
+    state: directory
+    recurse: true
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+  when:
+    - nexus_install_sensor_plugins | bool or nexus_install_algorithm_plugins | bool

@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import platform
 import shutil
 import stat
+import sys
+import sysconfig
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,7 +15,7 @@ from pathlib import Path
 from .versions import version_gte
 
 
-CURRENT_OS_VERSION = "0.0.7"
+CURRENT_OS_VERSION = "0.1.3"
 
 
 class PluginBundleError(RuntimeError):
@@ -92,6 +95,7 @@ def validate_bundle(bundle_path: Path) -> ValidatedBundle:
             raise PluginBundleError(
                 f"bundle requires nexus-n3-core>={min_version}, current={CURRENT_OS_VERSION}"
             )
+        _validate_bundle_target(manifest)
 
         artifact_members = [artifact["path"] for artifact in manifest["artifacts"]]
         return ValidatedBundle(
@@ -185,3 +189,72 @@ def _validate_artifacts(manifest: dict, checksums: dict[str, str], member_names:
         actual_sha = checksums.get(artifact_path)
         if declared_sha and actual_sha and declared_sha != actual_sha:
             raise PluginBundleError(f"artifact sha256 mismatch for {artifact_path}")
+
+
+def _validate_bundle_target(manifest: dict) -> None:
+    target = manifest.get("target")
+    if not target:
+        return
+    if not isinstance(target, dict):
+        raise PluginBundleError("manifest target must be a JSON object")
+
+    target_id = str(target.get("id", "")).strip().lower()
+    host_os = platform.system().lower()
+    host_machine = platform.machine().lower()
+    host_python_version = f"{sys.version_info.major}.{sys.version_info.minor}"
+    host_implementation = _normalize_python_implementation(sys.implementation.name)
+    host_abi = _current_abi_tag()
+
+    if target_id == "rpi":
+        if host_os != "linux" or host_machine not in {"aarch64", "arm64", "armv7l"}:
+            raise PluginBundleError(
+                f"bundle target '{target_id}' is incompatible with host {host_os}/{host_machine}"
+            )
+    elif target_id == "jetson":
+        if host_os != "linux" or host_machine not in {"aarch64", "arm64"}:
+            raise PluginBundleError(
+                f"bundle target '{target_id}' is incompatible with host {host_os}/{host_machine}"
+            )
+    elif target_id == "win":
+        if host_os != "windows":
+            raise PluginBundleError(
+                f"bundle target '{target_id}' is incompatible with host {host_os}/{host_machine}"
+            )
+
+    expected_python = target.get("python_version")
+    if expected_python and expected_python != host_python_version:
+        raise PluginBundleError(
+            f"bundle target python_version={expected_python} is incompatible with host python_version={host_python_version}"
+        )
+
+    expected_implementation = target.get("implementation")
+    if expected_implementation and expected_implementation != host_implementation:
+        raise PluginBundleError(
+            f"bundle target implementation={expected_implementation} is incompatible with host implementation={host_implementation}"
+        )
+
+    expected_abi = target.get("abi")
+    if expected_abi and host_abi and expected_abi != host_abi:
+        raise PluginBundleError(
+            f"bundle target abi={expected_abi} is incompatible with host abi={host_abi}"
+        )
+
+
+def _normalize_python_implementation(name: str) -> str:
+    normalized = name.strip().lower()
+    if normalized == "cpython":
+        return "cp"
+    return normalized
+
+
+def _current_abi_tag() -> str | None:
+    soabi = sysconfig.get_config_var("SOABI") or ""
+    for part in soabi.split("-"):
+        if part.startswith("cp") and len(part) >= 5:
+            return part
+
+    version = f"{sys.version_info.major}{sys.version_info.minor}"
+    implementation = _normalize_python_implementation(sys.implementation.name)
+    if implementation == "cp":
+        return f"cp{version}"
+    return None

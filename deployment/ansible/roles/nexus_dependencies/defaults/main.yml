@@ -6,9 +6,9 @@ nexus_dependencies_packages:
   - python3-six
   - python3-dbus
   - avahi-daemon
+  - avahi-utils
   - exfatprogs
   - nfs-common
   - nfs-kernel-server
-  - hostapd
   - dnsmasq
   - wireguard

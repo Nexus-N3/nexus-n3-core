@@ -10,18 +10,6 @@
     msg: "Missing release artifact at {{ nexus_release_local_path }}"
   when: not nexus_release_local_stat.stat.exists
 
-- name: Check local nexus server script
-  ansible.builtin.stat:
-    path: "{{ nexus_server_local_path }}"
-  delegate_to: localhost
-  become: false
-  register: nexus_server_local_stat
-
-- name: Fail if local nexus server script is missing
-  ansible.builtin.fail:
-    msg: "Missing nexus_n3_server.py at {{ nexus_server_local_path }}"
-  when: not nexus_server_local_stat.stat.exists
-
 
 
 - name: Ensure install root exists
@@ -31,13 +19,6 @@
     owner: "{{ nexus_service_user }}"
     group: "{{ nexus_service_group }}"
     mode: "0755"
-
-- name: Fail if AMQP URL is missing for LavinMQ gateway
-  ansible.builtin.fail:
-    msg: "Set nexus_amqp_url in Ansible host/group vars when using lavinmq_gateway"
-  when:
-    - nexus_gateway == "lavinmq_gateway"
-    - nexus_amqp_url | length == 0
 
 - name: Fail if Azure bridge settings are incomplete when bridge is enabled
   ansible.builtin.fail:
@@ -61,12 +42,20 @@
     group: root
     mode: "0755"
 
+- name: Ensure plugin root exists
+  ansible.builtin.file:
+    path: "{{ nexus_plugin_root }}"
+    state: directory
+    owner: "{{ nexus_service_user }}"
+    group: "{{ nexus_service_group }}"
+    mode: "0755"
+
 - name: Upload shared runtime env file
   ansible.builtin.template:
     src: runtime_env.j2
     dest: "{{ nexus_runtime_env_remote_path }}"
     owner: root
-    group: root
+    group: "{{ nexus_service_group }}"
     mode: "0640"
   notify: Restart nexus-n3
 
@@ -90,15 +79,6 @@
     virtualenv_command: "python3 -m venv{% if nexus_venv_system_site_packages | bool %} --system-site-packages{% endif %}"
     state: present
     extra_args: "--force-reinstall"
-  notify: Restart nexus-n3
-
-- name: Upload nexus_n3_server.py
-  ansible.builtin.copy:
-    src: "{{ nexus_server_local_path }}"
-    dest: "{{ nexus_install_root }}/nexus_n3_server.py"
-    owner: "{{ nexus_service_user }}"
-    group: "{{ nexus_service_group }}"
-    mode: "0755"
   notify: Restart nexus-n3
 
 - name: Check local admin UI assets

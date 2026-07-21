@@ -144,12 +144,26 @@ def test_failed_install_does_not_replace_current(tmp_path: Path):
     assert failures[-1]["plugin_id"] == "demo_sensor"
     assert (plugin_root / "incoming" / f"{bad_bundle.name}.error.json").exists()
 
+
+def test_rejects_incompatible_bundle_target(tmp_path: Path):
+    plugin_root = tmp_path / "plugins"
+    bundle_path = _build_fixture_bundle(
+        tmp_path,
+        plugin_name="demo_sensor_target",
+        version="1.0.0",
+        target={"id": "win", "python_version": "3.12", "implementation": "cp", "abi": "cp312"},
+    )
+
+    with pytest.raises(PluginInstallError, match="bundle target"):
+        PluginInstaller(plugin_root).install_bundle(bundle_path)
+
 def _build_fixture_bundle(
     tmp_path: Path,
     *,
     plugin_name: str,
     version: str,
     corrupt_checksum: bool = False,
+    target: dict | None = None,
 ) -> Path:
     wheel_path = _build_minimal_sdkless_wheel(
         tmp_path / f"wheel-{plugin_name}-{version}",
@@ -196,6 +210,8 @@ def _build_fixture_bundle(
             "timeout_seconds": 10,
         },
     }
+    if target is not None:
+        manifest["target"] = target
     bundle_path = tmp_path / f"{plugin_name}-{version}.rsnxplugin"
     _write_bundle(bundle_path, manifest, {"artifacts/" + wheel_path.name: wheel_path}, corrupt_checksum=corrupt_checksum)
     return bundle_path

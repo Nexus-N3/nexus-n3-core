@@ -1,16 +1,56 @@
 nexus_ap_set_nm_unmanaged: true
 nexus_usb_uid: 1000
 nexus_usb_gid: 1000
+
+# Runtime identity and node role
 nexus_role: standalone # standalone or master
-nexus_gateway: zeromq_gateway 
+nexus_gateway: zeromq_gateway
 nexus_kiosk_url: http://localhost:8050
-nexus_site: local_home
-nexus_site_id: local_home
-nexus_site_name: "Local Home"
+nexus_site: lunar
+nexus_site_id: lunar_facility_cologne
+nexus_site_name: "Lunar Cologne"
 nexus_customer_id: "customer-dlr"
+
+# Runtime feature flags
 nexus_azure_bridge_enabled: true
 nexus_azure_bridge_remote_control: true
-nexus_azure_iot_device_id: "rs-nexus-pironmax-001"
 nexus_admin_enabled: true
+nexus_admin_display_profile: ""
+nexus_perf_log: false
+nexus_neia_apps_catalog_url: "http://127.0.0.1:8050/api/v1/apps/catalog"
+
+# Plugin runtime
+nexus_plugin_root: /opt/nexus-n3-plugins
+nexus_plugin_use_system_site_packages: false
+nexus_plugin_bootstrap_enabled: false
+nexus_plugin_bootstrap_plugin_list: ""
+nexus_plugin_catalog_root: ""
+nexus_plugin_bundle_target: rpi
+
+# BLE backend
 nexus_ble_backend: nexus_ble_gateway
-nexus_ble_gateway_serial_port: /dev/serial/by-id/usb-SEGGER_J-Link_001057755524-if02
+nexus_ble_gateway_serial_port: /dev/serial/by-id/usb-SEGGER_J-Link_001057755524-if01
+nexus_ble_gateway_baudrate: 1000000
+nexus_ble_gateway_protocol_version: 1
+nexus_ble_gateway_connect_timeout_s: 15.0
+nexus_ble_gateway_subscribe_timeout_s: 5.0
+nexus_ble_gateway_write_timeout_s: 5.0
+nexus_ble_gateway_read_timeout_s: 5.0
+
+# Local gateway transport
+nexus_zeromq_cmd_bind: "tcp://*:5555"
+nexus_zeromq_event_bind: "tcp://*:5556"
+
+# Azure bridge runtime
+nexus_azure_iot_device_id: "rs-nexus-pironmax-001"
+nexus_azure_iot_upload_container: nexusn3-session-uploads
+nexus_azure_bridge_local_cmd_addr: "tcp://127.0.0.1:5555"
+nexus_azure_bridge_local_evt_addr: "tcp://127.0.0.1:5556"
+nexus_azure_bridge_use_websockets: true
+nexus_azure_bridge_keep_alive: 120
+nexus_azure_bridge_connection_retry_interval: 15
+nexus_azure_bridge_upload_retry_interval: 5
+nexus_azure_bridge_state_file: /tmp/nexus_n3.azure_bridge_state.json
+
+# Robot runtime
+nexus_robot_config_path: /etc/nexus-n3/robot.yaml

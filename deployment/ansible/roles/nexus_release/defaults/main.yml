@@ -1,9 +1,8 @@
-nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.0.7-py3-none-any.whl"
+nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.1.3-py3-none-any.whl"
 nexus_release_remote_path: "/tmp/{{ nexus_release_local_path | basename }}"
 nexus_install_root: /opt/nexus-n3-core
 nexus_venv_path: "{{ nexus_install_root }}/venv"
-nexus_venv_system_site_packages: true
-nexus_server_local_path: "{{ inventory_dir }}/../../nexus_n3_server.py"
+nexus_venv_system_site_packages: false
 nexus_env_dir: /etc/nexus-n3
 nexus_runtime_env_remote_path: "{{ nexus_env_dir }}/runtime.env"
 nexus_site: nexus_n3_site
@@ -41,21 +40,21 @@ nexus_admin_display_profile: ""
 nexus_perf_log: false
 nexus_admin_local_path: "{{ inventory_dir }}/../../nexus_n3.admin"
 nexus_admin_remote_path: "{{ nexus_install_root }}/nexus_n3.admin"
-nexus_amqp_url: ""
 nexus_zeromq_cmd_bind: "tcp://*:5555"
 nexus_zeromq_event_bind: "tcp://*:5556"
-nexus_lavinmq_bridge_local_cmd_addr: "tcp://127.0.0.1:5555"
-nexus_lavinmq_bridge_local_evt_addr: "tcp://127.0.0.1:5556"
 nexus_compute_port: 7001
 nexus_service_name: nexus-n3
 nexus_service_user: "{{ ansible_user }}"
 nexus_service_group: "{{ ansible_user }}"
 nexus_plugin_catalog_root: ""
 nexus_plugin_root: /opt/nexus-n3-plugins
-nexus_plugin_use_system_site_packages: true
-nexus_plugin_bundle_root: "{{ inventory_dir }}/../../../plugin-builds"
-nexus_sensor_plugin_bundle_root: "{{ nexus_plugin_bundle_root }}/sensors"
-nexus_algorithm_plugin_bundle_root: "{{ nexus_plugin_bundle_root }}/algorithms"
+nexus_plugin_use_system_site_packages: false
+nexus_plugin_bootstrap_enabled: false
+nexus_plugin_bootstrap_plugin_list: ""
+nexus_plugin_bundle_root: "{{ inventory_dir }}/../../../nexus-n3-plugin-catalog/plugin-builds"
+nexus_plugin_bundle_target: rpi
+nexus_sensor_plugin_bundle_root: "{{ nexus_plugin_bundle_root }}/sensors/{{ nexus_plugin_bundle_target }}"
+nexus_algorithm_plugin_bundle_root: "{{ nexus_plugin_bundle_root }}/algorithms/{{ nexus_plugin_bundle_target }}"
 nexus_plugin_bundle_staging_root: /tmp/nexus-n3-plugin-bundles
 nexus_sensor_plugin_bundles: []
 nexus_algorithm_plugin_bundles: []

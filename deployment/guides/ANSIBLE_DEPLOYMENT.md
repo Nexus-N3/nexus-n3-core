@@ -20,13 +20,31 @@ target.
 Ansible now expects these local artifacts on the control machine:
 
 - `dist/nexus_n3_core-<version>-py3-none-any.whl`
-- sensor plugin bundles in `plugin-builds/sensors/`
-- algorithm plugin bundles in `plugin-builds/algorithms/`
+- sensor plugin bundles in `../nexus-n3-plugin-catalog/plugin-builds/sensors/<target>/`
+- algorithm plugin bundles in `../nexus-n3-plugin-catalog/plugin-builds/algorithms/<target>/`
 
 The default bundle roots can be overridden in host or group vars:
 
+- `nexus_plugin_bundle_target`
 - `nexus_sensor_plugin_bundle_root`
 - `nexus_algorithm_plugin_bundle_root`
+
+For Raspberry Pi deployments, the intended build output is:
+
+- `../nexus-n3-plugin-catalog/plugin-builds/sensors/rpi/*.rsnxplugin`
+- `../nexus-n3-plugin-catalog/plugin-builds/algorithms/rpi/*.rsnxplugin`
+
+The standard bundle build command is:
+
+```bash
+nexus-n3-plugin build \
+  --plugin-root sensors/nexus-n3-sensor-movesense \
+  --output-dir plugin-builds/sensors/rpi \
+  --target rpi
+```
+
+Run that from the `nexus-n3-plugin-catalog/` repository root. For algorithms,
+replace the `--plugin-root` and `--output-dir` paths accordingly.
 
 ## Role-Based Plugin Deployment
 
@@ -109,13 +127,13 @@ If a host is not Linux, these provisioning playbooks fail early by design.
 Core deployment variables:
 
 - `nexus_release_local_path`
-- `nexus_server_local_path`
 - `nexus_runtime_env_remote_path`
 - `nexus_plugin_root`
 - `nexus_plugin_bundle_staging_root`
 
 Bundle variables:
 
+- `nexus_plugin_bundle_target`
 - `nexus_sensor_plugin_bundle_root`
 - `nexus_algorithm_plugin_bundle_root`
 - `nexus_sensor_plugin_bundles`
@@ -129,11 +147,30 @@ Role switches:
 If the explicit bundle lists are empty, Ansible auto-discovers all
 `.rsnxplugin` files in the corresponding bundle root.
 
+## Runtime Ownership Model
+
+The deployed service runs as `{{ ansible_user }}` for the target host, which is
+`rsnexus` in the shipped Raspberry Pi inventory.
+
+That means the deployment must leave these paths readable by the service user:
+
+- `/etc/nexus-n3/runtime.env`
+- `/opt/nexus-n3-plugins`
+- all installed plugin manifests, wheels, and runtime virtual environments under
+  `/opt/nexus-n3-plugins/installed/`
+
+The release role now enforces that by:
+
+- writing `runtime.env` as `root:<service-group>` with mode `0640`
+- normalizing ownership of the plugin root recursively to the service
+  user/group after bundle installation
+
 ## Phase 2: Software Deployment
 
 Software deployment is separate from host provisioning. These playbooks install
 the built wheel, runtime env, admin assets, and plugin bundles onto hosts that
-have already been prepared.
+have already been prepared. The installed `nexus-n3-core` CLI entry point is
+what the deployed systemd service runs.
 
 ## Standalone Deployment
 
@@ -141,10 +178,11 @@ have already been prepared.
 2. Build the required sensor and algorithm `.rsnxplugin` bundles.
 3. Place the wheel in `dist/`.
 4. Place bundles in:
-   - `plugin-builds/sensors/`
-   - `plugin-builds/algorithms/`
+   - `../nexus-n3-plugin-catalog/plugin-builds/sensors/rpi/`
+   - `../nexus-n3-plugin-catalog/plugin-builds/algorithms/rpi/`
 5. Set the standalone host vars, especially:
    - `nexus_role: standalone`
+   - `nexus_plugin_bundle_target: rpi`
    - `nexus_ble_backend`
    - `nexus_ble_gateway_serial_port` if using the BLE gateway
    - Azure variables if the Azure bridge is enabled
@@ -160,6 +198,50 @@ If you want to target a specific host directly:
 ```bash
 cd deployment/ansible
 ansible-playbook -i inventory.ini playbooks/deploy_release.yml -e nexus_deploy_hosts=nexus-n3-master
+```
+
+### Example Raspberry Pi Build Sequence
+
+From `nexus-n3-plugin-catalog/`:
+
+```bash
+mkdir -p plugin-builds/sensors/rpi plugin-builds/algorithms/rpi
+
+nexus-n3-plugin build \
+  --plugin-root sensors/nexus-n3-sensor-movella-dot \
+  --output-dir plugin-builds/sensors/rpi \
+  --target rpi
+
+nexus-n3-plugin build \
+  --plugin-root sensors/nexus-n3-sensor-movesense \
+  --output-dir plugin-builds/sensors/rpi \
+  --target rpi
+
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-pass-through \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
+
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-generic-data-summary \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
+
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-standard-loading-intensity \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
+
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-ecg-rhythm \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
+```
+
+Then verify the artifacts exist before running Ansible:
+
+```bash
+find plugin-builds -type f -name '*-rpi.rsnxplugin' | sort
 ```
 
 ## Distributed Deployment
@@ -229,6 +311,7 @@ The `nexus_release` role:
 - stages `.rsnxplugin` bundles on the target
 - installs bundles into `NEXUS_N3_PLUGIN_ROOT` using `python -m nexus_n3.plugins install`
 - skips bundle installation if the exact plugin version is already installed
+- normalizes plugin-root ownership for runtime readability
 - installs and restarts the systemd service when required
 
 ## Quick Plugin Rollout
@@ -274,6 +357,67 @@ Because it accepts a direct `--bundle` path, the source artifact can come from:
 
 That is intentional. The deployment source may vary, but the installer path on
 the node should stay the same.
+
+## Minimal Recovery Runs
+
+When only one deployment step needs to be corrected, it is not necessary to
+wait for a full end-to-end rollout.
+
+Useful restart points:
+
+```bash
+cd deployment/ansible
+
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --start-at-task "Upload shared runtime env file"
+```
+
+That is useful when only `runtime.env` ownership/content needs to be refreshed.
+
+```bash
+cd deployment/ansible
+
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --start-at-task "Install role-appropriate plugin bundles"
+```
+
+That is useful when only plugin installation or plugin-root ownership needs to
+be corrected.
+
+If only the unit file changed, rerun the release deploy and then verify:
+
+```bash
+sudo sed -n '1,20p' /etc/systemd/system/nexus-n3.service
+sudo systemctl daemon-reload
+sudo systemctl restart nexus-n3
+systemctl status nexus-n3 --no-pager
+```
+
+The `ExecStart=` line must remain separate from `Restart=on-failure`.
+
+## Troubleshooting
+
+Common failure signatures seen during Raspberry Pi rollout on July 21, 2026:
+
+- `unrecognized arguments: --azure-bridge-remote-controlRestart=on-failure`
+  means the systemd unit file is malformed and `Restart=on-failure` has been
+  concatenated onto `ExecStart`.
+- `PermissionError: [Errno 13] Permission denied: '/etc/nexus-n3/runtime.env'`
+  means the runtime env file is not readable by the service user.
+- `PermissionError: [Errno 13] Permission denied: '/opt/nexus-n3-plugins/...'`
+  means the installed plugin tree is not readable by the service user.
+
+Useful checks on the target:
+
+```bash
+sudo sed -n '1,20p' /etc/systemd/system/nexus-n3.service
+ls -l /etc/nexus-n3/runtime.env
+find /opt/nexus-n3-plugins -maxdepth 3 \( -type d -o -type f \) | head
+systemctl status nexus-n3 --no-pager
+journalctl -u nexus-n3 -n 100 -l --no-pager
+```
 
 ## Notes
 
