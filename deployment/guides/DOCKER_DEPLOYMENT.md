@@ -83,6 +83,19 @@ Copy only built bundles into:
 /srv/nexus-n3/plugin-bundles
 ```
 
+Recommended source layout on the build machine:
+
+```text
+nexus-n3-plugin-catalog/plugin-builds/
+  sensors/
+    rpi/
+  algorithms/
+    rpi/
+```
+
+For Raspberry Pi runtime deployment, copy the required `*-rpi.rsnxplugin`
+artifacts from those target directories into `/srv/nexus-n3/plugin-bundles/`.
+
 Do not copy:
 
 - `nexus-n3-plugin-catalog/`
@@ -109,6 +122,11 @@ At container startup:
 4. if not installed, it runs `python -m nexus_n3.plugins install ...`
 
 This keeps plugin deployment aligned with the production artifact model.
+
+Because the container entrypoint installs bundles locally inside the container
+plugin root, there is no host-side plugin permission normalization step here.
+The runtime env file still needs to be readable by the container process
+through the mounted config path.
 
 ## Dev Mode
 
@@ -180,3 +198,5 @@ docker compose -f docker-compose.dev.yml up --build
 - Distributed plugin-aware scheduling is not yet implemented in the runtime.
 - If you need to update one plugin quickly, replace the bundle in
   `/srv/nexus-n3/plugin-bundles` and restart the container.
+- Production-style Docker deployment should use built target-specific bundles
+  such as `*-rpi.rsnxplugin`, not plugin source trees.

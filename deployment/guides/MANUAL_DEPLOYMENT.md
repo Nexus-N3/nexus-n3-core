@@ -1,14 +1,15 @@
 # Manual Deployment
 
-This guide describes a full manual deployment flow for NexusN3 Edge Core
-without Ansible or Docker.
+This guide describes a direct host deployment of `nexus-n3-core` without
+Ansible or Docker.
 
 It covers:
 
 - building the core wheel
-- building `.rsnxplugin` bundles with `nexus-n3-plugin-tooling`
+- building target-specific `.rsnxplugin` bundles
 - copying artifacts to the target host
 - installing the runtime and plugins manually
+- starting the runtime with the installed `nexus-n3-core` CLI
 
 It does not require:
 
@@ -19,14 +20,14 @@ It does not require:
 
 The build machine should contain:
 
-- this repository
-- `nexus-n3-plugin-tooling`
+- `nexus-n3-core/`
+- `nexus-n3-plugin-tooling/`
 - `nexus-n3-plugin-catalog/`
 
 Recommended sibling layout:
 
 ```text
-nexus-n3-project/
+rs-nexus-project/
   nexus-n3-core/
   nexus-n3-plugin-tooling/
   nexus-n3-plugin-catalog/
@@ -37,7 +38,7 @@ nexus-n3-project/
 From the core repository:
 
 ```bash
-cd /path/to/nexus-n3-core
+cd /path/to/rs-nexus-project/nexus-n3-core
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -U pip build
@@ -50,101 +51,99 @@ This produces:
 dist/nexus_n3_core-<version>-py3-none-any.whl
 ```
 
-Also retain:
-
-- `nexus_n3_server.py`
-
-The current deployment model still launches the runtime through that script.
-
 ## 3. Install Plugin Tooling On The Build Machine
 
 From the tooling repository:
 
 ```bash
-cd /path/to/nexus-n3-plugin-tooling
+cd /path/to/rs-nexus-project/nexus-n3-plugin-tooling
 ./install.sh
-source .venv/bin/activate
-nexusn3-plugin --help
+nexus-n3-plugin --help
 ```
 
-This installs the plugin CLI and SDK into the tooling virtual environment.
+The standard operator command is `nexus-n3-plugin`.
 
-## 4. Build The Required `.rsnxplugin` Bundles
+## 4. Build Target-Specific Plugin Bundles
 
-Create persistent output directories for retained bundles:
+For a Raspberry Pi deployment target, build into:
 
 ```bash
-mkdir -p /path/to/nexus-n3-core/plugin-builds/sensors
-mkdir -p /path/to/nexus-n3-core/plugin-builds/algorithms
+cd /path/to/rs-nexus-project/nexus-n3-plugin-catalog
+mkdir -p plugin-builds/sensors/rpi plugin-builds/algorithms/rpi
 ```
 
-Build the reference sensor plugin:
+Build sensor bundles:
 
 ```bash
-cd /path/to/nexus-n3-plugin-tooling
-source .venv/bin/activate
+nexus-n3-plugin build \
+  --plugin-root sensors/nexus-n3-sensor-movella-dot \
+  --output-dir plugin-builds/sensors/rpi \
+  --target rpi
 
-nexusn3-plugin build \
-  --plugin-root /path/to/nexus-n3-plugin-catalog/sensors/nexus-n3-sensor-movella-dot \
-  --output-dir /path/to/nexus-n3-core/plugin-builds/sensors
+nexus-n3-plugin build \
+  --plugin-root sensors/nexus-n3-sensor-movesense \
+  --output-dir plugin-builds/sensors/rpi \
+  --target rpi
 ```
 
-nexusn3-plugin build \
-  --plugin-root /path/to/nexus-n3-plugin-catalog/sensors/nexus-n3-sensor-movella-dot \
-  --output-dir /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors
-
-Build the reference algorithm plugin:
+Build algorithm bundles:
 
 ```bash
-cd /path/to/nexus-n3-plugin-tooling
-source .venv/bin/activate
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-pass-through \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
 
-nexusn3-plugin build \
-  --plugin-root /path/to/nexus-n3-plugin-catalog/algorithms/nexus-n3-algorithm-standard-loading-intensity \
-  --output-dir /path/to/nexus-n3-core/plugin-builds/algorithms
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-generic-data-summary \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
+
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-standard-loading-intensity \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
+
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-ecg-rhythm \
+  --output-dir plugin-builds/algorithms/rpi \
+  --target rpi
 ```
 
-nexusn3-plugin build \
-  --plugin-root /path/to/nexus-n3-plugin-catalog/algorithms/nexus-n3-algorithm-standard-loading-intensity \
-  --output-dir /path/to/nexus-n3-plugin-catalog/plugin-builds/algorithms
-
-this is by default now as it makes sense. it doesnt make sense to depend on system packages. that defeats the object.
-For offline-complete bundles, include third-party dependency wheels explicitly:
+Verify the artifacts:
 
 ```bash
-nexusn3-plugin build \
-  --plugin-root /path/to/nexus-n3-plugin-catalog/algorithms/nexus-n3-algorithm-standard-loading-intensity \
-  --output-dir /path/to/nexus-n3-core/plugin-builds/algorithms \
-  --artifact /path/to/wheels/numpy-<version>.whl \
-  --artifact /path/to/wheels/scipy-<version>.whl
+find plugin-builds -type f -name '*-rpi.rsnxplugin' | sort
 ```
 
-Important:
+Notes:
 
-- `nexusn3-plugin build` does not auto-fetch third-party dependency wheels - it does now.
-- use a persistent `--output-dir`, not `/tmp`, if you want to retain the built
-  bundles for transfer/deployment
+- the default build now aims to create a dependency-complete target bundle
+- if the build machine has connectivity, target wheels are fetched during the
+  build
+- if the build machine is offline, provide a target wheelhouse and use the
+  tooling options documented in `nexus-n3-plugin-tooling`
 
 ## 5. Prepare Artifacts For Transfer
 
 On the build machine, prepare:
 
-- `dist/nexus_n3_core-<version>-py3-none-any.whl`
-- `nexus_n3_server.py`
-- the required sensor plugin `.rsnxplugin` bundles
-- the required algorithm plugin `.rsnxplugin` bundles
+- `nexus-n3-core/dist/nexus_n3_core-<version>-py3-none-any.whl`
+- the required sensor plugin `*-rpi.rsnxplugin` bundles
+- the required algorithm plugin `*-rpi.rsnxplugin` bundles
 
-Recommended layout on the build machine:
+Recommended layout:
 
 ```text
-dist/
-plugin-builds/
+nexus-n3-core/dist/
+nexus-n3-plugin-catalog/plugin-builds/
   sensors/
+    rpi/
   algorithms/
+    rpi/
 ```
 
-Copy the wheel, `nexus_n3_server.py`, and bundles to the target host by your
-preferred method:
+Copy the wheel and bundles to the target host by your preferred method:
 
 - `scp`
 - mounted USB disk
@@ -155,82 +154,79 @@ preferred method:
 On the target host:
 
 ```bash
-sudo mkdir -p /opt/nexusn3-edge-core
+sudo mkdir -p /opt/nexus-n3-core
 sudo mkdir -p /opt/nexus-n3-plugins
 sudo mkdir -p /etc/nexus-n3
-sudo mkdir -p /var/lib/nexus-n3
-```
-
-If you want local output under a dedicated path:
-
-```bash
-sudo mkdir -p /exports/nexus_n3_data/nexus_n3_outputs
 ```
 
 ## 7. Install The Core Runtime
 
-Create the runtime virtual environment:
+Copy the wheel to the target host, then create the runtime environment:
 
 ```bash
-cd /opt/nexusn3-edge-core
-python3 -m venv .venv
-source .venv/bin/activate
+cd /opt/nexus-n3-core
+python3 -m venv venv
+source venv/bin/activate
 pip install -U pip
 pip install /path/to/nexus_n3_core-<version>-py3-none-any.whl
 ```
 
-Copy the runtime entry script into the install root:
+The installed runtime command is:
 
 ```bash
-cp /path/to/nexus_n3_server.py /opt/nexusn3-edge-core/nexus_n3_server.py
+/opt/nexus-n3-core/venv/bin/nexus-n3-core
 ```
 
 ## 8. Install Plugin Bundles
 
-Install each required plugin bundle into the plugin root:
+Install each required bundle into the plugin root:
 
 ```bash
-cd /opt/nexusn3-edge-core
-source .venv/bin/activate
+/opt/nexus-n3-core/venv/bin/python -m nexus_n3.plugins install \
+  /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors/rpi/nexus-n3-sensor-movella-dot-<version>-rpi.rsnxplugin \
+  --plugin-root /opt/nexus-n3-plugins
 
-python -m nexus_n3.plugins install /path/to/nexus-n3-sensor-movella-dot-<version>.rsnxplugin --plugin-root /opt/nexus-n3-plugins
-
-SENSOR EXAMPLE
-python -m nexus_n3.plugins install /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors/nexus-n3-sensor-movella-dot-0.1.0.rsnxplugin --plugin-root /opt/nexus-n3-plugins
-
-
-python -m nexus_n3.plugins install /path/to/nexus-n3-algorithm-standard-loading-intensity-<version>.rsnxplugin --plugin-root /opt/nexus-n3-plugins
-
-ALGO EXAMPLE
-
-python -m nexus_n3.plugins install /path/to/nexus-n3-plugin-catalog/plugin-builds/algorithms/nexus-n3-algorithm-standard-loading-intensity-0.1.0.rsnxplugin --plugin-root /opt/nexus-n3-plugins
-
-
+/opt/nexus-n3-core/venv/bin/python -m nexus_n3.plugins install \
+  /path/to/nexus-n3-plugin-catalog/plugin-builds/algorithms/rpi/nexus-n3-algorithm-standard-loading-intensity-<version>-rpi.rsnxplugin \
+  --plugin-root /opt/nexus-n3-plugins
 ```
 
 Repeat for any additional bundles required by the node role.
 
 Role guidance:
 
-- standalone: sensor plugins and algorithm plugins
-- master: sensor plugins and algorithm plugins
-- worker: sensor plugins and algorithm plugins
-- ai: algorithm plugins only
+- `standalone`: sensor plugins and algorithm plugins
+- `master`: sensor plugins and algorithm plugins
+- `worker`: sensor plugins and algorithm plugins
+- `ai`: algorithm plugins only
 
-## 9. Create The Runtime Environment File
+## 9. Fix Runtime Ownership
+
+The service user must be able to read:
+
+- `/etc/nexus-n3/runtime.env`
+- `/opt/nexus-n3-plugins`
+- installed plugin manifests and runtime virtual environments
+
+If the runtime will run as `rsnexus`:
+
+```bash
+sudo chgrp rsnexus /etc/nexus-n3/runtime.env
+sudo chmod 640 /etc/nexus-n3/runtime.env
+sudo chown -R rsnexus:rsnexus /opt/nexus-n3-plugins
+```
+
+If another service user will be used, replace `rsnexus` accordingly.
+
+## 10. Create The Runtime Environment File
 
 Create `/etc/nexus-n3/runtime.env`.
 
-Start from the repo example:
-
-```bash
-cp config/runtime-example.env /etc/nexus-n3/runtime.env
-```
-
-Then set at minimum:
+At minimum, set:
 
 ```text
 NEXUS_N3_PLUGIN_ROOT=/opt/nexus-n3-plugins
+NEXUS_N3_PLUGIN_USE_SYSTEM_SITE_PACKAGES=0
 BLE_BACKEND=nexus_ble_gateway
 GATEWAY_SERIAL_PORT=/dev/serial/by-id/...
 ZEROMQ_CMD_BIND=tcp://*:5555
@@ -240,96 +236,69 @@ ZEROMQ_EVENT_BIND=tcp://*:5556
 Also set:
 
 - Azure variables if using the Azure bridge
+- any site/customer metadata required for the deployment
 - `NEXUS_N3_BOOTSTRAP_PLUGINS=0` for production/manual deployment
 
 Manual production deployment should install built bundles explicitly. It should
 not rely on dev bootstrap.
 
-## 10. Optional USB Mount Scripts
-
-If the host uses the removable USB data-disk path, the repository includes
-manual helper scripts:
-
-- `scripts/usb_disk_add_or_remount.sh`
-- `scripts/usb_disk_safe_unplug.sh`
-
-These can be copied to the target host and invoked manually when preparing or
-removing the USB-backed output storage.
-
-Typical usage:
-
-```bash
-sudo bash scripts/usb_disk_add_or_remount.sh
-sudo bash scripts/usb_disk_safe_unplug.sh
-```
-
-Ansible deployments install templated copies under `/usr/local/bin`, but for a
-manual deployment you can use the repository versions directly.
-
 ## 11. Start The Runtime Manually
 
-Run from the installed runtime environment:
+Run the installed CLI:
 
 ```bash
-cd /opt/nexusn3-edge-core
-source .venv/bin/activate
-python nexus_n3_server.py --admin # uses the defaults which is likely ok for most
-python nexus_n3_server.py --role standalone --admin --admin-host 0.0.0.0 --admin-port 9000
+/opt/nexus-n3-core/venv/bin/nexus-n3-core \
+  --role standalone \
+  --admin \
+  --admin-host 0.0.0.0 \
+  --admin-port 9000
 ```
 
-If the runtime env file is present and correct, the server can also be started
-with the simplified form:
+If the host vars or runtime env require it, also pass:
 
-```bash
-python nexus_n3_server.py
-```
+- `--gateway zeromq_gateway`
+- `--ble-backend nexus_ble_gateway`
+- `--bridge azure_bridge`
+- `--azure-bridge-remote-control`
 
 ## 12. Verify The Deployment
 
 Recommended checks:
 
 ```bash
-python -m nexus_n3.plugins show-root
-python -m nexus_n3.plugins show-dev-list --json
-bash scripts/health_check.sh
-```
-
-At startup, the runtime now logs the detected installed plugin inventory. Check
-for a line similar to:
-
-```text
-[PLUGINS] root=/opt/nexus-n3-plugins sensors=... algorithms=...
+/opt/nexus-n3-core/venv/bin/python -m nexus_n3.plugins show-root
+/opt/nexus-n3-core/venv/bin/python -m nexus_n3.plugins show-dev-list --json
+/opt/nexus-n3-core/venv/bin/python -m nexus_n3.plugins show-catalog --json
 ```
 
 Also verify:
 
 - admin UI reachable on port `9000`
-- BLE backend status is correct
 - expected sensor and algorithm plugins appear in the startup summary
+- gateway ports are available to clients if required:
+  - `tcp://<host-ip>:5555`
+  - `tcp://<host-ip>:5556`
 
 ## 13. Optional Systemd Service
 
-For a persistent host deployment, create a service that runs the installed
-runtime inside `/opt/nexusn3-edge-core/.venv` and points at
-`/etc/nexus-n3/runtime.env`.
+For a persistent host deployment, create a service that:
 
-At minimum, ensure the service:
-
-- runs the runtime venv Python
+- runs `/opt/nexus-n3-core/venv/bin/nexus-n3-core`
 - loads `/etc/nexus-n3/runtime.env`
-- starts `nexus_n3_server.py`
+- runs as a user that can read the env file and plugin root
 - restarts on failure
 
-The Ansible deployment is the reference for a managed systemd setup. Use that
-if you want the full provisioned path.
+Use [SYSTEMD_DEPLOYMENT.md](./SYSTEMD_DEPLOYMENT.md) for the user-service path
+or [ANSIBLE_DEPLOYMENT.md](./ANSIBLE_DEPLOYMENT.md) for the managed
+system-level path.
 
 ## 14. Updating Plugins Later
 
 To deploy a new plugin version later:
 
-1. copy the new `.rsnxplugin` bundle to the host
+1. copy the new target-specific `.rsnxplugin` bundle to the host
 2. run `python -m nexus_n3.plugins install ... --plugin-root /opt/nexus-n3-plugins`
-3. restart the runtime if required by the current operational flow
+3. restart the runtime if required by the operational flow
 
 The future admin-app upload path is expected to use the same bundle installer
 mechanism.
