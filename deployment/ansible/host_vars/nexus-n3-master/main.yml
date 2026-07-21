@@ -29,7 +29,7 @@ nexus_plugin_bundle_target: rpi
 
 # BLE backend
 nexus_ble_backend: nexus_ble_gateway
-nexus_ble_gateway_serial_port: /dev/serial/by-id/usb-SEGGER_J-Link_001057755524-if01
+nexus_ble_gateway_serial_port: /dev/serial/by-id/usb-ZEPHYR_IFMCU_CMSIS-DAP_820D9A5F0D64CFA48AEBA-if01
 nexus_ble_gateway_baudrate: 1000000
 nexus_ble_gateway_protocol_version: 1
 nexus_ble_gateway_connect_timeout_s: 15.0
