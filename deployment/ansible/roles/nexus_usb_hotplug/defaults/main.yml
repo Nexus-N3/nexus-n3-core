@@ -2,9 +2,9 @@ nexus_usb_disk_label: "RSNEXUSDATA"
 # The label in /dev/disk/by-label uses \x20 for spaces.
 nexus_usb_disk_label_dev: "{{ nexus_usb_disk_label | replace(' ', '\\x20') }}"
 
-nexus_usb_service_user: "{{ ansible_user }}"
+nexus_usb_service_user: "{{ ansible_env.SUDO_USER | default(ansible_user | default(ansible_user_id, true), true) }}"
 nexus_usb_main_mount: /exports/nexus_n3_data
-nexus_usb_gui_mount: "/home/{{ ansible_user }}/USB"
+nexus_usb_gui_mount: "/home/{{ nexus_usb_service_user }}/USB"
 nexus_usb_manage_nfs_exports: false
 nexus_usb_manage_nfs_firewall: false
 

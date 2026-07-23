@@ -7,7 +7,19 @@ USB_LABEL_DEV="${USB_LABEL_DEV:-${USB_LABEL// /\\x20}}"
 DEV_PATH="${DEV_PATH:-/dev/disk/by-label/${USB_LABEL_DEV}}"
 MAIN_MOUNT="${MAIN_MOUNT:-/exports/nexus_n3_data}"
 GUI_MOUNT="${GUI_MOUNT:-/home/${RS_USER}/USB}"
-USB_FS_TYPE="${USB_FS_TYPE:-exfat}"
+if [[ -z "${USB_FS_TYPE:-}" ]]; then
+  if [[ -r /etc/os-release ]]; then
+    # Ubuntu 20.04 requires exfat-fuse instead of exfat.
+    . /etc/os-release
+    if [[ "${ID:-}" == "ubuntu" ]] && [[ "${VERSION_ID:-}" =~ ^20\. ]]; then
+      USB_FS_TYPE="exfat-fuse"
+    else
+      USB_FS_TYPE="exfat"
+    fi
+  else
+    USB_FS_TYPE="exfat"
+  fi
+fi
 USB_FMASK="${USB_FMASK:-0002}"
 USB_DMASK="${USB_DMASK:-0002}"
 

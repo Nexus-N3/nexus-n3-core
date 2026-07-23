@@ -25,8 +25,8 @@
     mode: "0440"
     validate: "/usr/sbin/visudo -cf %s"
     content: |
-      {{ ansible_user }} ALL=(root) NOPASSWD: /usr/local/bin/nexusn3-hotplug.sh
-      {{ ansible_user }} ALL=(root) NOPASSWD: /usr/local/bin/nexusn3-usb-safe-unplug.sh
+      {{ nexus_usb_service_user }} ALL=(root) NOPASSWD: /usr/local/bin/nexusn3-hotplug.sh
+      {{ nexus_usb_service_user }} ALL=(root) NOPASSWD: /usr/local/bin/nexusn3-usb-safe-unplug.sh
 
 - name: Configure USB udev rules
   ansible.builtin.copy:
