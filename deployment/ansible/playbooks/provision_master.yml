@@ -12,12 +12,18 @@
           Use the release deployment playbooks for software rollout, and keep
           Windows hosts as development environments only.
   roles:
-    - nexus_dependencies
+    - role: nexus_dependencies
+      tags:
+        - nexus_dependencies
     - role: nexus_kiosk
       tags:
         - nexus_kiosk
     - role: nexus_usb_hotplug
       tags:
         - nexus_usb_hotplug
-    - nexus_access_point
-    - nexus_smb_share
+    - role: nexus_access_point
+      tags: 
+        - nexus_access_point
+    - role: nexus_smb_share
+      tags:
+        - nexus_smb_share

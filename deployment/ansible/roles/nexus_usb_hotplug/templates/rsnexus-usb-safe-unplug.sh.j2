@@ -1,8 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-MAIN_MOUNT="{{ nexus_usb_main_mount }}"
-GUI_MOUNT="{{ nexus_usb_gui_mount }}"
+RS_USER="${RS_USER:-{{ nexus_usb_service_user }}}"
+MAIN_MOUNT="${MAIN_MOUNT:-{{ nexus_usb_main_mount }}}"
+GUI_MOUNT="${GUI_MOUNT:-/home/${RS_USER}/USB}"
 
 sync
 

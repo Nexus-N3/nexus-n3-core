@@ -9,13 +9,13 @@
 
 - name: Install hotplug script
   ansible.builtin.template:
-    src: nexusn3-hotplug.sh.j2
+    src: rsnexus-hotplug.sh.j2
     dest: /usr/local/bin/nexusn3-hotplug.sh
     mode: "0755"
 
 - name: Install safe unplug script
   ansible.builtin.template:
-    src: nexusn3-usb-safe-unplug.sh.j2
+    src: rsnexus-usb-safe-unplug.sh.j2
     dest: /usr/local/bin/nexusn3-usb-safe-unplug.sh
     mode: "0755"
 
@@ -45,6 +45,7 @@
     line: "{{ nexus_usb_exports_line }}"
     state: present
     create: true
+  when: nexus_usb_manage_nfs_exports
   notify: Reload exports
 
 - name: Check ufw status for NFS rules
@@ -52,12 +53,15 @@
   register: nexus_usb_ufw_status
   changed_when: false
   failed_when: false
+  when: nexus_usb_manage_nfs_firewall
 
 - name: Allow NFS ports through ufw
   ansible.builtin.command: "ufw allow {{ item }}"
   register: nexus_usb_ufw_allow
   changed_when: "'Skipping' not in nexus_usb_ufw_allow.stdout"
-  when: "'Status: active' in nexus_usb_ufw_status.stdout"
+  when:
+    - nexus_usb_manage_nfs_firewall
+    - "'Status: active' in nexus_usb_ufw_status.stdout"
   loop:
     - 111/tcp
     - 111/udp

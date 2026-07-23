@@ -1,26 +1,51 @@
-#!/bin/bash
-LABEL="{{ nexus_usb_disk_label }}"
-DEV_PATH="/dev/disk/by-label/{{ nexus_usb_disk_label_dev }}"
-# Main mount for NFS and system access
-MAIN_MOUNT="{{ nexus_usb_main_mount }}"
-# GUI bind mount
-GUI_MOUNT="{{ nexus_usb_gui_mount }}"
+#!/usr/bin/env bash
+set -euo pipefail
 
-case "$1" in
+RS_USER="${RS_USER:-{{ nexus_usb_service_user }}}"
+USB_LABEL="${USB_LABEL:-{{ nexus_usb_disk_label }}}"
+USB_LABEL_DEV="${USB_LABEL_DEV:-{{ nexus_usb_disk_label_dev }}}"
+DEV_PATH="${DEV_PATH:-/dev/disk/by-label/${USB_LABEL_DEV}}"
+MAIN_MOUNT="${MAIN_MOUNT:-{{ nexus_usb_main_mount }}}"
+GUI_MOUNT="${GUI_MOUNT:-{{ nexus_usb_gui_mount }}}"
+USB_FS_TYPE="${USB_FS_TYPE:-{{ nexus_usb_fs_type }}}"
+USB_FMASK="${USB_FMASK:-{{ nexus_usb_fmask }}}"
+USB_DMASK="${USB_DMASK:-{{ nexus_usb_dmask }}}"
+
+if ! id -u "${RS_USER}" >/dev/null 2>&1; then
+  echo "ERROR: user '${RS_USER}' does not exist" >&2
+  exit 1
+fi
+
+RS_UID="$(id -u "${RS_USER}")"
+RS_GID="$(id -g "${RS_USER}")"
+
+case "${1:-}" in
   add)
-    [ -e "$DEV_PATH" ] || exit 1
-    mkdir -p "$MAIN_MOUNT" "$GUI_MOUNT"
-    # Mount SSD if not already mounted
-    if ! mountpoint -q "$MAIN_MOUNT"; then
-        mount -t {{ nexus_usb_fs_type }} -o uid={{ nexus_usb_uid }},gid={{ nexus_usb_gid }},fmask={{ nexus_usb_fmask }},dmask={{ nexus_usb_dmask }} "$DEV_PATH" "$MAIN_MOUNT"
+    if [[ ! -e "${DEV_PATH}" ]]; then
+      echo "ERROR: device not found at ${DEV_PATH}" >&2
+      exit 1
     fi
-    # Bind mount to GUI folder if not already mounted
-    if ! mountpoint -q "$GUI_MOUNT"; then
-        mount --bind "$MAIN_MOUNT" "$GUI_MOUNT"
+
+    mkdir -p "${MAIN_MOUNT}" "${GUI_MOUNT}"
+
+    if ! mountpoint -q "${MAIN_MOUNT}"; then
+        mount -t "${USB_FS_TYPE}" -o "uid=${RS_UID},gid=${RS_GID},fmask=${USB_FMASK},dmask=${USB_DMASK}" "${DEV_PATH}" "${MAIN_MOUNT}"
     fi
+
+    if ! mountpoint -q "${GUI_MOUNT}"; then
+        mount --bind "${MAIN_MOUNT}" "${GUI_MOUNT}"
+    fi
+
+    sync
+    mountpoint -q "${MAIN_MOUNT}" && echo "OK: ${MAIN_MOUNT} mounted"
+    mountpoint -q "${GUI_MOUNT}" && echo "OK: ${GUI_MOUNT} mounted (bind)"
     ;;
   remove)
-    umount -l "$GUI_MOUNT" 2>/dev/null
-    umount -l "$MAIN_MOUNT" 2>/dev/null
+    umount -l "${GUI_MOUNT}" 2>/dev/null
+    umount -l "${MAIN_MOUNT}" 2>/dev/null
+    ;;
+  *)
+    echo "Usage: $0 {add|remove}" >&2
+    exit 2
     ;;
 esac

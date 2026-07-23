@@ -1,4 +1,4 @@
-nexus_dependencies_packages:
+nexus_dependencies_packages_common:
   - python3
   - python3-venv
   - python3-dev
@@ -7,8 +7,11 @@ nexus_dependencies_packages:
   - python3-dbus
   - avahi-daemon
   - avahi-utils
-  - exfatprogs
   - nfs-common
   - nfs-kernel-server
   - dnsmasq
   - wireguard
+
+nexus_dependencies_exfat_packages: "{{ ['exfat-fuse', 'exfat-utils'] if ansible_distribution == 'Ubuntu' and (ansible_distribution_major_version | int) < 22 else ['exfatprogs'] }}"
+
+nexus_dependencies_packages: "{{ nexus_dependencies_packages_common + nexus_dependencies_exfat_packages }}"

@@ -2,13 +2,14 @@ nexus_usb_disk_label: "RSNEXUSDATA"
 # The label in /dev/disk/by-label uses \x20 for spaces.
 nexus_usb_disk_label_dev: "{{ nexus_usb_disk_label | replace(' ', '\\x20') }}"
 
+nexus_usb_service_user: "{{ ansible_user }}"
 nexus_usb_main_mount: /exports/nexus_n3_data
 nexus_usb_gui_mount: "/home/{{ ansible_user }}/USB"
+nexus_usb_manage_nfs_exports: false
+nexus_usb_manage_nfs_firewall: false
 
-nexus_usb_fs_type: exfat
-nexus_usb_uid: 1001
-nexus_usb_gid: 1001
-nexus_usb_fmask: "0022"
-nexus_usb_dmask: "0022"
+nexus_usb_fs_type: "{{ 'exfat-fuse' if ansible_distribution == 'Ubuntu' and (ansible_distribution_major_version | int) < 22 else 'exfat' }}"
+nexus_usb_fmask: "0002"
+nexus_usb_dmask: "0002"
 
 nexus_usb_exports_line: "/exports/nexus_n3_data *(rw,sync,no_subtree_check,no_root_squash)"
