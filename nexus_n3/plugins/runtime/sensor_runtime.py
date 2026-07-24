@@ -20,7 +20,7 @@ from ..common.jsonio import read_json
 from ..install.config import resolve_plugin_root
 from ..install.layout import PluginLayout
 from .serde import deep_namespace, to_jsonable
-from .transport import StdioJsonRpcTransport
+from .transport import StdioJsonRpcTransport, PluginTransportError
 from .environment import prepend_pythonpath, resolve_runtime_python
 
 @dataclass(frozen=True)
@@ -54,14 +54,26 @@ class SensorHostClient:
                 str(plugin.install_path),
             ],
             env=env,
-            cwd=project_root,
+            cwd=core_import_root,
         )
         self.transport.register_handler("adapter.read", self._handle_adapter_read)
         self.transport.register_handler("adapter.write", self._handle_adapter_write)
         self.transport.register_handler("adapter.subscribe", self._handle_adapter_subscribe)
         self.transport.register_handler("sensor.emit_event", self._handle_sensor_event)
-        self.transport.request("describe", {})
-        self.transport.request("healthcheck", {})
+        description = self.transport.request("describe", {})
+        health = self.transport.request("healthcheck", {})
+
+        if description.get("plugin_id") != plugin.plugin_id:
+            raise PluginTransportError(
+                "Plugin host loaded an unexpected plugin: "
+                f"expected={plugin.plugin_id!r}, "
+                f"received={description.get('plugin_id')!r}"
+            )
+
+        if not health.get("ok"):
+            raise PluginTransportError(
+                f"Plugin host health check failed: {health}"
+            )
 
     def close(self) -> None:
         self.transport.close()
