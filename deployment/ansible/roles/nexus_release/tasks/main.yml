@@ -4,11 +4,13 @@
   delegate_to: localhost
   become: false
   register: nexus_release_local_stat
+  tags: [release_artifact, core_release]
 
 - name: Fail if local release artifact is missing
   ansible.builtin.fail:
     msg: "Missing release artifact at {{ nexus_release_local_path }}"
   when: not nexus_release_local_stat.stat.exists
+  tags: [release_artifact, core_release]
 
 
 
@@ -19,6 +21,7 @@
     owner: "{{ nexus_service_user }}"
     group: "{{ nexus_service_group }}"
     mode: "0755"
+  tags: [filesystem, core_release]
 
 - name: Fail if Azure bridge settings are incomplete when bridge is enabled
   ansible.builtin.fail:
@@ -26,6 +29,7 @@
   when:
     - nexus_azure_bridge_enabled | bool
     - nexus_azure_iot_connection_string | length == 0 or nexus_azure_iot_device_id | length == 0
+  tags: [runtime_env, core_release]
 
 - name: Fail if BLE gateway serial port is missing when gateway backend is enabled
   ansible.builtin.fail:
@@ -33,6 +37,7 @@
   when:
     - nexus_ble_backend == "nexus_ble_gateway"
     - nexus_ble_gateway_serial_port | length == 0
+  tags: [runtime_env, core_release]
 
 - name: Ensure env directory exists
   ansible.builtin.file:
@@ -41,6 +46,7 @@
     owner: root
     group: root
     mode: "0755"
+  tags: [runtime_env, filesystem, core_release]
 
 - name: Ensure plugin root exists
   ansible.builtin.file:
@@ -49,6 +55,7 @@
     owner: "{{ nexus_service_user }}"
     group: "{{ nexus_service_group }}"
     mode: "0755"
+  tags: [plugins, filesystem]
 
 - name: Ensure local output root exists
   ansible.builtin.file:
@@ -57,6 +64,7 @@
     owner: "{{ nexus_service_user }}"
     group: "{{ nexus_service_group }}"
     mode: "0755"
+  tags: [filesystem, core_release]
 
 - name: Ensure log root exists
   ansible.builtin.file:
@@ -65,6 +73,7 @@
     owner: "{{ nexus_service_user }}"
     group: "{{ nexus_service_group }}"
     mode: "0755"
+  tags: [filesystem, core_release]
 
 - name: Upload shared runtime env file
   ansible.builtin.template:
@@ -74,12 +83,14 @@
     group: "{{ nexus_service_group }}"
     mode: "0640"
   notify: Restart nexus-n3
+  tags: [runtime_env, core_release]
 
 - name: Create virtualenv
   ansible.builtin.command: >
     python3 -m venv {% if nexus_venv_system_site_packages | bool %}--system-site-packages {% endif %}{{ nexus_venv_path }}
   args:
     creates: "{{ nexus_venv_path }}/bin/activate"
+  tags: [venv, core_release]
 
 - name: Upload nexus-n3-core release artifact
   ansible.builtin.copy:
@@ -87,6 +98,7 @@
     dest: "{{ nexus_release_remote_path }}"
     mode: "0644"
   notify: Restart nexus-n3
+  tags: [release_artifact, core_release]
 
 - name: Install nexus-n3-core into virtualenv
   ansible.builtin.pip:
@@ -96,6 +108,7 @@
     state: present
     extra_args: "--force-reinstall"
   notify: Restart nexus-n3
+  tags: [core_install, core_release]
 
 - name: Check local admin UI assets
   ansible.builtin.stat:
@@ -103,6 +116,7 @@
   delegate_to: localhost
   become: false
   register: nexus_admin_local_stat
+  tags: [admin_assets, core_release]
 
 - name: Upload admin UI assets
   ansible.builtin.copy:
@@ -113,9 +127,11 @@
     mode: "0755"
   notify: Restart nexus-n3
   when: nexus_admin_local_stat.stat.exists
+  tags: [admin_assets, core_release]
 
 - name: Install role-appropriate plugin bundles
   ansible.builtin.include_tasks: plugin_bundles.yml
+  tags: [plugins, plugin_bundles]
 
 - name: Install systemd service
   ansible.builtin.template:
@@ -125,12 +141,14 @@
   notify:
     - Reload systemd
     - Restart nexus-n3
+  tags: [service, core_release]
 
 - name: Enable nexus-n3 service
   ansible.builtin.systemd:
     name: "{{ nexus_service_name }}"
     enabled: true
     state: started
+  tags: [service, core_release]
 
 - name: Check ufw status for worker router
   ansible.builtin.command: ufw status
@@ -138,6 +156,7 @@
   changed_when: false
   failed_when: false
   when: nexus_role in ["master", "ai"]
+  tags: [firewall]
 
 - name: Allow worker router port (TCP 6000) through ufw
   ansible.builtin.command: ufw allow 6000/tcp
@@ -146,6 +165,7 @@
   when:
     - nexus_role == "master"
     - "'Status: active' in nexus_release_ufw_status.stdout"
+  tags: [firewall]
 
 - name: Allow AI compute port through ufw
   ansible.builtin.command: "ufw allow {{ nexus_compute_port }}/tcp"
@@ -154,3 +174,4 @@
   when:
     - nexus_role == "ai"
     - "'Status: active' in nexus_release_ufw_status.stdout"
+  tags: [firewall]

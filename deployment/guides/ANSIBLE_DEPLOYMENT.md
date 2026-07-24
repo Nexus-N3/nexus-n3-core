@@ -200,6 +200,136 @@ cd deployment/ansible
 ansible-playbook -i inventory.ini playbooks/deploy_release.yml -e nexus_deploy_hosts=nexus-n3-master
 ```
 
+### Core-Only Reinstall On Raspberry Pi
+
+If you rebuilt `nexus-n3-core` and only want to reinstall the wheel onto the
+target Raspberry Pi without reinstalling any sensor or algorithm plugin
+bundles, disable both plugin installation switches:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  -e nexus_install_sensor_plugins=false \
+  -e nexus_install_algorithm_plugins=false
+```
+
+That still:
+
+- uploads the new wheel from `dist/`
+- force-reinstalls `nexus-n3-core` into the target virtualenv
+- updates runtime env and admin assets
+- refreshes the systemd unit if needed
+- restarts the `nexus-n3` service
+
+That does not:
+
+- copy `.rsnxplugin` bundles
+- install missing sensor plugins
+- install missing algorithm plugins
+
+## Running Specific Parts With Tags
+
+The release role supports these tags:
+
+- `core_release`: the main release path
+- `release_artifact`: local wheel checks and wheel upload
+- `venv`: virtualenv creation
+- `core_install`: install/reinstall the `nexus-n3-core` wheel
+- `runtime_env`: runtime env validation and `runtime.env` templating
+- `admin_assets`: admin UI asset upload
+- `service`: systemd unit install and service enable/start
+- `plugins`: all plugin bundle tasks
+- `plugin_bundles`: plugin bundle staging/install tasks
+- `sensor_plugins`: sensor plugin bundle tasks only
+- `algorithm_plugins`: algorithm plugin bundle tasks only
+- `filesystem`: install/output/log/root directory creation
+- `firewall`: ufw-related rules
+
+Examples:
+
+Only reinstall the core wheel and restart the service:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --tags core_install,service
+```
+
+Only update the runtime env and systemd unit:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --tags runtime_env,service
+```
+
+Only deploy plugin bundles:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --tags plugin_bundles
+```
+
+Only deploy sensor plugin bundles:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --tags sensor_plugins
+```
+
+Skip plugin bundle work while still running the rest of the release role:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --skip-tags plugins
+```
+
+Preview which tagged tasks would run:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
+  -e nexus_deploy_hosts=nexus-n3-master \
+  --tags core_install,service \
+  --list-tasks
+```
+
+## Choosing Playbooks
+
+Use playbook selection to choose the deployment scope first, then use tags to
+limit which parts of that playbook execute.
+
+- `playbooks/deploy_release.yml`: one release deployment target or group
+- `playbooks/deploy_master.yml`: master group only
+- `playbooks/deploy_workers.yml`: worker group only
+- `playbooks/deploy_ai_nodes.yml`: AI node group only
+- `playbooks/deploy_distributed.yml`: master, workers, and AI nodes together
+
+Examples:
+
+Deploy only worker nodes:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_workers.yml
+```
+
+Deploy only AI nodes, but only run the service-related tasks:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_ai_nodes.yml --tags service
+```
+
 ### Example Raspberry Pi Build Sequence
 
 From `nexus-n3-plugin-catalog/`:

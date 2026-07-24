@@ -141,6 +141,38 @@ def test_catalog_discovery_skips_inactive_installed_plugins(tmp_path: Path):
     assert "inactivehr" not in sensors
 
 
+def test_catalog_discovery_prefers_canonical_public_sensor_name(tmp_path: Path):
+    plugin_root = tmp_path / "plugins"
+    installer = PluginInstaller(plugin_root)
+    sensor_bundle = _build_bundle(
+        tmp_path,
+        plugin_name="movella_sensor_plugin",
+        version="1.0.0",
+        plugin_type="sensor",
+        metadata_name="metadata/sensor_spec.yaml",
+        metadata_body=textwrap.dedent(
+            """
+            sensor:
+              name: Movella DOT
+              type: movelladot
+            locations:
+              supported:
+                - LEFT_ANKLE
+                - RIGHT_ANKLE
+            computations:
+              - standard_loading_intensity
+            """
+        ),
+    )
+
+    installer.install_bundle(sensor_bundle)
+
+    sensors = {item["name"]: item for item in get_supported_sensors(plugin_root)}
+    assert "Movella DOT" in sensors
+    assert "movelladot" not in sensors
+    assert sensors["Movella DOT"]["locations"] == ["LEFT_ANKLE", "RIGHT_ANKLE"]
+
+
 def _build_bundle(
     tmp_path: Path,
     *,

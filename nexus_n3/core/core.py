@@ -103,6 +103,8 @@ class Core:
         self._startup_gate_token = 0
         self._pending_stream_tags: dict[str, str | None] = {}
         self._startup_last_failure_reason: str | None = None
+        self._stream_stop_finalization_lock = threading.RLock()
+        self._stream_stop_finalization_pending = False
 
     def get_ble_runtime_config(self) -> dict:
         """Return the active BLE runtime backend configuration."""
@@ -533,6 +535,7 @@ class Core:
 
     def disconnect_all(self):
         """Disconnect all sensors."""
+        self._ensure_disconnect_allowed()
         self.sensor_orch.disconnect_all()
         time.sleep(2)
 
@@ -655,6 +658,7 @@ class Core:
 
     def disconnect_subjects(self, subject_ids):
         """Disconnect sensors for specific subjects."""
+        self._ensure_disconnect_allowed()
         subjects = self._get_subjects_by_ids(subject_ids)
         addresses = [
             entry["sensor"].address
@@ -753,6 +757,7 @@ class Core:
         """Shared stop logic for full and subject-scoped stop operations."""
         subject_ids = [sub.subject_id for sub in subjects]
         scope = "subjects" if stop_specific else "all"
+        self._set_stream_stop_finalization_pending(True)
         with self._startup_lock:
             self._startup_manual_stop = True
             self._startup_retry_pending = False
@@ -857,6 +862,7 @@ class Core:
                 partial_markers=partial_markers,
             )
             pipeline_diagnostics.flush()
+            self._set_stream_stop_finalization_pending(False)
             self._emit_stream_drained(
                 stop_context,
                 scope=scope,
@@ -866,6 +872,7 @@ class Core:
                 session_info=archive_info,
             )
         except Exception as exc:
+            self._set_stream_stop_finalization_pending(False)
             self._emit_stream_drained(
                 stop_context,
                 scope=scope,
@@ -876,6 +883,7 @@ class Core:
             )
             raise
         finally:
+            self._set_stream_stop_finalization_pending(False)
             self._clear_startup_gate_state(phase="idle")
 
     def _finalize_session_archive(self) -> dict:
@@ -943,6 +951,18 @@ class Core:
                 pipeline_diagnostics.increment(address, "tail_flush_samples_enqueued", len(pending))
                 self.storage.file_manager.enqueue_block(entry, pending)
                 sensor.raw_data = []
+
+    def _set_stream_stop_finalization_pending(self, pending: bool) -> None:
+        with self._stream_stop_finalization_lock:
+            self._stream_stop_finalization_pending = pending
+
+    def _ensure_disconnect_allowed(self) -> None:
+        with self._stream_stop_finalization_lock:
+            pending = self._stream_stop_finalization_pending
+        if pending:
+            raise RuntimeError(
+                "Cannot disconnect sensors while stream finalization is still in progress"
+            )
 
     def identify_sensor(self, subject_id, location):
         """Identify a sensor for a subject at a given body location."""

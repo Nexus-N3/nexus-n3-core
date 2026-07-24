@@ -32,7 +32,7 @@ def get_installed_plugin_inventory(plugin_root: str | Path | None = None) -> dic
         }
         if plugin.get("plugin_type") == "sensor":
             metadata = plugin.get("metadata") or {}
-            sensor_name = ((metadata.get("sensor") or {}).get("type") or plugin.get("plugin_id"))
+            sensor_name = _sensor_public_name(metadata, plugin)
             sensors.append(
                 {
                     **entry,
@@ -97,7 +97,7 @@ def get_supported_sensors(plugin_root: str | Path | None = None) -> list[dict]:
             continue
 
         sensor_section = metadata.get("sensor") or {}
-        sensor_name = sensor_section.get("type") or plugin["plugin_id"]
+        sensor_name = _sensor_public_name(metadata, plugin)
         locations = list((metadata.get("locations") or {}).get("supported", []) or [])
         computations = list(metadata.get("computations", []) or [])
         sensors[_normalize_name(sensor_name)] = {
@@ -211,6 +211,17 @@ def _load_plugin_metadata(install_path: Path, manifest: dict) -> dict:
 
 def _algorithm_inputs_from_config(config: dict) -> dict:
     return ((config.get("inputs") or {}).get("parameters") or {}).copy()
+
+
+def _sensor_public_name(metadata: dict, plugin: dict) -> str:
+    sensor_section = metadata.get("sensor") or {}
+    raw_name = (
+        sensor_section.get("name")
+        or sensor_section.get("type")
+        or plugin.get("manifest", {}).get("display_name")
+        or plugin.get("display_name")
+    )
+    return str(raw_name).strip()
 
 
 def _read_yaml(path: Path) -> dict:

@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+import threading
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -26,6 +27,12 @@ class _StubFileManager:
         self.describe_calls = 0
 
     def flush(self) -> None:
+        pass
+
+    def update_session_diagnostics_summary(self, session_timestamp, updates) -> None:
+        pass
+
+    def finalize_session_diagnostics(self, session_timestamp, *, status: str, reason: str | None = None, summary_updates=None) -> None:
         pass
 
     def get_raw_write_failures(self, subject_ids) -> dict:
@@ -102,6 +109,19 @@ def _make_core(subjects) -> tuple[Core, _StubFileManager, _StubEventBus]:
     core.app_id = None
     core.app_name = None
     core.pending_correlation_id = None
+    core._startup_lock = threading.RLock()
+    core.stream_phase = "official_streaming"
+    core._startup_manual_stop = False
+    core._startup_retry_pending = False
+    core._startup_gate_token = 0
+    core._startup_subject_ids = []
+    core._startup_addresses = []
+    core._startup_stats_by_address = {}
+    core._startup_attempt = 0
+    core._pending_stream_tags = {}
+    core._startup_last_failure_reason = None
+    core._stream_stop_finalization_lock = threading.RLock()
+    core._stream_stop_finalization_pending = False
     return core, file_manager, event_bus
 
 
@@ -146,3 +166,16 @@ def test_single_subject_stop_archives_session_once(monkeypatch) -> None:
     assert file_manager.archive_calls == 1
     assert event_bus.events[-1]["type"] == mt.EVT_STREAM_DRAINED
     assert event_bus.events[-1]["payload"]["all_local_streams_stopped"] is True
+
+
+def test_disconnect_is_blocked_while_stream_finalization_is_pending() -> None:
+    subject = _make_subject("subject1", "A1")
+    core, _, _ = _make_core([subject])
+
+    core._set_stream_stop_finalization_pending(True)
+
+    try:
+        core.disconnect_all()
+        raise AssertionError("disconnect_all should be blocked while finalization is pending")
+    except RuntimeError as exc:
+        assert "finalization is still in progress" in str(exc)
