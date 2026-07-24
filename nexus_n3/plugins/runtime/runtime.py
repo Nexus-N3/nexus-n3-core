@@ -11,7 +11,7 @@ from ..common.jsonio import read_json
 from ..install.config import resolve_plugin_root
 from ..install.layout import PluginLayout
 from .serde import RemoteComputeResult, object_to_mapping, to_jsonable
-from .transport import StdioJsonRpcTransport
+from .transport import StdioJsonRpcTransport, PluginTransportError
 from .environment import prepend_pythonpath, resolve_runtime_python
 
 @dataclass(frozen=True)
@@ -47,8 +47,20 @@ class AlgorithmHostClient:
             env=env,
             cwd=core_import_root,
         )
-        self.transport.request("describe", {})
-        self.transport.request("healthcheck", {})
+        description = self.transport.request("describe", {})
+        health = self.transport.request("healthcheck", {})
+
+        if description.get("plugin_id") != plugin.plugin_id:
+            raise PluginTransportError(
+                "Plugin host loaded an unexpected plugin: "
+                f"expected={plugin.plugin_id!r}, "
+                f"received={description.get('plugin_id')!r}"
+            )
+
+        if not health.get("ok"):
+            raise PluginTransportError(
+                f"Plugin host health check failed: {health}"
+            )
 
     def close(self) -> None:
         self.transport.close()
