@@ -21,7 +21,7 @@ from ..install.config import resolve_plugin_root
 from ..install.layout import PluginLayout
 from .serde import deep_namespace, to_jsonable
 from .transport import StdioJsonRpcTransport
-
+from .environment import prepend_pythonpath, resolve_runtime_python
 
 @dataclass(frozen=True)
 class InstalledSensorPlugin:
@@ -39,13 +39,12 @@ class SensorHostClient:
     def __init__(self, plugin: InstalledSensorPlugin, proxy: "InstalledSensorProxy"):
         self.plugin = plugin
         self.proxy = proxy
-        runtime_python = _runtime_python(plugin.runtime_path)
-        project_root = Path(__file__).resolve().parents[3]
+
+        runtime_python = resolve_runtime_python(plugin.runtime_path)
+        core_import_root = Path(__file__).resolve().parents[3]
         env = os.environ.copy()
-        current_pythonpath = env.get("PYTHONPATH", "")
-        env["PYTHONPATH"] = (
-            str(project_root) if not current_pythonpath else f"{str(project_root)}:{current_pythonpath}"
-        )
+        prepend_pythonpath(env, core_import_root)
+        
         self.transport = StdioJsonRpcTransport(
             [
                 str(runtime_python),
@@ -318,8 +317,8 @@ def _load_sensor_metadata(install_path: Path, manifest: dict[str, Any]) -> dict[
     return {}
 
 
-def _runtime_python(runtime_path: Path) -> Path:
-    return runtime_path / "bin" / "python"
+#def _runtime_python(runtime_path: Path) -> Path:
+#    return runtime_path / "bin" / "python"
 
 
 def _normalize_name(name: str) -> str:
