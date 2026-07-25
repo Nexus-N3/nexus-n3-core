@@ -1,0 +1,9 @@
+interface={{ nexus_sensor_ap_resolved_interface }}
+bind-dynamic
+port=0
+
+dhcp-range={{ nexus_sensor_ap_dhcp_range_start }},{{ nexus_sensor_ap_dhcp_range_end }},{{ nexus_sensor_ap_dhcp_netmask }},{{ nexus_sensor_ap_dhcp_lease }}
+
+# This is a local sensor network, not an Internet gateway.
+dhcp-option=option:router
+dhcp-option=option:dns-server

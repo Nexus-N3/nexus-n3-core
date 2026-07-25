@@ -1,0 +1,230 @@
+---
+- name: Ensure sensor AP packages are installed
+  ansible.builtin.apt:
+    name:
+      - iw
+      - ethtool
+      - dnsmasq
+      - network-manager
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Find Wi-Fi interface using the expected USB driver
+  ansible.builtin.shell: |
+    for interface_path in /sys/class/net/*; do
+      interface_name="${interface_path##*/}"
+
+      driver_path="$(readlink -f "${interface_path}/device/driver" 2>/dev/null || true)"
+      driver_name="${driver_path##*/}"
+
+      if [ "${driver_name}" = "{{ nexus_sensor_ap_driver }}" ]; then
+        printf '%s\n' "${interface_name}"
+        exit 0
+      fi
+    done
+
+    exit 1
+  args:
+    executable: /bin/bash
+  register: nexus_sensor_ap_detected_interface
+  changed_when: false
+  failed_when: false
+  when: nexus_sensor_ap_interface | length == 0
+
+- name: Resolve sensor AP interface
+  ansible.builtin.set_fact:
+    nexus_sensor_ap_resolved_interface: >-
+      {{
+        nexus_sensor_ap_interface
+        if nexus_sensor_ap_interface | length > 0
+        else nexus_sensor_ap_detected_interface.stdout | trim
+      }}
+
+- name: Require the USB Wi-Fi adapter
+  ansible.builtin.assert:
+    that:
+      - nexus_sensor_ap_resolved_interface | length > 0
+      - nexus_sensor_ap_resolved_interface != "wlan0"
+    fail_msg: >-
+      No USB Wi-Fi interface using driver {{ nexus_sensor_ap_driver }} was found.
+      Connect the AWUS036ACM or set nexus_sensor_ap_interface explicitly.
+
+- name: Check sensor Wi-Fi driver
+  ansible.builtin.command:
+    argv:
+      - ethtool
+      - -i
+      - "{{ nexus_sensor_ap_resolved_interface }}"
+  register: nexus_sensor_ap_driver_info
+  changed_when: false
+
+- name: Verify expected sensor Wi-Fi driver
+  ansible.builtin.assert:
+    that:
+      - "'driver: ' ~ nexus_sensor_ap_driver in nexus_sensor_ap_driver_info.stdout"
+    fail_msg: >-
+      Interface {{ nexus_sensor_ap_resolved_interface }} is not using
+      {{ nexus_sensor_ap_driver }}.
+
+- name: Install Wi-Fi regulatory-domain service
+  ansible.builtin.template:
+    src: wifi-regdom.service.j2
+    dest: /etc/systemd/system/nexus-wifi-regdom.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Flush handlers before starting regulatory-domain service
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable Wi-Fi regulatory-domain service
+  ansible.builtin.systemd:
+    name: nexus-wifi-regdom.service
+    enabled: true
+    state: started
+
+- name: Apply wireless regulatory domain now
+  ansible.builtin.command:
+    argv:
+      - iw
+      - reg
+      - set
+      - "{{ nexus_sensor_ap_country_code }}"
+  changed_when: false
+
+- name: Check whether sensor AP connection exists
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - -g
+      - NAME
+      - connection
+      - show
+      - "{{ nexus_sensor_ap_connection_name }}"
+  register: nexus_sensor_ap_connection_exists
+  changed_when: false
+  failed_when: false
+
+- name: Create sensor AP connection
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - add
+      - type
+      - wifi
+      - ifname
+      - "{{ nexus_sensor_ap_resolved_interface }}"
+      - con-name
+      - "{{ nexus_sensor_ap_connection_name }}"
+      - ssid
+      - "{{ nexus_sensor_ap_ssid }}"
+  when: nexus_sensor_ap_connection_exists.rc != 0
+
+- name: Configure sensor AP radio
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_ap_connection_name }}"
+      - connection.interface-name
+      - "{{ nexus_sensor_ap_resolved_interface }}"
+      - connection.autoconnect
+      - "yes"
+      - 802-11-wireless.mode
+      - ap
+      - 802-11-wireless.band
+      - "{{ nexus_sensor_ap_band }}"
+      - 802-11-wireless.channel
+      - "{{ nexus_sensor_ap_channel | string }}"
+      - 802-11-wireless.cloned-mac-address
+      - permanent
+      - 802-11-wireless.ap-isolation
+      - "{{ 1 if nexus_sensor_ap_isolation | bool else 0 }}"
+  changed_when: false
+
+- name: Configure sensor AP security
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_ap_connection_name }}"
+      - 802-11-wireless-security.key-mgmt
+      - wpa-psk
+      - 802-11-wireless-security.proto
+      - rsn
+      - 802-11-wireless-security.psk
+      - "{{ nexus_sensor_ap_passphrase }}"
+  no_log: true
+  changed_when: false
+
+- name: Configure sensor AP address
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_ap_connection_name }}"
+      - ipv4.method
+      - manual
+      - ipv4.addresses
+      - "{{ nexus_sensor_ap_address }}"
+      - ipv4.never-default
+      - "yes"
+      - ipv6.method
+      - disabled
+  changed_when: false
+
+- name: Install sensor AP DHCP configuration
+  ansible.builtin.template:
+    src: dnsmasq.conf.j2
+    dest: /etc/dnsmasq.d/nexus-n3-sensor-ap.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart dnsmasq
+
+- name: Validate dnsmasq configuration
+  ansible.builtin.command:
+    argv:
+      - dnsmasq
+      - --test
+  changed_when: false
+
+- name: Ensure dnsmasq is enabled
+  ansible.builtin.service:
+    name: dnsmasq
+    enabled: true
+    state: started
+
+- name: Flush DHCP configuration handler
+  ansible.builtin.meta: flush_handlers
+
+- name: Activate sensor AP
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - up
+      - "{{ nexus_sensor_ap_connection_name }}"
+      - ifname
+      - "{{ nexus_sensor_ap_resolved_interface }}"
+  changed_when: false
+
+- name: Read active sensor AP details
+  ansible.builtin.command:
+    argv:
+      - iw
+      - dev
+      - "{{ nexus_sensor_ap_resolved_interface }}"
+      - info
+  register: nexus_sensor_ap_info
+  changed_when: false
+
+- name: Show active sensor AP
+  ansible.builtin.debug:
+    var: nexus_sensor_ap_info.stdout_lines

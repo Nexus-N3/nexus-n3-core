@@ -1,0 +1,12 @@
+[Unit]
+Description=Set Wi-Fi regulatory domain for Nexus N3
+After=systemd-modules-load.service
+Before=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/iw reg set {{ nexus_sensor_ap_country_code }}
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

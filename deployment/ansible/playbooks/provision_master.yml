@@ -24,6 +24,10 @@
     - role: nexus_access_point
       tags: 
         - nexus_access_point
+    - role: nexus_sensor_access_point
+      when: nexus_sensor_ap_enabled | default(false) | bool
+      tags:
+        - nexus_sensor_access_point
     - role: nexus_smb_share
       tags:
         - nexus_smb_share

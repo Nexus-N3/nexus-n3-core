@@ -2,6 +2,7 @@
 - name: Provision nexus-n3-core worker hosts
   hosts: "{{ nexus_provision_hosts | default('workers') }}"
   become: true
+
   pre_tasks:
     - name: Require Linux hosts for host provisioning
       ansible.builtin.assert:
@@ -11,6 +12,13 @@
           Host provisioning is supported only on Linux targets.
           Use the release deployment playbooks for software rollout, and keep
           Windows hosts as development environments only.
+
   roles:
     - nexus_dependencies
+
+    - role: nexus_sensor_access_point
+      when: nexus_sensor_ap_enabled | default(false) | bool
+      tags:
+        - nexus_sensor_access_point
+
     - nexus_worker_smb
