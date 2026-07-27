@@ -16,31 +16,33 @@ By submitting a contribution, you agree that accepted contributions may be inclu
 
 Other Nexus N3 repositories, including plugins, SDKs and tooling, may use the MIT License and may have different contribution requirements.
 
-## Contributor Licence Agreement
+Contributor Licence Agreement
 
 Before an external contribution can be accepted, the contributor must agree to the current Rightstep OÜ Contributor Licence Agreement.
 
 The agreement does not transfer ownership of your contribution to Rightstep OÜ. You retain ownership of your work while granting Rightstep OÜ the rights required to use, modify, distribute, sublicense and license the contribution.
 
-### Individual contributions
+Individual contributions
 
-Individuals must accept the:
+Individuals must complete the:
 
-[Individual Contributor Licence Agreement](./ICLA.md)
+Individual Contributor Licence Agreement
 
-CLA Assistant will check your agreement status when you open a pull request. If you have not yet accepted the agreement, CLA Assistant will add signing instructions to the pull request.
+Send the completed and signed agreement to mike@rightstep-health.com.
 
-### Contributions owned by an employer or organisation
+Signed agreements are retained privately by Rightstep OÜ and are not committed to the public repository.
+
+Contributions owned by an employer or organisation
 
 Do not sign the Individual Contributor Licence Agreement for code that you do not personally own.
 
 If your employer or another legal entity owns your contribution, an authorised representative of that organisation may need to complete the:
 
-[Entity Contributor Licence Agreement](./CCLA.md)
+Entity Contributor Licence Agreement
 
-Contact [mike@rightstep-health.com](mailto:mike@rightstep-health.com) before submitting company-owned contributions.
+Contact mike@rightstep-health.com before submitting company-owned contributions.
 
-### Rightstep OÜ contributors
+Rightstep OÜ contributors
 
 Contributions made by Rightstep OÜ personnel or contractors may be covered by separate employment, contractor or intellectual-property agreements and may not require the public ICLA process.
 
