@@ -1,3 +1,10 @@
+## Licence
+
+Copyright © 2026 Rightstep OÜ.
+
+Nexus N3 Core is licensed under the GNU General Public License
+version 3 only (`GPL-3.0-only`). See [LICENSE](LICENSE).
+
 # Nexus N3 Core
 
 Nexus N3 Core is the runtime layer for sensor acquisition, plugin-backed
