@@ -33,7 +33,15 @@ Recommended local install with `venv`:
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate
+```
+activate the .venv on linux or windows
+```bash
+source .venv/bin/activate 
+source .venv/Scripts/activate (on windows)
+```
+
+install as a python package
+```bash 
 python -m pip install --upgrade pip
 python -m pip install nexus-n3-core
 ```
@@ -44,11 +52,34 @@ Alternative install with `pipx`:
 pipx install nexus-n3-core
 ```
 
+or install requirements from requirements.txt for development
+```bash
+pip install -r requirements.txt
+```
+
 Runtime configuration typically lives in:
 
 - `config/runtime-example.env` as the tracked template for local development
 - `config/runtime.env` as the local untracked copy
 - `/etc/nexus-n3/runtime.env` for deployed systems
+
+for local development on windows set the following;
+
+```bash
+NEXUS_N3_PLUGIN_CATALOG_ROOT
+GATEWAY_SERIAL_PORT
+```
+to find the BLE Gateway path for GATEWAY_SERIAL_PORT on windows. 
+The first COM port shown is what to set GATEWAY_SERIAL_PORT to.
+```bash
+
+Get-CimInstance Win32_SerialPort |
+    Select-Object DeviceID, Name, Description, PNPDeviceID
+    
+GATEWAY_SERIAL_PORT=COM5
+
+```
+
 
 For an installed package, place your runtime configuration at:
 
