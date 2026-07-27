@@ -1,5 +1,7 @@
 # Ansible Deployment
 
+Ansible deployments target linux only.  Windows and MAC OS are for testing and development only. 
+
 This guide covers deployment of `nexus-n3-core` with Ansible using:
 
 - the built `nexus-n3-core` wheel
