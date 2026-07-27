@@ -156,7 +156,7 @@ Draft pull requests are welcome for early technical review.
 
 Before a pull request can be merged:
 
-* the CLA Assistant check must pass;
+* any required Individual or Entity Contributor Licence Agreement must have been completed and accepted by Rightstep OÜ;
 * automated tests and required checks must pass;
 * maintainer review must be completed;
 * review comments must be resolved;

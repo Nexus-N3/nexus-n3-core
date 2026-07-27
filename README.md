@@ -1,10 +1,3 @@
-## Licence
-
-Copyright © 2026 Rightstep OÜ.
-
-Nexus N3 Core is licensed under the GNU General Public License
-version 3 only (`GPL-3.0-only`). See [LICENSE](LICENSE).
-
 # Nexus N3 Core
 
 Nexus N3 Core is the runtime layer for sensor acquisition, plugin-backed
@@ -104,7 +97,7 @@ To copy the current local development config into the standard deployed path:
 
 ```bash
 sudo mkdir -p /etc/nexus-n3
-sudo cp /home/mike/Desktop/apps/dev/rs-nexus-project/nexus-n3-core/config/runtime.env /etc/nexus-n3/runtime.env
+sudo cp <path to>s-nexus-project/nexus-n3-core/config/runtime.env /etc/nexus-n3/runtime.env
 ```
 
 This file controls:
@@ -388,3 +381,9 @@ make html
 cd ..
 bash scripts/sync_docs.sh
 ```
+## Licence
+
+Copyright © 2026 Rightstep OÜ.
+
+Nexus N3 Core is licensed under the GNU General Public License
+version 3 only (`GPL-3.0-only`). See [LICENSE](LICENSE).
