@@ -23,7 +23,8 @@ The package is now organized into subpackages:
 - runs import and health checks from the plugin runtime
 - records install metadata and failure metadata
 - updates the installed plugin catalog
-- manages `current` activation symlinks
+- persists the active version in the plugin catalog
+- maintains POSIX `current` compatibility symlinks
 - provides a small developer CLI for bundle install and plugin-root inspection
 - provides dev-plugin build+install helpers for local source trees
 
@@ -69,7 +70,7 @@ Development example:
           .venv/
         manifest.json
         install.json
-      current -> <version>/
+      current -> <version>/  # POSIX compatibility link; omitted on Windows
   failed/           # optional
   cache/            # optional
   catalog/

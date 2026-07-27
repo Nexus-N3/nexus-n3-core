@@ -106,7 +106,10 @@ class SampleSessionClient:
                 return
 
             self.send_command({"type": mt.CMD_CONNECT_TO_ALL})
-            for subject_info in payload:
+            discovered_subjects = (
+                payload.get("subjects", []) if isinstance(payload, dict) else payload
+            )
+            for subject_info in discovered_subjects:
                 self.pending_connect.discard(subject_info["subject_id"])
 
         elif evt_type == mt.EVT_SENSOR_CONNECTED:

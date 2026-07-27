@@ -316,7 +316,13 @@ Use a fresh `venv` or `pipx` environment instead of a system-wide install.
 All runtime output is written through the generic file manager path under:
 
 ```text
-nexus_n3_outputs/<site>/<session_label>/session_<timestamp>/
+nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/
+```
+
+Each session contains subjects and activities under:
+
+```text
+subjects/<subject_id>/activities/<activity>/
 ```
 
 This includes:

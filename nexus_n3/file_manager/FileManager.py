@@ -69,10 +69,7 @@ class FileManager:
     # -------------------------
 
     def _resolve_base_dir(self) -> Path:
-        base = self.base_root / self.site
-        if self.session_label:
-            base = base / self.session_label
-        return base
+        return self.base_root / self._sanitize_component(self.site, "local") / "sessions"
 
     def _sanitize_label(self, label: str) -> str:
         cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", label.strip())
@@ -84,13 +81,132 @@ class FileManager:
 
     def _sanitize_component(self, value: str | None, fallback: str = "na") -> str:
         raw = str(value or "").strip()
-        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", raw)
-        return cleaned or fallback
+        cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", raw).strip(" .")
+        if not cleaned or cleaned in {".", ".."}:
+            return fallback
+        windows_reserved_names = {
+            "CON",
+            "PRN",
+            "AUX",
+            "NUL",
+            *(f"COM{index}" for index in range(1, 10)),
+            *(f"LPT{index}" for index in range(1, 10)),
+        }
+        if cleaned.split(".", 1)[0].upper() in windows_reserved_names:
+            cleaned = f"_{cleaned}"
+        return cleaned
+
+    def _sanitize_sensor_id(self, value: str | None) -> str:
+        compact = re.sub(r"[^A-Za-z0-9]+", "", str(value or "").strip())
+        return self._sanitize_component(compact, "na")
+
+    def _build_session_id(self, session_index: str) -> str:
+        session_name = self._sanitize_component(self.session_name, "sys_session")
+        session_ts = self._sanitize_component(session_index, "unknown")
+        return f"{session_name}_{session_ts}"
 
     def _session_dir(self, session_index: str | None) -> Path | None:
         if not session_index:
             return None
-        return self.base_dir / f"session_{session_index}"
+        return self.base_dir / self._build_session_id(str(session_index))
+
+    def _build_subject_activity_dir(
+        self,
+        session_index: str,
+        subject_id: str,
+        activity: str,
+    ) -> Path:
+        session_dir = self._session_dir(session_index)
+        if session_dir is None:
+            raise ValueError("Session identifier is required")
+        return (
+            session_dir
+            / "subjects"
+            / self._sanitize_component(subject_id, "unknown_subject")
+            / "activities"
+            / self._sanitize_component(activity, "sys")
+        )
+
+    def _build_raw_path(
+        self,
+        session_index: str,
+        subject_id: str,
+        activity: str,
+        location: str | None,
+        sensor_id: str | None,
+    ) -> Path:
+        filename = (
+            f"{self._sanitize_component(location)}_"
+            f"{self._sanitize_sensor_id(sensor_id)}.csv"
+        )
+        return (
+            self._build_subject_activity_dir(session_index, subject_id, activity)
+            / "raw"
+            / filename
+        )
+
+    def _build_real_time_path(
+        self,
+        session_index: str,
+        subject_id: str,
+        activity: str,
+        algorithm: str | None,
+        location: str | None,
+        sensor_id: str | None,
+    ) -> Path:
+        filename = (
+            f"{self._sanitize_component(location)}_"
+            f"{self._sanitize_sensor_id(sensor_id)}.ndjson"
+        )
+        return (
+            self._build_subject_activity_dir(session_index, subject_id, activity)
+            / "computed"
+            / "real_time"
+            / self._sanitize_component(algorithm, "unknown")
+            / filename
+        )
+
+    def _build_intermediate_path(
+        self,
+        session_index: str,
+        subject_id: str,
+        activity: str,
+        algorithm: str | None,
+    ) -> Path:
+        return (
+            self._build_subject_activity_dir(session_index, subject_id, activity)
+            / "computed"
+            / "intermediate"
+            / f"{self._sanitize_component(algorithm, 'unknown')}.ndjson"
+        )
+
+    def _build_consolidated_path(
+        self,
+        session_index: str,
+        subject_id: str,
+        activity: str,
+        algorithm: str | None,
+    ) -> Path:
+        return (
+            self._build_subject_activity_dir(session_index, subject_id, activity)
+            / "computed"
+            / "consolidated"
+            / f"{self._sanitize_component(algorithm, 'unknown')}.ndjson"
+        )
+
+    def _create_empty_output_file(self, path: Path, output_type: str) -> None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.open("w").close()
+        except OSError:
+            self.logger.exception(
+                "failed to create %s output path=%s path_length=%s",
+                output_type,
+                path,
+                len(str(path.absolute())),
+            )
+            raise
+
 
     def _merge_summary(self, target: dict, updates: dict) -> None:
         for key, value in updates.items():
@@ -109,34 +225,6 @@ class FileManager:
             return
         summary_path.parent.mkdir(parents=True, exist_ok=True)
         summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-    def _build_computed_filename(
-        self,
-        *,
-        algorithm: str | None,
-        stage: str,
-        activity: str,
-        timestamp: str,
-        location: str | None = None,
-        address: str | None = None,
-    ) -> str:
-        # Keep a consistent naming contract while omitting sensor-only fields
-        # for algorithm-level stages (intermediate/consolidated).
-        parts = [
-            f"algorithm_{self._sanitize_component(algorithm, 'unknown')}",
-        ]
-        if location is not None:
-            parts.append(f"location_{self._sanitize_component(location)}")
-        if address is not None:
-            parts.append(f"address_{self._sanitize_component(address)}")
-        parts.extend(
-            [
-                f"stage_{self._sanitize_component(stage)}",
-                f"activity_{self._sanitize_component(activity)}",
-                f"timestamp_{self._sanitize_component(timestamp)}",
-            ]
-        )
-        return "__".join(parts) + ".ndjson"
 
     def _sample_to_row(self, sample: Any, headers: list[str]):
         """
@@ -324,19 +412,18 @@ class FileManager:
 
     def set_session_label(self, label: str | None):
         """
-        Set the session label used as the top-level directory under the site.
+        Set the session name used to construct the canonical session directory.
 
         Args:
-            label: Label string or None to disable label-based grouping.
+            label: Label string or None to use the system-session default.
         """
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         if label:
             safe_label = self._sanitize_label(label)
             self.session_name = safe_label
-            self.session_label = f"{safe_label}_{ts}"
+            self.session_label = safe_label
         else:
             self.session_name = "sys_session"
-            self.session_label = f"sys_session_{ts}"
+            self.session_label = "sys_session"
         self.base_dir = self._resolve_base_dir()
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -354,7 +441,7 @@ class FileManager:
         self.base_dir = self._resolve_base_dir()
         self.base_dir.mkdir(parents=True, exist_ok=True)
         session_ts = str(session_index)
-        session_dir = self.base_dir / f"session_{session_index}"
+        session_dir = self._session_dir(session_ts)
         pipeline_diagnostics.start_session(
             session_dir,
             site=self.site,
@@ -363,7 +450,6 @@ class FileManager:
         )
         subject.session_timestamp = session_ts
         safe_tag = self._sanitize_tag(tag) if tag else "sys"
-        tag_folder = f"{safe_tag}_{session_ts}"
         unique_algorithms = set()
         for sensor_entry in subject.sensors:
             compute_algo = sensor_entry.get("meta", {}).get("compute_algorithm", {}) or {}
@@ -371,41 +457,23 @@ class FileManager:
             unique_algorithms.add(str(algo_name))
 
         for algorithm_name in sorted(unique_algorithms):
-            intermediate_t_path = (
-                self.base_dir
-                / f"session_{session_index}"
-                / subject.subject_id
-                / tag_folder
-                / "computed"
-                / "intermediate"
-                / self._build_computed_filename(
-                    algorithm=algorithm_name,
-                    stage="intermediate_time",
-                    activity=safe_tag,
-                    timestamp=session_ts,
-                )
+            intermediate_t_path = self._build_intermediate_path(
+                session_ts,
+                subject.subject_id,
+                safe_tag,
+                algorithm_name,
             )
-            intermediate_t_path.parent.mkdir(parents=True, exist_ok=True)
-            open(intermediate_t_path, "w").close()
+            self._create_empty_output_file(intermediate_t_path, "intermediate")
             self._subject_algorithm_intermediate_paths[(subject.subject_id, algorithm_name)] = intermediate_t_path
             self.locks[intermediate_t_path] = Lock()
 
-            consolidated_t_path = (
-                self.base_dir
-                / f"session_{session_index}"
-                / subject.subject_id
-                / tag_folder
-                / "computed"
-                / "consolidated"
-                / self._build_computed_filename(
-                    algorithm=algorithm_name,
-                    stage="consolidated_time",
-                    activity=safe_tag,
-                    timestamp=session_ts,
-                )
+            consolidated_t_path = self._build_consolidated_path(
+                session_ts,
+                subject.subject_id,
+                safe_tag,
+                algorithm_name,
             )
-            consolidated_t_path.parent.mkdir(parents=True, exist_ok=True)
-            open(consolidated_t_path, "w").close()
+            self._create_empty_output_file(consolidated_t_path, "consolidated")
             self._subject_algorithm_consolidated_paths[(subject.subject_id, algorithm_name)] = consolidated_t_path
             self.locks[consolidated_t_path] = Lock()
 
@@ -416,41 +484,29 @@ class FileManager:
             sensor_address = entry["sensor"].address or "na"
 
             # RAW CSV
-            raw_path = (
-                self.base_dir
-                / f"session_{session_index}"
-                / subject.subject_id
-                / tag_folder
-                / "raw"
-                / f"{location}_{safe_tag}_{session_ts}.csv"
+            raw_path = self._build_raw_path(
+                session_ts,
+                subject.subject_id,
+                safe_tag,
+                location,
+                sensor_address,
             )
-            print(raw_path)
-            raw_path.parent.mkdir(parents=True, exist_ok=True)
 
             # COMPUTED NDJSON (real-time)
-            computed_rt_path = (
-                self.base_dir
-                / f"session_{session_index}"
-                / subject.subject_id
-                / tag_folder
-                / "computed"
-                / "real_time"
-                / self._build_computed_filename(
-                    algorithm=algorithm_name,
-                    location=location,
-                    address=sensor_address,
-                    stage="real_time",
-                    activity=safe_tag,
-                    timestamp=session_ts,
-                )
+            computed_rt_path = self._build_real_time_path(
+                session_ts,
+                subject.subject_id,
+                safe_tag,
+                algorithm_name,
+                location,
+                sensor_address,
             )
-            computed_rt_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Create empty raw CSV. Headers are inferred from the first payload shape.
-            open(raw_path, "w").close()
+            self._create_empty_output_file(raw_path, "raw")
 
             # Create empty NDJSON file
-            open(computed_rt_path, "w").close()
+            self._create_empty_output_file(computed_rt_path, "real-time")
 
 
             # Store paths
@@ -613,17 +669,19 @@ class FileManager:
             dict: Session directory metadata.
         """
         session_ts = str(session_index) if session_index else None
-        session_dir = self.base_dir / f"session_{session_ts}" if session_ts else None
+        self.base_dir = self._resolve_base_dir()
+        session_dir = self._session_dir(session_ts)
         return {
             "site": self.site,
             "session_label": self.session_label,
             "session_name": self.session_name,
             "session_timestamp": session_ts,
+            "session_id": self._build_session_id(session_ts) if session_ts else None,
             "base_root": str(self.base_root.resolve()),
             "base_dir": str(self.base_dir.resolve()),
             "session_dir": str(session_dir.resolve()) if session_dir else None,
             "session_dir_exists": bool(session_dir and session_dir.exists()),
-            "session_relative_path": str(session_dir.relative_to(self.base_root)) if session_dir else None,
+            "session_relative_path": session_dir.relative_to(self.base_root).as_posix() if session_dir else None,
         }
 
     def archive_session(self, session_index: str | None) -> dict:
@@ -642,8 +700,7 @@ class FileManager:
             raise ValueError("Session directory is unavailable for archiving")
 
         archive_name = build_session_archive_name(
-            site=self.site,
-            session_label=session_info.get("session_name"),
+            session_name=session_info.get("session_name"),
             session_timestamp=session_info.get("session_timestamp"),
         )
         archive_path = self.base_dir / archive_name

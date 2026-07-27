@@ -21,6 +21,7 @@ from nexus_n3.plugins.install.config import (
     resolve_system_site_packages,
 )
 from nexus_n3.plugins.install.installer import PluginInstallError, PluginInstaller
+from nexus_n3.plugins.install import installer as installer_module
 
 
 def test_resolve_plugin_root_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -46,7 +47,11 @@ def test_installer_uses_explicit_plugin_root(tmp_path: Path):
     assert result.plugin_root == plugin_root.resolve()
     assert result.install_path == plugin_root.resolve() / "installed" / "demo_sensor" / "1.0.0"
     assert (plugin_root / "catalog" / "demo_sensor.json").exists()
-    assert os.readlink(plugin_root / "installed" / "demo_sensor" / "current") == "1.0.0"
+    current_link = plugin_root / "installed" / "demo_sensor" / "current"
+    if sys.platform == "win32":
+        assert not current_link.exists()
+    else:
+        assert os.readlink(current_link) == "1.0.0"
 
 
 def test_installer_uses_env_plugin_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -67,6 +72,45 @@ def test_resolve_system_site_packages_precedence(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setenv("NEXUS_N3_PLUGIN_USE_SYSTEM_SITE_PACKAGES", "0")
     assert resolve_system_site_packages() is False
+
+
+def test_windows_runtime_venv_uses_copies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    calls = {}
+
+    class FakeBuilder:
+        def __init__(self, **kwargs):
+            calls["kwargs"] = kwargs
+
+        def create(self, path):
+            calls["path"] = path
+
+    monkeypatch.setattr(installer_module.sys, "platform", "win32")
+    monkeypatch.setattr(installer_module.venv, "EnvBuilder", FakeBuilder)
+
+    installer = PluginInstaller(tmp_path / "plugins")
+    venv_dir = tmp_path / "runtime" / ".venv"
+    installer._create_runtime(venv_dir)
+
+    assert calls["kwargs"]["symlinks"] is False
+    assert calls["path"] == venv_dir
+
+
+def test_windows_activation_relies_on_catalog_without_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(installer_module.sys, "platform", "win32")
+    monkeypatch.setattr(
+        installer_module.os,
+        "symlink",
+        lambda *_args, **_kwargs: pytest.fail("Windows activation must not create a symlink"),
+    )
+
+    installer = PluginInstaller(tmp_path / "plugins")
+    installer._activate("demo_sensor", "1.0.0", None)
+
+    assert not (tmp_path / "plugins" / "installed" / "demo_sensor" / "current").exists()
 
 
 def test_rejects_absolute_archive_paths(tmp_path: Path):
@@ -137,12 +181,36 @@ def test_failed_install_does_not_replace_current(tmp_path: Path):
         installer.install_bundle(bad_bundle)
 
     current_link = plugin_root / "installed" / "demo_sensor" / "current"
-    assert os.readlink(current_link) == "1.0.0"
+    if sys.platform == "win32":
+        assert not current_link.exists()
+    else:
+        assert os.readlink(current_link) == "1.0.0"
+    catalog = read_json(plugin_root / "catalog" / "demo_sensor.json", default={})
+    assert catalog["active_version"] == "1.0.0"
     assert not (plugin_root / "installed" / "demo_sensor" / "2.0.0").exists()
     failures = read_json(plugin_root / "catalog" / "install_failures.json", default=[])
     assert failures
     assert failures[-1]["plugin_id"] == "demo_sensor"
     assert (plugin_root / "incoming" / f"{bad_bundle.name}.error.json").exists()
+
+
+def test_uncataloged_version_directory_is_recovered(tmp_path: Path):
+    plugin_root = tmp_path / "plugins"
+    orphan_dir = plugin_root / "installed" / "demo_sensor" / "1.0.0"
+    orphan_dir.mkdir(parents=True)
+    orphan_dir.joinpath("orphan.txt").write_text("failed install", encoding="utf-8")
+    bundle_path = _build_fixture_bundle(
+        tmp_path,
+        plugin_name="demo_sensor",
+        version="1.0.0",
+    )
+
+    result = PluginInstaller(plugin_root).install_bundle(bundle_path)
+
+    assert result.install_path == orphan_dir
+    assert not orphan_dir.joinpath("orphan.txt").exists()
+    catalog = read_json(plugin_root / "catalog" / "demo_sensor.json", default={})
+    assert catalog["active_version"] == "1.0.0"
 
 
 def test_rejects_incompatible_bundle_target(tmp_path: Path):
@@ -151,7 +219,7 @@ def test_rejects_incompatible_bundle_target(tmp_path: Path):
         tmp_path,
         plugin_name="demo_sensor_target",
         version="1.0.0",
-        target={"id": "win", "python_version": "3.12", "implementation": "cp", "abi": "cp312"},
+        target={"id": "incompatible", "python_version": "0.0", "implementation": "cp", "abi": "cp00"},
     )
 
     with pytest.raises(PluginInstallError, match="bundle target"):

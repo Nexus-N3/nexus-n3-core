@@ -272,7 +272,7 @@ sensor-specific storage code.
 Outputs are organized under:
 
 ```text
-nexus_n3_outputs/<site>/<session_label>/session_<timestamp>/
+nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/
 ```
 
 That session tree contains:
@@ -301,7 +301,7 @@ python nexus_n3_server.py --diagnostics
 This writes:
 
 ```text
-nexus_n3_outputs/<site>/<session_label>/session_<timestamp>/diagnostics/pipeline_debug.ndjson
+nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/diagnostics/pipeline_debug.ndjson
 ```
 
 Set `NEXUS_PERF_LOG=1` to enable periodic performance logging.

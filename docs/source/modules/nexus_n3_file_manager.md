@@ -38,11 +38,12 @@ the file manager persists them through the common session structure.
 
 ## Session Finalization
 - Active outputs are written under:
-  - `nexus_n3_outputs/<site>/<session_label>/session_<timestamp>/...`
+  - `nexus_n3_outputs/<site>/sessions/<session_name>_<session_timestamp>/...`
 - On stop/finalize, the session directory is zipped locally and the source
   directory is removed.
 - Archive names follow:
-  - `<site>_<session_name>_session_<session_timestamp>.zip`
+  - `<session_name>_<session_timestamp>.zip`
+  - Site context remains in the parent directory and Azure blob prefix.
 
 ## Generic Output Mechanisms
 

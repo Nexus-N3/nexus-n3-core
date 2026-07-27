@@ -16,15 +16,13 @@ def _clean(value: str | None, fallback: str) -> str:
 
 def build_session_archive_name(
     *,
-    site: str | None,
-    session_label: str | None,
+    session_name: str | None,
     session_timestamp: str | None,
 ) -> str:
-    """Build a stable archive filename from site and session timestamp."""
-    safe_site = _clean(site, "site")
-    safe_label = _clean(session_label, "session")
+    """Build a compact archive filename from the canonical session ID."""
+    safe_name = _clean(session_name, "session")
     safe_session = _clean(session_timestamp, "unknown_session")
-    return f"{safe_site}_{safe_label}_session_{safe_session}.zip"
+    return f"{safe_name}_{safe_session}.zip"
 
 
 @dataclass(slots=True)

@@ -11,7 +11,7 @@ import venv
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..common.jsonio import write_json
+from ..common.jsonio import read_json, write_json
 from .bundle import ValidatedBundle, extract_bundle, probe_manifest, validate_bundle
 from .catalog import record_install_failure, update_plugin_catalog
 from .config import resolve_plugin_root, resolve_system_site_packages
@@ -59,9 +59,16 @@ class PluginInstaller:
             previous_target = _safe_readlink(current_link)
 
             if install_dir.exists():
-                raise PluginInstallError(f"plugin version already installed: {plugin_id} {version}")
+                catalog = read_json(self.layout.plugin_catalog_path(plugin_id), default={}) or {}
+                if version in (catalog.get("versions") or {}):
+                    raise PluginInstallError(f"plugin version already installed: {plugin_id} {version}")
+                # A previous install may have failed after moving its staging
+                # directory but before catalog persistence. Catalog state is
+                # authoritative, so this directory is safe to recover.
+                shutil.rmtree(install_dir)
 
             staging_dir = Path(tempfile.mkdtemp(prefix="plugin-install-", dir=self.layout.cache_dir))
+            install_committed = False
             try:
                 bundle_dir = staging_dir / "bundle"
                 extract_bundle(bundle, bundle_dir)
@@ -74,6 +81,7 @@ class PluginInstaller:
 
                 install_dir.parent.mkdir(parents=True, exist_ok=True)
                 staging_dir.replace(install_dir)
+                install_committed = True
                 shutil.copy2(install_dir / "bundle" / "manifest.json", install_dir / "manifest.json")
 
                 install_metadata = {
@@ -117,6 +125,8 @@ class PluginInstaller:
                 )
                 if staging_dir.exists():
                     shutil.rmtree(staging_dir, ignore_errors=True)
+                if install_committed and install_dir.exists():
+                    shutil.rmtree(install_dir, ignore_errors=True)
                 raise PluginInstallError(str(exc)) from exc
         except Exception as exc:
             if isinstance(exc, PluginInstallError):
@@ -135,7 +145,7 @@ class PluginInstaller:
         builder = venv.EnvBuilder(
             with_pip=True,
             clear=False,
-            symlinks=True,
+            symlinks=sys.platform != "win32",
             system_site_packages=self.system_site_packages,
         )
         builder.create(venv_dir)
@@ -208,6 +218,12 @@ class PluginInstaller:
             ) from exc
 
     def _activate(self, plugin_id: str, version: str, previous_target: Path | None) -> None:
+        # Runtime discovery uses the persisted catalog's active_version. Windows
+        # symlinks require privileges that normal developer shells often lack,
+        # so the compatibility links are POSIX-only.
+        if sys.platform == "win32":
+            return
+
         plugin_dir = self.layout.plugin_dir(plugin_id)
         current_link = self.layout.current_link(plugin_id)
         previous_link = self.layout.previous_link(plugin_id)

@@ -54,6 +54,17 @@ def build_session_blob_name(
     )
 
 
+def build_output_blob_name(file_path: str | Path, *, output_root: str | Path) -> str:
+    """Build a drive-free blob name relative to the configured output root."""
+    path = Path(file_path).resolve()
+    root = Path(output_root).resolve()
+    try:
+        relative_path = path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Output file is outside the configured output root: {path}") from exc
+    return relative_path.as_posix()
+
+
 def build_blob_sas_url(storage_info: dict) -> str:
     """Build the SAS URL expected by BlobClient.from_blob_url."""
     return "https://{}/{}/{}{}".format(

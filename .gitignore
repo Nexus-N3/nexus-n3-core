@@ -52,7 +52,7 @@ docs/html/searchindex.js
 # -------------------------------
 # Data / outputs (sensor recordings)
 # -------------------------------
-rs_nexus_outputs/
+nexus_n3_outputs/
 *.csv
 
 # -------------------------------
