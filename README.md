@@ -22,7 +22,6 @@ Sensors and algorithms are delivered as installed plugins.
 - core runtime: this repository
 - plugin build and scaffold tooling: `nexus-n3-plugin-tooling`
 - plugin development workspace: `nexus-n3-plugin-catalog/`
-
 ## Installation
 
 Use an isolated Python environment. A system-wide install can pick up unrelated
