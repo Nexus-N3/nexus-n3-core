@@ -1,4 +1,4 @@
-# Nexus N3 Core
+# Nexus N3 Core 
 
 Nexus N3 Core is the runtime layer for sensor acquisition, plugin-backed
 processing, session orchestration, and host deployment.
@@ -15,8 +15,7 @@ The runtime provides:
 - optional Azure bridge integration
 - standalone, master, worker, and AI node roles
 
-Sensors and algorithms are no longer intended to live in the core repository as
-built-in runtime implementations. They are delivered as installed plugins.
+Sensors and algorithms are delivered as installed plugins.
 
 ## Repositories
 
