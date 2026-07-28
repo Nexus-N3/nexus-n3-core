@@ -157,7 +157,10 @@ class InstalledSensorProxy(SensorBase):
     def __init__(self, sensor):
         if self._plugin is None:
             raise RuntimeError("installed sensor proxy missing plugin descriptor")
+
+        # passed up to SensorBase
         super().__init__(self.sensor_type, copy.deepcopy(self._plugin.metadata))
+        
         self.plugin_id = self._plugin.plugin_id
         self.routing_inputs = list(_routing_entries(self._plugin.manifest.get("inputs")))
         self.routing_outputs = list(_routing_entries(self._plugin.manifest.get("outputs")))
