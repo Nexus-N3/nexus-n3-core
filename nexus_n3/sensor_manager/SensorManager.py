@@ -230,6 +230,8 @@ class SensorManager:
 
     # ----------------- Initialization ----------------- #
     def init_sensor_manager(self, sensors_to_init: list):
+        # can we type the sensor's in the list?
+        print(f"input shape {sensors_to_init}")
         """Initialize manager with pre-instantiated sensors and adapters."""
         self.sensors = []
         self.sensor_meta = {}
