@@ -160,7 +160,7 @@ class InstalledSensorProxy(SensorBase):
 
         # passed up to SensorBase
         super().__init__(self.sensor_type, copy.deepcopy(self._plugin.metadata))
-        
+
         self.plugin_id = self._plugin.plugin_id
         self.routing_inputs = list(_routing_entries(self._plugin.manifest.get("inputs")))
         self.routing_outputs = list(_routing_entries(self._plugin.manifest.get("outputs")))
@@ -171,7 +171,7 @@ class InstalledSensorProxy(SensorBase):
     @classmethod
     def load_raw_spec(cls) -> dict:
         if cls._plugin is None:
-            return {}
+            return {}           
         return copy.deepcopy(cls._plugin.metadata)
 
     def bind_manager_runtime(self, *, loop) -> None:
