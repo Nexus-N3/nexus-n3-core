@@ -1,53 +1,44 @@
 from unittest.mock import Mock
+from pathlib import Path
+from types import SimpleNamespace
 
-from typing import Any, TypedDict
+from nexus_n3.plugins.runtime.sensor_runtime import (
+    InstalledSensorPlugin,
+    InstalledSensorProxy,
+)
 
 from nexus_n3.core.subject import Subject
 from nexus_n3.sensor_manager.SensorManager import SensorManager
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
-from nexus_n3.sensor_manager.sensor_handle import SensorBase
-
-'''
- possible type definitions to use in Sensor Manager
-
-class ComputeAlgorithmMetadata(TypedDict, total=False):
-    name: str
-    inputs: dict[str, Any]
 
 
-class SensorMetadata(TypedDict, total=False):
-    location: str
-    f_block_size: int
-    compute_algorithm: ComputeAlgorithmMetadata
+class DummySensor(InstalledSensorProxy):
+    sensor_type = SimpleNamespace(local_name="Dummy Sensor")
 
-
-class SensorInitEntry(TypedDict):
-    sensor: SensorBase
-    meta: SensorMetadata
-'''
-
-class DummySensor(SensorBase):
-    sensor_type = type(
-        "SensorType",
-        (),
-        {"local_name": "Dummy Sensor"},
-    )()
-
-    def __init__(self):
-        super().__init__(
-            self.sensor_type,
-            {
-                "sensor": {
-                    "name": "Dummy Sensor",
-                    "adapter": "BLE",
-                },
-                "events": ["on_data", "on_error"],
-                "locations": {
-                    "supported": ["CHEST", "LEFT_ANKLE"],
-                },
-                "data_streams": {},
+    _plugin = InstalledSensorPlugin(
+        plugin_id="dummy-sensor",
+        sensor_name="Dummy Sensor",
+        install_path=Path("/unused"),
+        runtime_path=Path("/unused"),
+        manifest={
+            "inputs": [],
+            "outputs": [],
+        },
+        metadata={
+            "sensor": {
+                "name": "Dummy Sensor",
+                "adapter": "BLE",
             },
-        )
+            "events": ["on_data", "on_error"],
+            "locations": {
+                "supported": ["CHEST", "LEFT_ANKLE"],
+            },
+            "data_streams": {},
+        },
+    )
+    # this removes the need for sensor = DummySensor(None)
+    def __init__(self):
+        super().__init__(None)
 
 class DummyBLEAdapter:
     def close(self):
@@ -100,6 +91,8 @@ def test_init_sensor_manager_accepts_system_sensor_input(monkeypatch):
         ]
 
         manager.init_sensor_manager(sensors_to_init)
+
+        assert sensor._manager_loop is manager.loop
 
         # The sensor was extracted from the system input.
         assert manager.sensors == [sensor]

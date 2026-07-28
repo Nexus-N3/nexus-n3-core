@@ -30,6 +30,8 @@ class SensorBase:
         self.attributes = {k: v.get("default") for k, v in spec.get("attributes", {}).items()}
         self.listeners = {event: None for event in spec.get("events", [])}
 
+    # this method may be redundant now due to all sensors being plugins and 
+    # the InstalledSensorProxy class overrides it
     @classmethod
     def load_raw_spec(cls) -> dict:
         spec_path = getattr(cls, "SPEC_PATH", None)

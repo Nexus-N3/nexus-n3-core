@@ -153,6 +153,7 @@ class InstalledSensorProxy(SensorBase):
     _plugin: InstalledSensorPlugin | None = None
     sensor_type = SimpleNamespace(local_name="unknown")
 
+    # sensor argument can probably be removed.
     def __init__(self, sensor):
         if self._plugin is None:
             raise RuntimeError("installed sensor proxy missing plugin descriptor")
@@ -180,6 +181,9 @@ class InstalledSensorProxy(SensorBase):
                 self._plugin_client.bind_sensor()
             except Exception:
                 pass
+    # since sensor is not used anymore this will make the construction simpler.
+    #def __init__(self):
+    #    super().__init__(None)
 
     async def setup(self, adapter, enable_battery: bool = False, enable_button: bool = False):
         client = self._ensure_client()
@@ -284,7 +288,7 @@ def find_installed_sensor_plugin(
     plugin_root: str | Path | None = None,
 ) -> InstalledSensorPlugin | None:
     normalized = _normalize_name(local_name)
-    layout = PluginLayout(resolve_plugin_root(plugin_root))
+    layout = PluginLayout(resolve_plugin_root(plugin_root)) # this uses the configured plugin_root when None
     for catalog_path in sorted(layout.catalog_dir.glob("*.json")):
         if catalog_path.name in {"plugins.json", "install_failures.json"}:
             continue

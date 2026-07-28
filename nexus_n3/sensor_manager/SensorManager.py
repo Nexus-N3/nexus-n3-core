@@ -230,8 +230,6 @@ class SensorManager:
 
     # ----------------- Initialization ----------------- #
     def init_sensor_manager(self, sensors_to_init: list):
-        # can we type the sensor's in the list?
-        print(f"input shape {sensors_to_init}")
         """Initialize manager with pre-instantiated sensors and adapters."""
         self.sensors = []
         self.sensor_meta = {}
@@ -251,6 +249,8 @@ class SensorManager:
 
             self.adapter_pool.get_or_create(sensor.adapter)
             self.register_listeners_with_sensor(sensor)
+
+            # this conditional is redundant now everything is a plugin 
             if hasattr(sensor, "bind_manager_runtime") and callable(getattr(sensor, "bind_manager_runtime")):
                 sensor.bind_manager_runtime(loop=self.loop)
 
