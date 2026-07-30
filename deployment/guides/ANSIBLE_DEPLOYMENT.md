@@ -208,6 +208,8 @@ If you rebuilt `nexus-n3-core` and only want to reinstall the wheel onto the
 target Raspberry Pi without reinstalling any sensor or algorithm plugin
 bundles, disable both plugin installation switches:
 
+the nexus_release_local_path in nexus_release/defaults.main.yml must be updated with the new release number
+
 ```bash
 cd deployment/ansible
 ansible-playbook -i inventory.ini playbooks/deploy_release.yml \
