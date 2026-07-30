@@ -278,7 +278,7 @@ def _device_info_runtime_snapshot(
         "role": role,
         "status": "online" if server_status["status"] == "running" else "offline",
         "gateway_name": gateway_name,
-        "active_bridge": bridge_name or "none",
+        "active_bridge": bridge_name or False,
         "iot_hub_device_id": bridge_status.get("device_id"),
         "serial_number": None,
         "device_type": role,

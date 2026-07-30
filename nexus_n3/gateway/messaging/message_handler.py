@@ -164,7 +164,7 @@ class MessageHandler:
         snapshot_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
         capabilities = self._capabilities_payload()
         plugin_inventory = self._plugin_inventory_payload(capabilities, snapshot_at)
-        active_bridge = runtime.get("active_bridge") or "none"
+        active_bridge = runtime.get("active_bridge") or False
         status = runtime.get("status") or ("online" if self.is_ready else "offline")
         usb_disk = runtime.get("usb_disk") or {"present": False, "path": None}
         software_version = runtime.get("software_version") or f"nexus-n3-core {self._release_version()}"
@@ -193,6 +193,10 @@ class MessageHandler:
                 "usb_storage_mounted": bool(usb_disk.get("present")),
                 "usb_disk": usb_disk,
                 "last_heartbeat_at": runtime.get("last_heartbeat_at"),
+            },
+            "ble": {
+                "backend": runtime.get("ble_backend"),
+                "backend_label": runtime.get("ble_backend_label"),
             },
             "capabilities": capabilities,
             "plugin_inventory": plugin_inventory,
@@ -244,10 +248,16 @@ class MessageHandler:
         if msg_type == mt.CMD_IS_SERVER_READY:
             if self.is_ready:
                 print("server is ready block")
+                runtime = self._device_info_provider() if self._device_info_provider else {}
+                runtime = runtime or {}
                 capabilities = self._capabilities_payload()
                 response_payload = {
                     "msg": "System Server Ready",
                     "site": self.site,
+                    "ble": {
+                        "backend": runtime.get("ble_backend"),
+                        "backend_label": runtime.get("ble_backend_label"),
+                    },
                     "supported_sensors": capabilities["supported_sensors"],
                     "supported_algorithms": capabilities["supported_algorithms"],
                     "supported_gateways": capabilities["supported_gateways"],

@@ -109,6 +109,8 @@ class ZeroMQGateway(GatewayInterface):
         """
         try:
             print(f"[GatewayDebug] Publishing event: {event.get('type')}")
+            
+            #print(f"[GatewayDebug] Publishing event: {event}")
             event["site"] = self.site
             self._event_pub.send_json(event)
         except Exception as exc:
