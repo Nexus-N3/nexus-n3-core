@@ -165,19 +165,34 @@ class PipelineDiagnostics:
         with self._lock:
             output_path = self._output_path
             session_meta = dict(self._session_meta)
-        if not output_path:
-            return
-        record = {
-            "type": event_type,
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            **session_meta,
-            **payload,
-        }
-        self._records.put((output_path, record))
+            if not output_path:
+                return
+            record = {
+                "type": event_type,
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                **session_meta,
+                **payload,
+            }
+            self._records.put((output_path, record))
 
     def flush(self) -> None:
         if not self.is_enabled():
             return
+        self._records.join()
+
+    def finish_session(self) -> None:
+        """Detach the current output before archiving and drain queued writes."""
+        if not self.is_enabled():
+            return
+        with self._lock:
+            self._output_path = None
+            self._session_key = None
+            self._session_meta = {}
+            self._sensor_meta = {}
+            self._counters = defaultdict(lambda: defaultdict(int))
+            self._queue_depth = 0
+            self._stream_start_command_monotonic = {}
+            self._first_ble_notify_seen = set()
         self._records.join()
 
     def _snapshot_loop(self) -> None:
@@ -190,6 +205,8 @@ class PipelineDiagnostics:
             return
         with self._lock:
             output_path = self._output_path
+            if not output_path:
+                return
             session_meta = dict(self._session_meta)
             queue_depth = self._queue_depth
             sensor_meta = {address: dict(meta) for address, meta in self._sensor_meta.items()}
@@ -197,20 +214,18 @@ class PipelineDiagnostics:
                 address: dict(counter_map)
                 for address, counter_map in self._counters.items()
             }
-        if not output_path:
-            return
-        for address, counter_map in counters.items():
-            meta = sensor_meta.get(address, {})
-            record = {
-                "type": "snapshot",
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-                **session_meta,
-                "address": address,
-                **meta,
-                **counter_map,
-                "raw_queue_depth": queue_depth,
-            }
-            self._records.put((output_path, record))
+            for address, counter_map in counters.items():
+                meta = sensor_meta.get(address, {})
+                record = {
+                    "type": "snapshot",
+                    "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    **session_meta,
+                    "address": address,
+                    **meta,
+                    **counter_map,
+                    "raw_queue_depth": queue_depth,
+                }
+                self._records.put((output_path, record))
 
     def _writer_loop(self) -> None:
         while True:

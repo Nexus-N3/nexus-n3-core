@@ -180,6 +180,22 @@ Master:
 python nexus_n3_server.py --role master --mdns-hostname nexus-n3-master --admin --admin-host 0.0.0.0 --admin-port 9000
 ```
 
+### Session archive API
+
+When the admin service is enabled, Core advertises its archive service in the
+`server_ready` event. `GET /api/outputs?site=<readiness-site>` lists completed
+ZIP archives under `<active-output-root>/<site>/sessions`. `HEAD` and `GET
+/api/outputs/download` accept the returned `archive_id`, `storage_source`, and
+`site`; downloads fail with `409` if the active storage or readiness site
+changes after listing. This prevents archives from a previous site assignment
+being exposed after an Edge is moved. Filesystem paths and incomplete output
+directories are never included in the JSON API.
+
+Bind the admin service to an address reachable by the NEIA host, and restrict
+port `9000` (or the configured `--admin-port`) to the trusted edge network.
+Browser clients should use NEIA's same-origin proxy rather than this Core API
+directly.
+
 Worker:
 
 ```bash

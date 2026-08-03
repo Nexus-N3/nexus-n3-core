@@ -1,4 +1,4 @@
-nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.1.6-py3-none-any.whl"
+nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.1.8-py3-none-any.whl"
 nexus_release_remote_path: "/tmp/{{ nexus_release_local_path | basename }}"
 nexus_install_root: /opt/nexus-n3-core
 nexus_venv_path: "{{ nexus_install_root }}/venv"

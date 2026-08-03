@@ -30,6 +30,7 @@ class MessageHandler:
         self._usb_status_provider = None
         self._device_info_provider = None
         self._robot_service = None
+        self._archive_service = {"available": False}
 
         self.is_ready = False
         self.registry = None
@@ -68,6 +69,10 @@ class MessageHandler:
     def set_robot_service(self, robot_service=None):
         """Register an optional robot service for handling robot commands."""
         self._robot_service = robot_service
+
+    def set_archive_service(self, service: dict | None = None):
+        """Advertise the HTTP archive service available on this Core host."""
+        self._archive_service = dict(service) if service else {"available": False}
 
     def _release_version(self) -> str:
         """Return the installed nexus-n3-core version or 'unknown'."""
@@ -262,6 +267,7 @@ class MessageHandler:
                     "supported_algorithms": capabilities["supported_algorithms"],
                     "supported_gateways": capabilities["supported_gateways"],
                     "supported_bridges": capabilities["supported_bridges"],
+                    "archive_service": dict(self._archive_service),
                 }
                 correlation_id = payload.get("correlation_id")
                 if correlation_id:
@@ -271,7 +277,10 @@ class MessageHandler:
                     "payload": response_payload,
                 })
             else:
-                response_payload = {"msg": "System Server NOT Ready"}
+                response_payload = {
+                    "msg": "System Server NOT Ready",
+                    "archive_service": dict(self._archive_service),
+                }
                 correlation_id = payload.get("correlation_id")
                 if correlation_id:
                     response_payload["correlation_id"] = correlation_id

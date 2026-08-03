@@ -55,6 +55,7 @@ class FileManager:
         self._raw_write_failures_lock = Lock()
         self._session_diagnostics_lock = Lock()
         self._session_diagnostics_state = {}
+        self._finalized_diagnostics_sessions: set[str] = set()
         self.logger = get_module_logger("File Manager")
         self._raw_writer_thread = Thread(
             target=self._writer_loop,
@@ -535,15 +536,19 @@ class FileManager:
         self.base_dir = self._resolve_base_dir()
         self.base_dir.mkdir(parents=True, exist_ok=True)
         session_ts = str(session_index) if session_index else None
+        if not session_ts:
+            return
         session_dir = self._session_dir(session_ts)
         if not session_dir:
             return
         diagnostics_dir = session_dir / "diagnostics"
         summary_path = diagnostics_dir / "session_diagnostics.json"
         events_path = diagnostics_dir / "session_diagnostics.jsonl"
-        diagnostics_dir.mkdir(parents=True, exist_ok=True)
         now = datetime.now().isoformat(timespec="seconds")
         with self._session_diagnostics_lock:
+            if session_ts in self._finalized_diagnostics_sessions:
+                return
+            diagnostics_dir.mkdir(parents=True, exist_ok=True)
             current_ts = self._session_diagnostics_state.get("session_timestamp")
             if current_ts != session_ts:
                 self._session_diagnostics_state = {
@@ -569,6 +574,16 @@ class FileManager:
                 self._merge_summary(self._session_diagnostics_state["summary"], metadata)
             self._session_diagnostics_state["summary"]["last_updated_at"] = now
             self._write_session_diagnostics_summary_locked()
+
+    def finish_session_diagnostics(self, session_index: str | None) -> None:
+        """Prevent late diagnostics from recreating an archived session directory."""
+        session_ts = str(session_index) if session_index else None
+        if not session_ts:
+            return
+        with self._session_diagnostics_lock:
+            self._finalized_diagnostics_sessions.add(session_ts)
+            if self._session_diagnostics_state.get("session_timestamp") == session_ts:
+                self._session_diagnostics_state = {}
 
     def append_session_diagnostics_event(
         self,

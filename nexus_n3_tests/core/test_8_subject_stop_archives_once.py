@@ -25,6 +25,8 @@ class _StubFileManager:
     def __init__(self) -> None:
         self.archive_calls = 0
         self.describe_calls = 0
+        self.finished_diagnostics = []
+        self.finalized_summaries = []
 
     def flush(self) -> None:
         pass
@@ -33,7 +35,10 @@ class _StubFileManager:
         pass
 
     def finalize_session_diagnostics(self, session_timestamp, *, status: str, reason: str | None = None, summary_updates=None) -> None:
-        pass
+        self.finalized_summaries.append(summary_updates)
+
+    def finish_session_diagnostics(self, session_timestamp) -> None:
+        self.finished_diagnostics.append(session_timestamp)
 
     def get_raw_write_failures(self, subject_ids) -> dict:
         return {}
@@ -150,6 +155,8 @@ def test_subject_stops_wait_for_last_subject_before_archiving(monkeypatch) -> No
     assert event_bus.events[-1]["type"] == mt.EVT_STREAM_DRAINED
     assert event_bus.events[-1]["payload"]["all_local_streams_stopped"] is True
     assert event_bus.events[-1]["payload"]["session_archive_path"] == "/tmp/20260424_120000.zip"
+    assert file_manager.finalized_summaries[-1]["drain_summary"]["all_local_streams_stopped"] is True
+    assert file_manager.finalized_summaries[-1]["drain_summary"]["status"] == "ok"
 
 
 def test_single_subject_stop_archives_session_once(monkeypatch) -> None:

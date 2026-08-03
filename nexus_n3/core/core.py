@@ -347,6 +347,14 @@ class Core:
             self.storage.file_manager.stop_stream(sub)
             sub.is_streaming = False
         reason = self._startup_last_failure_reason or "startup gate failed"
+        drain_payload = self._build_stream_drained_payload(
+            None,
+            scope="all",
+            subject_ids=list(failed_subject_ids),
+            status="error",
+            reason=reason,
+            session_info=self.storage.file_manager.describe_session(self.session_timestamp),
+        )
         self.storage.file_manager.finalize_session_diagnostics(
             self.session_timestamp,
             status="startup_failed",
@@ -360,19 +368,14 @@ class Core:
                     "reason": reason,
                     "failed_startup": True,
                 },
+                "drain_summary": drain_payload,
             },
         )
         session_info = self.storage.file_manager.describe_session(self.session_timestamp)
         if not self.has_active_streams():
             session_info = self._finalize_session_archive()
-        self._emit_stream_drained(
-            None,
-            scope="all",
-            subject_ids=list(failed_subject_ids),
-            status="error",
-            reason=reason,
-            session_info=session_info,
-        )
+        drain_payload.update(session_info)
+        self._emit_stream_drained(drain_payload)
 
     def _activate_official_streaming(self) -> None:
         active_subject_ids = set(self._startup_subject_ids)
@@ -821,6 +824,14 @@ class Core:
                 failed_subjects = ", ".join(sorted(raw_write_failures.keys()))
                 reason = f"raw write failures recorded for subject(s): {failed_subjects}"
             all_streams_stopped = not self.has_active_streams()
+            drain_payload = self._build_stream_drained_payload(
+                stop_context,
+                scope=scope,
+                subject_ids=subject_ids,
+                status=status,
+                reason=reason,
+                session_info=self.storage.file_manager.describe_session(self.session_timestamp),
+            )
             diagnostics_updates = {
                 "official_stream_started": self.stream_phase == "official_streaming",
                 "raw_write_failures": raw_write_failures,
@@ -832,6 +843,7 @@ class Core:
                     "reason": reason,
                     "all_local_streams_stopped": all_streams_stopped,
                 },
+                "drain_summary": drain_payload,
             }
             if all_streams_stopped:
                 self.storage.file_manager.finalize_session_diagnostics(
@@ -845,14 +857,6 @@ class Core:
                     self.session_timestamp,
                     diagnostics_updates,
                 )
-            archive_info = None
-            if all_streams_stopped:
-                archive_info = self._finalize_session_archive()
-            if raw_write_failures:
-                archive_info = archive_info or self.storage.file_manager.describe_session(self.session_timestamp)
-                archive_info["partial"] = True
-                archive_info["raw_write_failures"] = raw_write_failures
-                archive_info["partial_markers"] = partial_markers
             pipeline_diagnostics.record_event(
                 "stream_stop_summary",
                 subject_ids=subject_ids,
@@ -862,18 +866,22 @@ class Core:
                 partial_markers=partial_markers,
             )
             pipeline_diagnostics.flush()
+            archive_info = None
+            if all_streams_stopped:
+                archive_info = self._finalize_session_archive()
+            if raw_write_failures:
+                archive_info = archive_info or self.storage.file_manager.describe_session(self.session_timestamp)
+                archive_info["partial"] = True
+                archive_info["raw_write_failures"] = raw_write_failures
+                archive_info["partial_markers"] = partial_markers
             self._set_stream_stop_finalization_pending(False)
-            self._emit_stream_drained(
-                stop_context,
-                scope=scope,
-                subject_ids=subject_ids,
-                status=status,
-                reason=reason,
-                session_info=archive_info,
+            drain_payload.update(
+                archive_info or self.storage.file_manager.describe_session(self.session_timestamp)
             )
+            self._emit_stream_drained(drain_payload)
         except Exception as exc:
             self._set_stream_stop_finalization_pending(False)
-            self._emit_stream_drained(
+            drain_payload = self._build_stream_drained_payload(
                 stop_context,
                 scope=scope,
                 subject_ids=subject_ids,
@@ -881,6 +889,11 @@ class Core:
                 reason=str(exc),
                 session_info=self.storage.file_manager.describe_session(self.session_timestamp),
             )
+            self.storage.file_manager.update_session_diagnostics_summary(
+                self.session_timestamp,
+                {"drain_summary": drain_payload},
+            )
+            self._emit_stream_drained(drain_payload)
             raise
         finally:
             self._set_stream_stop_finalization_pending(False)
@@ -898,11 +911,13 @@ class Core:
         if self.archived_session_timestamp == self.session_timestamp:
             return self.storage.file_manager.describe_session(self.session_timestamp)
 
+        pipeline_diagnostics.finish_session()
+        self.storage.file_manager.finish_session_diagnostics(self.session_timestamp)
         archive_info = self.storage.file_manager.archive_session(self.session_timestamp)
         self.archived_session_timestamp = self.session_timestamp
         return archive_info
 
-    def _emit_stream_drained(
+    def _build_stream_drained_payload(
         self,
         stop_context: dict | None,
         *,
@@ -911,8 +926,8 @@ class Core:
         status: str,
         reason: str | None = None,
         session_info: dict | None = None,
-    ):
-        """Emit a post-cleanup drain event for stop coordination."""
+    ) -> dict:
+        """Build the drain record before diagnostics and session finalization."""
         payload = {
             "stop_session_id": (stop_context or {}).get("stop_session_id"),
             "scope": scope,
@@ -924,10 +939,10 @@ class Core:
         payload.update(session_info or self.storage.file_manager.describe_session(self.session_timestamp))
         if reason:
             payload["reason"] = reason
-        self.storage.file_manager.update_session_diagnostics_summary(
-            self.session_timestamp,
-            {"drain_summary": payload},
-        )
+        return payload
+
+    def _emit_stream_drained(self, payload: dict) -> None:
+        """Emit an already-persisted post-cleanup drain event."""
         if not self.system_event_bus:
             return
         self.system_event_bus.emit({"type": mt.EVT_STREAM_DRAINED, "payload": payload})

@@ -124,6 +124,14 @@ def test_get_device_info_emits_control_center_friendly_snapshot():
 def test_server_ready_now_includes_supported_algorithms():
     event_bus = FakeEventBus()
     handler = MessageHandler("tallinn-lab", event_bus)
+    archive_service = {
+        "available": True,
+        "scheme": "http",
+        "port": 9000,
+        "list_path": "/api/outputs",
+        "download_path": "/api/outputs/download",
+    }
+    handler.set_archive_service(archive_service)
     handler.si = FakeSystemInterface()
     handler.is_ready = True
 
@@ -133,6 +141,7 @@ def test_server_ready_now_includes_supported_algorithms():
     event = event_bus.events[0]
     assert event["type"] == mt.EVT_SERVER_READY
     assert event["payload"]["correlation_id"] == "abc"
+    assert event["payload"]["archive_service"] == archive_service
     assert event["payload"]["supported_algorithms"] == [
         "standard_loading_intensity",
         "gait_asymmetry",

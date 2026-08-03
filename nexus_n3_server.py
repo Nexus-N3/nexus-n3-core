@@ -352,6 +352,13 @@ async def run_async_server(
             robot_service=robot_service,
             ble_runtime_config=ble_runtime_config,
         )
+        server.handler.set_archive_service({
+            "available": bool(admin_enabled),
+            "scheme": "http",
+            "port": admin_port,
+            "list_path": "/api/outputs",
+            "download_path": "/api/outputs/download",
+        } if admin_enabled else None)
 
         from nexus_n3.distributed.registry import NodeRegistry
         from nexus_n3.distributed.master_node import MasterNode
@@ -416,6 +423,13 @@ async def run_async_server(
             robot_service=robot_service,
             ble_runtime_config=ble_runtime_config,
         )
+        server.handler.set_archive_service({
+            "available": bool(admin_enabled),
+            "scheme": "http",
+            "port": admin_port,
+            "list_path": "/api/outputs",
+            "download_path": "/api/outputs/download",
+        } if admin_enabled else None)
         server.start()
 
         print(f"Server running (async) with '{gateway_name}' gateway as '{role}' mode.")

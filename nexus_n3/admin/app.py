@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import shutil
 import time
 import zipfile
@@ -10,10 +11,10 @@ from importlib import metadata
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 from typing import Callable
-from urllib.parse import urlencode, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
-from fastapi import FastAPI, HTTPException, Request, Form, File, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi import FastAPI, HTTPException, Request, Form, File, UploadFile, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from nexus_n3.bridge.bridge_registry import discover_bridges
@@ -24,6 +25,14 @@ from nexus_n3.plugins.runtime.discovery import (
     get_installed_plugin_inventory,
     get_supported_algorithms,
     get_supported_sensors,
+)
+from nexus_n3.admin.archive_service import (
+    ArchiveNotFound,
+    ArchiveService,
+    ArchiveSourceChanged,
+    ArchiveStorageUnavailable,
+    ArchiveSiteChanged,
+    InvalidArchiveId,
 )
 
 
@@ -176,6 +185,25 @@ def _append_query_params(base_url: str, **params: str) -> str:
     return f"{parts.path}{'?' + query if query else ''}"
 
 
+def _list_log_names_newest_first(logs_dir: Path) -> list[str]:
+    """Return log filenames ordered by most recent modification time."""
+    log_paths = [path for path in logs_dir.iterdir() if path.is_file()]
+    return [
+        path.name
+        for path in sorted(
+            log_paths,
+            key=lambda path: (path.stat().st_mtime_ns, path.name),
+            reverse=True,
+        )
+    ]
+
+
+def _read_log_tail_newest_first(path: Path, tail: int) -> list[str]:
+    """Read the requested tail and place its newest line first."""
+    with path.open("r", encoding="utf-8", errors="ignore") as handle:
+        return handle.readlines()[-tail:][::-1]
+
+
 def create_app(state: AdminState) -> FastAPI:
     """Create and configure the FastAPI admin application."""
     load_runtime_env()
@@ -202,6 +230,7 @@ def create_app(state: AdminState) -> FastAPI:
     configured_output_root = os.getenv("NEXUS_N3_OUTPUT_ROOT", "").strip()
     outputs_dir = Path(configured_output_root) if configured_output_root else (state.project_root / "nexus_n3_outputs")
     outputs_dir.mkdir(parents=True, exist_ok=True)
+    archive_service = ArchiveService(outputs_dir, state.server_status, state.site)
 
     def _render_template(request: Request, template_name: str, context: dict | None = None) -> HTMLResponse:
         """Render templates with common header context."""
@@ -216,15 +245,7 @@ def create_app(state: AdminState) -> FastAPI:
         return templates.TemplateResponse(request, template_name, payload)
 
     def _resolve_outputs_dir() -> Path:
-        status = state.server_status()
-        usb_disk = status.get("usb_disk", {}) if isinstance(status, dict) else {}
-        usb_path = usb_disk.get("path") if isinstance(usb_disk, dict) else None
-        if usb_disk.get("present") and usb_path:
-            candidate = Path(usb_path)
-            if candidate.exists() and candidate.is_dir():
-                return candidate
-        outputs_dir.mkdir(parents=True, exist_ok=True)
-        return outputs_dir
+        return archive_service.active_root()[1]
 
     def _resolve_usb_outputs_dir() -> Path | None:
         status = state.server_status()
@@ -291,7 +312,7 @@ def create_app(state: AdminState) -> FastAPI:
         """List available log files."""
         files = []
         if logs_dir.exists():
-            files = sorted([p.name for p in logs_dir.iterdir() if p.is_file()])
+            files = _list_log_names_newest_first(logs_dir)
         return _render_template(request, "logs.html", {"files": files})
 
     @app.get("/logs/{name}", response_class=HTMLResponse)
@@ -300,9 +321,7 @@ def create_app(state: AdminState) -> FastAPI:
         path = _safe_path(logs_dir, name)
         if not path.exists() or not path.is_file():
             raise HTTPException(status_code=404, detail="Log not found")
-        lines = []
-        with path.open("r", encoding="utf-8", errors="ignore") as handle:
-            lines = handle.readlines()[-tail:]
+        lines = _read_log_tail_newest_first(path, tail)
         return _render_template(
             request,
             "log_view.html",
@@ -370,6 +389,83 @@ def create_app(state: AdminState) -> FastAPI:
         if not target.exists() or not target.is_file():
             raise HTTPException(status_code=404, detail="File not found")
         return FileResponse(str(target), filename=target.name)
+
+    def _archive_http_error(exc: Exception) -> HTTPException:
+        if isinstance(exc, (ArchiveSourceChanged, ArchiveSiteChanged)):
+            status_code = 409
+        elif isinstance(exc, ArchiveStorageUnavailable):
+            status_code = 503
+        elif isinstance(exc, ArchiveNotFound):
+            status_code = 404
+        else:
+            status_code = 400
+        return HTTPException(
+            status_code=status_code,
+            detail={"code": getattr(exc, "code", "archive_service_error"), "message": str(exc)},
+        )
+
+    @app.get("/api/outputs")
+    async def list_archive_outputs(site: str):
+        """List completed archives from the active output storage."""
+        try:
+            source, archives = archive_service.list_archives(site)
+        except (ArchiveSiteChanged, ArchiveStorageUnavailable) as exc:
+            raise _archive_http_error(exc) from exc
+        return JSONResponse(
+            {
+                "site": archive_service.site,
+                "storage_source": source,
+                "archives": [item.public_dict() for item in archives],
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    def _resolve_archive_download(archive_id: str, storage_source: str, site: str):
+        try:
+            return archive_service.resolve_archive(archive_id, storage_source, site)
+        except (
+            ArchiveNotFound,
+            ArchiveSourceChanged,
+            ArchiveStorageUnavailable,
+            ArchiveSiteChanged,
+            InvalidArchiveId,
+        ) as exc:
+            raise _archive_http_error(exc) from exc
+
+    @app.head("/api/outputs/download")
+    async def inspect_archive_output(archive_id: str, storage_source: str, site: str):
+        """Validate an archive immediately before a browser download."""
+        archive = _resolve_archive_download(archive_id, storage_source, site)
+        return Response(
+            headers={
+                "Content-Type": "application/zip",
+                "Content-Length": str(archive.size_bytes),
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(archive.filename)}",
+                "Cache-Control": "no-store",
+            }
+        )
+
+    @app.get("/api/outputs/download")
+    async def download_archive_output(archive_id: str, storage_source: str, site: str):
+        """Stream one completed archive from the active output storage."""
+        archive = _resolve_archive_download(archive_id, storage_source, site)
+        async def iter_archive():
+            handle = await asyncio.to_thread(archive.path.open, "rb")
+            try:
+                while chunk := await asyncio.to_thread(handle.read, 1024 * 1024):
+                    yield chunk
+            finally:
+                await asyncio.to_thread(handle.close)
+
+        return StreamingResponse(
+            iter_archive(),
+            media_type="application/zip",
+            headers={
+                "Content-Length": str(archive.size_bytes),
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(archive.filename)}",
+                "Cache-Control": "no-store",
+            },
+        )
 
     @app.get("/outputs/download-zip", response_class=FileResponse)
     def download_outputs_zip(path: str = ""):
