@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import platform
+import re
 import shutil
 import stat
 import sys
@@ -249,8 +250,11 @@ def _normalize_python_implementation(name: str) -> str:
 
 def _current_abi_tag() -> str | None:
     soabi = sysconfig.get_config_var("SOABI") or ""
+    cpython_match = re.match(r"^cpython-(\d+)([a-z]*)", soabi)
+    if cpython_match:
+        return f"cp{cpython_match.group(1)}{cpython_match.group(2)}"
     for part in soabi.split("-"):
-        if part.startswith("cp") and len(part) >= 5:
+        if re.fullmatch(r"cp\d+[a-z]*", part):
             return part
 
     version = f"{sys.version_info.major}{sys.version_info.minor}"

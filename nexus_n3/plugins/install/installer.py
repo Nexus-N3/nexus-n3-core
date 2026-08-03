@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..common.jsonio import read_json, write_json
 from .bundle import ValidatedBundle, extract_bundle, probe_manifest, validate_bundle
-from .catalog import record_install_failure, update_plugin_catalog
+from .catalog import record_install_failure, refresh_plugins_index, update_plugin_catalog, utc_now
 from .config import resolve_plugin_root, resolve_system_site_packages
 from .layout import PluginLayout
 
@@ -30,6 +30,20 @@ class PluginInstallResult:
     install_path: Path
     runtime_path: Path
     activated: bool
+
+
+@dataclass(frozen=True)
+class PluginActivationResult:
+    plugin_id: str
+    version: str
+    changed: bool
+
+
+@dataclass(frozen=True)
+class PluginPruneResult:
+    plugin_id: str
+    active_version: str
+    removed_versions: tuple[str, ...]
 
 
 class PluginInstaller:
@@ -140,6 +154,71 @@ class PluginInstaller:
                 error=str(exc),
             )
             raise PluginInstallError(str(exc)) from exc
+
+    def activate_version(self, plugin_id: str, version: str) -> PluginActivationResult:
+        """Activate one installed plugin version without reinstalling its bundle."""
+        catalog_path = self.layout.plugin_catalog_path(plugin_id)
+        catalog = read_json(catalog_path, default={}) or {}
+        version_payload = (catalog.get("versions") or {}).get(version)
+        install_dir = self.layout.version_dir(plugin_id, version)
+        manifest_path = install_dir / "manifest.json"
+        if not version_payload or not manifest_path.is_file():
+            raise PluginInstallError(f"plugin version is not installed: {plugin_id} {version}")
+        if catalog.get("active_version") == version:
+            return PluginActivationResult(plugin_id=plugin_id, version=version, changed=False)
+
+        manifest = read_json(manifest_path, default={}) or {}
+        previous_target = _safe_readlink(self.layout.current_link(plugin_id))
+        self._activate(plugin_id, version, previous_target)
+        update_plugin_catalog(
+            self.layout,
+            manifest,
+            version=version,
+            install_path=install_dir,
+            runtime_path=Path(version_payload["runtime_path"]),
+            state="installed",
+            enabled=True,
+            active=True,
+        )
+        return PluginActivationResult(plugin_id=plugin_id, version=version, changed=True)
+
+    def prune_inactive_versions(self, plugin_id: str, *, keep_version: str) -> PluginPruneResult:
+        """Remove cataloged inactive versions after the desired version is active."""
+        catalog_path = self.layout.plugin_catalog_path(plugin_id)
+        catalog = read_json(catalog_path, default={}) or {}
+        active_version = str(catalog.get("active_version") or "")
+        if not active_version:
+            raise PluginInstallError(f"plugin has no active version: {plugin_id}")
+        if active_version != keep_version:
+            raise PluginInstallError(
+                f"refusing to prune {plugin_id}: active version is {active_version}, expected {keep_version}"
+            )
+
+        versions = catalog.get("versions") or {}
+        if keep_version not in versions:
+            raise PluginInstallError(f"active plugin version is missing from catalog: {plugin_id} {keep_version}")
+        removed_versions = tuple(sorted(version for version in versions if version != keep_version))
+        for version in removed_versions:
+            install_dir = self.layout.version_dir(plugin_id, version)
+            if install_dir.exists():
+                shutil.rmtree(install_dir)
+            versions.pop(version, None)
+
+        previous_link = self.layout.previous_link(plugin_id)
+        previous_target = _safe_readlink(previous_link)
+        if previous_target is not None and previous_target.name in removed_versions:
+            previous_link.unlink(missing_ok=True)
+
+        if removed_versions:
+            catalog["versions"] = versions
+            catalog["updated_at"] = utc_now()
+            write_json(catalog_path, catalog)
+            refresh_plugins_index(self.layout)
+        return PluginPruneResult(
+            plugin_id=plugin_id,
+            active_version=active_version,
+            removed_versions=removed_versions,
+        )
 
     def _create_runtime(self, venv_dir: Path) -> None:
         builder = venv.EnvBuilder(

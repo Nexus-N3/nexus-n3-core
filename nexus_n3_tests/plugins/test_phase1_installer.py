@@ -22,6 +22,7 @@ from nexus_n3.plugins.install.config import (
 )
 from nexus_n3.plugins.install.installer import PluginInstallError, PluginInstaller
 from nexus_n3.plugins.install import installer as installer_module
+from nexus_n3.plugins.install import bundle as bundle_module
 
 
 def test_resolve_plugin_root_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -213,6 +214,51 @@ def test_uncataloged_version_directory_is_recovered(tmp_path: Path):
     assert catalog["active_version"] == "1.0.0"
 
 
+def test_activate_and_prune_superseded_plugin_versions(tmp_path: Path):
+    plugin_root = tmp_path / "plugins"
+    installer = PluginInstaller(plugin_root)
+    version_one = _build_fixture_bundle(tmp_path, plugin_name="demo_sensor", version="1.0.0")
+    version_two = _build_fixture_bundle(tmp_path, plugin_name="demo_sensor", version="2.0.0")
+
+    installer.install_bundle(version_two)
+    installer.install_bundle(version_one)
+    assert read_json(plugin_root / "catalog" / "demo_sensor.json", default={})["active_version"] == "1.0.0"
+
+    activation = installer.activate_version("demo_sensor", "2.0.0")
+    assert activation.changed is True
+    assert installer.activate_version("demo_sensor", "2.0.0").changed is False
+
+    result = installer.prune_inactive_versions("demo_sensor", keep_version="2.0.0")
+    assert result.removed_versions == ("1.0.0",)
+    assert not (plugin_root / "installed" / "demo_sensor" / "1.0.0").exists()
+    assert (plugin_root / "installed" / "demo_sensor" / "2.0.0").is_dir()
+    catalog = read_json(plugin_root / "catalog" / "demo_sensor.json", default={})
+    assert catalog["active_version"] == "2.0.0"
+    assert list(catalog["versions"]) == ["2.0.0"]
+    if sys.platform != "win32":
+        assert os.readlink(plugin_root / "installed" / "demo_sensor" / "current") == "2.0.0"
+        assert not (plugin_root / "installed" / "demo_sensor" / "previous").exists()
+
+    assert installer.prune_inactive_versions(
+        "demo_sensor", keep_version="2.0.0"
+    ).removed_versions == ()
+
+
+def test_prune_refuses_to_remove_the_active_plugin_version(tmp_path: Path):
+    plugin_root = tmp_path / "plugins"
+    installer = PluginInstaller(plugin_root)
+    version_one = _build_fixture_bundle(tmp_path, plugin_name="demo_sensor", version="1.0.0")
+    version_two = _build_fixture_bundle(tmp_path, plugin_name="demo_sensor", version="2.0.0")
+    installer.install_bundle(version_one)
+    installer.install_bundle(version_two)
+
+    with pytest.raises(PluginInstallError, match="active version is 2.0.0"):
+        installer.prune_inactive_versions("demo_sensor", keep_version="1.0.0")
+
+    assert (plugin_root / "installed" / "demo_sensor" / "1.0.0").is_dir()
+    assert (plugin_root / "installed" / "demo_sensor" / "2.0.0").is_dir()
+
+
 def test_rejects_incompatible_bundle_target(tmp_path: Path):
     plugin_root = tmp_path / "plugins"
     bundle_path = _build_fixture_bundle(
@@ -224,6 +270,16 @@ def test_rejects_incompatible_bundle_target(tmp_path: Path):
 
     with pytest.raises(PluginInstallError, match="bundle target"):
         PluginInstaller(plugin_root).install_bundle(bundle_path)
+
+
+def test_cpython_soabi_is_normalized_to_a_wheel_abi_tag(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        bundle_module.sysconfig,
+        "get_config_var",
+        lambda name: "cpython-312-aarch64-linux-gnu" if name == "SOABI" else None,
+    )
+
+    assert bundle_module._current_abi_tag() == "cp312"
 
 def _build_fixture_bundle(
     tmp_path: Path,

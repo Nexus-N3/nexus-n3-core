@@ -146,8 +146,16 @@ Role switches:
 - `nexus_install_sensor_plugins`
 - `nexus_install_algorithm_plugins`
 
-If the explicit bundle lists are empty, Ansible auto-discovers all
-`.rsnxplugin` files in the corresponding bundle root.
+If the explicit bundle lists are empty, Ansible reads the manifests in the
+corresponding bundle root and selects only the newest version of each plugin
+ID. Historical bundles may remain in `plugin-builds/` without being installed.
+An explicit bundle list must contain at most one version of each plugin ID.
+
+By default, `nexus_plugin_prune_inactive_versions: true` makes the deployed
+plugin root converge on those selected versions. Ansible installs missing
+versions, explicitly activates each desired version, and only then removes its
+inactive superseded versions. Set the variable to `false` to retain inactive
+versions for manual rollback.
 
 ## Runtime Ownership Model
 
@@ -445,6 +453,8 @@ The `nexus_release` role:
 - stages `.rsnxplugin` bundles on the target
 - installs bundles into `NEXUS_N3_PLUGIN_ROOT` using `python -m nexus_n3.plugins install`
 - skips bundle installation if the exact plugin version is already installed
+- explicitly activates the selected version of each plugin
+- removes inactive superseded versions when `nexus_plugin_prune_inactive_versions` is enabled
 - normalizes plugin-root ownership for runtime readability
 - installs and restarts the systemd service when required
 
@@ -461,6 +471,19 @@ That playbook installs role-appropriate plugin bundles only:
 
 - master and workers get sensor and algorithm bundles
 - AI nodes get algorithm bundles only
+
+To deploy only the Standard Loading Intensity algorithm update while leaving
+sensor plugins untouched:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/deploy_plugin_bundles.yml \
+  -e nexus_install_sensor_plugins=false \
+  -e '{"nexus_algorithm_plugin_bundles":["nexus-n3-algorithm-standard-loading-intensity-0.1.2-rpi.rsnxplugin"]}'
+```
+
+That installs and activates `0.1.2`, then removes inactive installed versions
+of that plugin, including `0.1.0`. It does not alter installed sensor plugins.
 
 You can target a subset of nodes:
 

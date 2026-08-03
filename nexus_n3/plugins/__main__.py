@@ -23,6 +23,16 @@ def build_parser() -> argparse.ArgumentParser:
     install.add_argument("--no-activate", action="store_true")
     install.add_argument("--system-site-packages", action="store_true")
 
+    activate = subparsers.add_parser("activate")
+    activate.add_argument("--plugin-id", required=True)
+    activate.add_argument("--version", required=True)
+    activate.add_argument("--plugin-root")
+
+    prune = subparsers.add_parser("prune-inactive")
+    prune.add_argument("--plugin-id", required=True)
+    prune.add_argument("--keep-version", required=True)
+    prune.add_argument("--plugin-root")
+
     install_dev = subparsers.add_parser("install-dev")
     install_dev.add_argument(
         "--plugin-catalog-root",
@@ -74,6 +84,27 @@ def main() -> int:
                 sort_keys=True,
             )
         )
+        return 0
+
+    if args.command == "activate":
+        result = PluginInstaller(args.plugin_root).activate_version(args.plugin_id, args.version)
+        print(json.dumps({
+            "plugin_id": result.plugin_id,
+            "version": result.version,
+            "changed": result.changed,
+        }, indent=2, sort_keys=True))
+        return 0
+
+    if args.command == "prune-inactive":
+        result = PluginInstaller(args.plugin_root).prune_inactive_versions(
+            args.plugin_id,
+            keep_version=args.keep_version,
+        )
+        print(json.dumps({
+            "plugin_id": result.plugin_id,
+            "active_version": result.active_version,
+            "removed_versions": list(result.removed_versions),
+        }, indent=2, sort_keys=True))
         return 0
 
     if args.command == "install-dev":

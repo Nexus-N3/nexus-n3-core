@@ -118,6 +118,23 @@ Install a bundle into a chosen root:
 python -m nexus_n3.plugins install /path/to/plugin.rsnxplugin --plugin-root /tmp/nexus-n3-plugins
 ```
 
+Activate an already-installed version and safely remove its inactive
+superseded versions:
+
+```bash
+python -m nexus_n3.plugins activate \
+  --plugin-id standard-loading-intensity \
+  --version 0.1.2 \
+  --plugin-root /opt/nexus-n3-plugins
+
+python -m nexus_n3.plugins prune-inactive \
+  --plugin-id standard-loading-intensity \
+  --keep-version 0.1.2 \
+  --plugin-root /opt/nexus-n3-plugins
+```
+
+Pruning refuses to run unless `--keep-version` is already the active version.
+
 Install one or more dev plugins directly from the source tree workspace:
 
 ```bash

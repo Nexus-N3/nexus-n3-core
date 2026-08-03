@@ -1,4 +1,4 @@
-nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.1.8-py3-none-any.whl"
+nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.1.9-py3-none-any.whl"
 nexus_release_remote_path: "/tmp/{{ nexus_release_local_path | basename }}"
 nexus_install_root: /opt/nexus-n3-core
 nexus_venv_path: "{{ nexus_install_root }}/venv"
@@ -63,5 +63,6 @@ nexus_algorithm_plugin_bundles: []
 nexus_robot_config_path: /etc/nexus-n3/robot.yaml
 nexus_install_sensor_plugins: "{{ nexus_role in ['standalone', 'master', 'worker'] }}"
 nexus_install_algorithm_plugins: true
+nexus_plugin_prune_inactive_versions: false
 nexus_plugin_installer_python: "{{ nexus_venv_path }}/bin/python"
 nexus_plugin_installer_module: nexus_n3.plugins

@@ -17,8 +17,12 @@
   tags: [plugins, plugin_bundles, sensor_plugins]
 
 - name: Discover local sensor plugin bundles
-  ansible.builtin.command: >
-    find "{{ nexus_sensor_plugin_bundle_root }}" -maxdepth 1 -type f -name "*.rsnxplugin"
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/select_plugin_bundles.py"
+      - "{{ nexus_sensor_plugin_bundle_root }}"
+      - sensor
   delegate_to: localhost
   become: false
   register: nexus_sensor_bundle_files
@@ -63,8 +67,12 @@
   tags: [plugins, plugin_bundles, algorithm_plugins]
 
 - name: Discover local algorithm plugin bundles
-  ansible.builtin.command: >
-    find "{{ nexus_algorithm_plugin_bundle_root }}" -maxdepth 1 -type f -name "*.rsnxplugin"
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ role_path }}/files/select_plugin_bundles.py"
+      - "{{ nexus_algorithm_plugin_bundle_root }}"
+      - algorithm
   delegate_to: localhost
   become: false
   register: nexus_algorithm_bundle_files
@@ -137,6 +145,16 @@
     - item.stdout is defined
   tags: [plugins, plugin_bundles, sensor_plugins]
 
+- name: Require one desired bundle per sensor plugin ID
+  ansible.builtin.assert:
+    that:
+      - >-
+        (nexus_sensor_bundle_manifest_records | default([]) | map(attribute='manifest.plugin_id') | unique | list | length)
+        == (nexus_sensor_bundle_manifest_records | default([]) | length)
+    fail_msg: "nexus_sensor_plugin_bundles contains multiple versions of the same plugin ID"
+  when: nexus_install_sensor_plugins | bool
+  tags: [plugins, plugin_bundles, sensor_plugins]
+
 - name: Check installed sensor plugin bundle versions
   ansible.builtin.stat:
     path: "{{ nexus_plugin_root }}/installed/{{ item.manifest.plugin_id }}/{{ item.manifest.version }}/manifest.json"
@@ -158,6 +176,48 @@
   when:
     - nexus_install_sensor_plugins | bool
     - not item.stat.exists
+  notify: Restart nexus-n3
+  tags: [plugins, plugin_bundles, sensor_plugins]
+
+- name: Activate desired sensor plugin versions
+  ansible.builtin.command:
+    argv:
+      - "{{ nexus_plugin_installer_python }}"
+      - -m
+      - "{{ nexus_plugin_installer_module }}"
+      - activate
+      - --plugin-id
+      - "{{ item.manifest.plugin_id }}"
+      - --version
+      - "{{ item.manifest.version }}"
+      - --plugin-root
+      - "{{ nexus_plugin_root }}"
+  loop: "{{ nexus_sensor_bundle_manifest_records | default([]) }}"
+  register: nexus_sensor_plugin_activation
+  changed_when: (nexus_sensor_plugin_activation.stdout | from_json).changed | bool
+  when: nexus_install_sensor_plugins | bool
+  notify: Restart nexus-n3
+  tags: [plugins, plugin_bundles, sensor_plugins]
+
+- name: Prune superseded sensor plugin versions
+  ansible.builtin.command:
+    argv:
+      - "{{ nexus_plugin_installer_python }}"
+      - -m
+      - "{{ nexus_plugin_installer_module }}"
+      - prune-inactive
+      - --plugin-id
+      - "{{ item.manifest.plugin_id }}"
+      - --keep-version
+      - "{{ item.manifest.version }}"
+      - --plugin-root
+      - "{{ nexus_plugin_root }}"
+  loop: "{{ nexus_sensor_bundle_manifest_records | default([]) }}"
+  register: nexus_sensor_plugin_prune
+  changed_when: ((nexus_sensor_plugin_prune.stdout | from_json).removed_versions | length) > 0
+  when:
+    - nexus_install_sensor_plugins | bool
+    - nexus_plugin_prune_inactive_versions | bool
   notify: Restart nexus-n3
   tags: [plugins, plugin_bundles, sensor_plugins]
 
@@ -199,6 +259,16 @@
     - item.stdout is defined
   tags: [plugins, plugin_bundles, algorithm_plugins]
 
+- name: Require one desired bundle per algorithm plugin ID
+  ansible.builtin.assert:
+    that:
+      - >-
+        (nexus_algorithm_bundle_manifest_records | default([]) | map(attribute='manifest.plugin_id') | unique | list | length)
+        == (nexus_algorithm_bundle_manifest_records | default([]) | length)
+    fail_msg: "nexus_algorithm_plugin_bundles contains multiple versions of the same plugin ID"
+  when: nexus_install_algorithm_plugins | bool
+  tags: [plugins, plugin_bundles, algorithm_plugins]
+
 - name: Check installed algorithm plugin bundle versions
   ansible.builtin.stat:
     path: "{{ nexus_plugin_root }}/installed/{{ item.manifest.plugin_id }}/{{ item.manifest.version }}/manifest.json"
@@ -220,6 +290,48 @@
   when:
     - nexus_install_algorithm_plugins | bool
     - not item.stat.exists
+  notify: Restart nexus-n3
+  tags: [plugins, plugin_bundles, algorithm_plugins]
+
+- name: Activate desired algorithm plugin versions
+  ansible.builtin.command:
+    argv:
+      - "{{ nexus_plugin_installer_python }}"
+      - -m
+      - "{{ nexus_plugin_installer_module }}"
+      - activate
+      - --plugin-id
+      - "{{ item.manifest.plugin_id }}"
+      - --version
+      - "{{ item.manifest.version }}"
+      - --plugin-root
+      - "{{ nexus_plugin_root }}"
+  loop: "{{ nexus_algorithm_bundle_manifest_records | default([]) }}"
+  register: nexus_algorithm_plugin_activation
+  changed_when: (nexus_algorithm_plugin_activation.stdout | from_json).changed | bool
+  when: nexus_install_algorithm_plugins | bool
+  notify: Restart nexus-n3
+  tags: [plugins, plugin_bundles, algorithm_plugins]
+
+- name: Prune superseded algorithm plugin versions
+  ansible.builtin.command:
+    argv:
+      - "{{ nexus_plugin_installer_python }}"
+      - -m
+      - "{{ nexus_plugin_installer_module }}"
+      - prune-inactive
+      - --plugin-id
+      - "{{ item.manifest.plugin_id }}"
+      - --keep-version
+      - "{{ item.manifest.version }}"
+      - --plugin-root
+      - "{{ nexus_plugin_root }}"
+  loop: "{{ nexus_algorithm_bundle_manifest_records | default([]) }}"
+  register: nexus_algorithm_plugin_prune
+  changed_when: ((nexus_algorithm_plugin_prune.stdout | from_json).removed_versions | length) > 0
+  when:
+    - nexus_install_algorithm_plugins | bool
+    - nexus_plugin_prune_inactive_versions | bool
   notify: Restart nexus-n3
   tags: [plugins, plugin_bundles, algorithm_plugins]
 

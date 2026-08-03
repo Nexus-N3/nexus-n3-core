@@ -120,3 +120,8 @@ def _update_plugins_index(layout: PluginLayout) -> None:
             }
         )
     write_json(layout.plugins_index_path, {"plugins": plugins, "updated_at": utc_now()})
+
+
+def refresh_plugins_index(layout: PluginLayout) -> None:
+    """Refresh the catalog-wide plugin index after catalog maintenance."""
+    _update_plugins_index(layout)
