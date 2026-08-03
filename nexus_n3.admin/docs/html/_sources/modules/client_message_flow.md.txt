@@ -35,9 +35,10 @@ runtime plugin set may have changed.
 5) Client -> `CMD_INIT_SYSTEM`
    - Payload:
      - `subjects` (required): list of subject configs
-     - `init_label` (optional): top-level session label (client should include any
-       "who_" prefix; system appends a timestamp)
-   - If `init_label` is missing, system uses `sys_session_<ts>`.
+     - `init_label` (optional): session name (client should include any desired
+       "who_" prefix)
+   - The canonical session ID is `<init_label>_<session_timestamp>`.
+   - If `init_label` is missing, the session name is `sys_session`.
    - `CMD_INIT_SYSTEM` validates the requested sensors and algorithms against
      the currently installed plugin catalog. It does not discover new plugin
      options for the client.
@@ -135,26 +136,26 @@ Per-subject tags:
 16) Server -> `EVT_STREAM_STARTED`
 
 ### File Output Structure
-Base directory:
+Canonical session directory:
 ```
-nexus_n3_outputs/<site>/<init_label_or_sys_session_ts>/
+nexus_n3_outputs/<site>/sessions/<session_name>_<session_ts>/
 ```
 
 Per subject:
 ```
-session_<session_ts>/<subject_id>/<tag_ts>/raw/<location>_<tag>_<ts>.csv
-session_<session_ts>/<subject_id>/<tag_ts>/computed/real_time/algorithm_<algo>__location_<location>__address_<address>__stage_real_time__activity_<tag>__timestamp_<ts>.ndjson
-session_<session_ts>/<subject_id>/<tag_ts>/computed/intermediate/algorithm_<algo>__stage_intermediate_time__activity_<tag>__timestamp_<ts>.ndjson
-session_<session_ts>/<subject_id>/<tag_ts>/computed/consolidated/algorithm_<algo>__stage_consolidated_time__activity_<tag>__timestamp_<ts>.ndjson
+subjects/<subject_id>/activities/<tag>/raw/<location>_<sensor_id>.csv
+subjects/<subject_id>/activities/<tag>/computed/real_time/<algorithm>/<location>_<sensor_id>.ndjson
+subjects/<subject_id>/activities/<tag>/computed/intermediate/<algorithm>.ndjson
+subjects/<subject_id>/activities/<tag>/computed/consolidated/<algorithm>.ndjson
 ```
 
 Notes:
-- `init_label` always receives a timestamp suffix.
-- `tag_ts` is the tag with a timestamp suffix (e.g., `run_20250119_102030`).
+- The session timestamp appears once, in the canonical session ID.
+- All dynamic path components are filesystem-safe.
+- Sensor-address separators are removed in `sensor_id`.
 - Real-time results are per subject + algorithm + sensor address/location.
 - Intermediate and consolidated results are per subject + algorithm.
-- Computed NDJSON names include `algorithm`, `stage`, `activity`, and `timestamp`.
-- `location` and `address` are included only for real-time sensor-level files.
+- Directory context identifies the activity, algorithm, and compute stage.
 
 ## Stop Streaming
 15) Client -> `CMD_STOP_STREAM_FOR_ALL`

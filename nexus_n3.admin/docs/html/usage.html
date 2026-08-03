@@ -69,7 +69,19 @@
 <p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="modules/client_message_flow.html">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_gateway.html">nexus_n3.gateway</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_sensor_manager.html">nexus_n3.sensor_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_plugins.html">nexus_n3.plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_compute_manager.html">nexus_n3.compute_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_core.html">nexus_n3.core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_file_manager.html">nexus_n3.file_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_bridge.html">nexus_n3.bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_azure_bridge.html">nexus_n3.azure_bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_distributed.html">nexus_n3.distributed</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_logger.html">nexus_n3.logger</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_admin.html">nexus_n3.admin</a></li>
 <li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_data_file_offload.html">nexus_n3.data_file_offload</a></li>
 <li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_tests.html">nexus_n3_tests</a></li>
 </ul>
 
@@ -350,7 +362,7 @@ it uses the serial gateway rather than host BLE stack integration.</p>
 <p>The core writes data generically through the file manager rather than through
 sensor-specific storage code.</p>
 <p>Outputs are organized under:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nexus_n3_outputs/&lt;site&gt;/&lt;session_label&gt;/session_&lt;timestamp&gt;/
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nexus_n3_outputs/&lt;site&gt;/sessions/&lt;session_name&gt;_&lt;timestamp&gt;/
 </pre></div>
 </div>
 <p>That session tree contains:</p>
@@ -374,7 +386,7 @@ hosts, file output remains local-only.</p>
 </pre></div>
 </div>
 <p>This writes:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nexus_n3_outputs/&lt;site&gt;/&lt;session_label&gt;/session_&lt;timestamp&gt;/diagnostics/pipeline_debug.ndjson
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nexus_n3_outputs/&lt;site&gt;/sessions/&lt;session_name&gt;_&lt;timestamp&gt;/diagnostics/pipeline_debug.ndjson
 </pre></div>
 </div>
 <p>Set <code class="docutils literal notranslate"><span class="pre">NEXUS_PERF_LOG=1</span></code> to enable periodic performance logging.</p>

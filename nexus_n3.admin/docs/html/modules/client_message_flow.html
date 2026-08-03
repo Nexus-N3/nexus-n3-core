@@ -14,7 +14,7 @@
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
             <link rel="top" title="Nexus N3 Core" href="#" />
-            <link rel="next" title="nexus_n3_examples" href="nexus_n3_examples.html" />
+            <link rel="next" title="nexus_n3.gateway" href="nexus_n3_gateway.html" />
             <link rel="prev" title="Operations User Guide" href="../operations_user_guide.html" />
     </head>
 <body>
@@ -69,7 +69,19 @@
 <p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_gateway.html">nexus_n3.gateway</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_sensor_manager.html">nexus_n3.sensor_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_plugins.html">nexus_n3.plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_compute_manager.html">nexus_n3.compute_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_core.html">nexus_n3.core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_file_manager.html">nexus_n3.file_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_bridge.html">nexus_n3.bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_azure_bridge.html">nexus_n3.azure_bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_distributed.html">nexus_n3.distributed</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_logger.html">nexus_n3.logger</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_admin.html">nexus_n3.admin</a></li>
 <li class="toctree-l1"><a class="reference internal" href="nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_data_file_offload.html">nexus_n3.data_file_offload</a></li>
 <li class="toctree-l1"><a class="reference internal" href="nexus_n3_tests.html">nexus_n3_tests</a></li>
 </ul>
 
@@ -180,11 +192,12 @@ runtime plugin set may have changed.</p>
 <li><p>Payload:</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">subjects</span></code> (required): list of subject configs</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">init_label</span></code> (optional): top-level session label (client should include any
-“who_” prefix; system appends a timestamp)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">init_label</span></code> (optional): session name (client should include any desired
+“who_” prefix)</p></li>
 </ul>
 </li>
-<li><p>If <code class="docutils literal notranslate"><span class="pre">init_label</span></code> is missing, system uses <code class="docutils literal notranslate"><span class="pre">sys_session_&lt;ts&gt;</span></code>.</p></li>
+<li><p>The canonical session ID is <code class="docutils literal notranslate"><span class="pre">&lt;init_label&gt;_&lt;session_timestamp&gt;</span></code>.</p></li>
+<li><p>If <code class="docutils literal notranslate"><span class="pre">init_label</span></code> is missing, the session name is <code class="docutils literal notranslate"><span class="pre">sys_session</span></code>.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">CMD_INIT_SYSTEM</span></code> validates the requested sensors and algorithms against
 the currently installed plugin catalog. It does not discover new plugin
 options for the client.</p></li>
@@ -327,25 +340,25 @@ options for the client.</p></li>
 </ol>
 <section id="file-output-structure">
 <h3>File Output Structure<a class="headerlink" href="#file-output-structure" title="Permalink to this heading">¶</a></h3>
-<p>Base directory:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">nexus_n3_outputs</span><span class="o">/&lt;</span><span class="n">site</span><span class="o">&gt;/&lt;</span><span class="n">init_label_or_sys_session_ts</span><span class="o">&gt;/</span>
+<p>Canonical session directory:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">nexus_n3_outputs</span><span class="o">/&lt;</span><span class="n">site</span><span class="o">&gt;/</span><span class="n">sessions</span><span class="o">/&lt;</span><span class="n">session_name</span><span class="o">&gt;</span><span class="n">_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/</span>
 </pre></div>
 </div>
 <p>Per subject:</p>
-<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">raw</span><span class="o">/&lt;</span><span class="n">location</span><span class="o">&gt;</span><span class="n">_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">csv</span>
-<span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">real_time</span><span class="o">/</span><span class="n">algorithm_</span><span class="o">&lt;</span><span class="n">algo</span><span class="o">&gt;</span><span class="n">__location_</span><span class="o">&lt;</span><span class="n">location</span><span class="o">&gt;</span><span class="n">__address_</span><span class="o">&lt;</span><span class="n">address</span><span class="o">&gt;</span><span class="n">__stage_real_time__activity_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">__timestamp_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">ndjson</span>
-<span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">intermediate</span><span class="o">/</span><span class="n">algorithm_</span><span class="o">&lt;</span><span class="n">algo</span><span class="o">&gt;</span><span class="n">__stage_intermediate_time__activity_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">__timestamp_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">ndjson</span>
-<span class="n">session_</span><span class="o">&lt;</span><span class="n">session_ts</span><span class="o">&gt;/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/&lt;</span><span class="n">tag_ts</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">consolidated</span><span class="o">/</span><span class="n">algorithm_</span><span class="o">&lt;</span><span class="n">algo</span><span class="o">&gt;</span><span class="n">__stage_consolidated_time__activity_</span><span class="o">&lt;</span><span class="n">tag</span><span class="o">&gt;</span><span class="n">__timestamp_</span><span class="o">&lt;</span><span class="n">ts</span><span class="o">&gt;.</span><span class="n">ndjson</span>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="n">subjects</span><span class="o">/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/</span><span class="n">activities</span><span class="o">/&lt;</span><span class="n">tag</span><span class="o">&gt;/</span><span class="n">raw</span><span class="o">/&lt;</span><span class="n">location</span><span class="o">&gt;</span><span class="n">_</span><span class="o">&lt;</span><span class="n">sensor_id</span><span class="o">&gt;.</span><span class="n">csv</span>
+<span class="n">subjects</span><span class="o">/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/</span><span class="n">activities</span><span class="o">/&lt;</span><span class="n">tag</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">real_time</span><span class="o">/&lt;</span><span class="n">algorithm</span><span class="o">&gt;/&lt;</span><span class="n">location</span><span class="o">&gt;</span><span class="n">_</span><span class="o">&lt;</span><span class="n">sensor_id</span><span class="o">&gt;.</span><span class="n">ndjson</span>
+<span class="n">subjects</span><span class="o">/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/</span><span class="n">activities</span><span class="o">/&lt;</span><span class="n">tag</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">intermediate</span><span class="o">/&lt;</span><span class="n">algorithm</span><span class="o">&gt;.</span><span class="n">ndjson</span>
+<span class="n">subjects</span><span class="o">/&lt;</span><span class="n">subject_id</span><span class="o">&gt;/</span><span class="n">activities</span><span class="o">/&lt;</span><span class="n">tag</span><span class="o">&gt;/</span><span class="n">computed</span><span class="o">/</span><span class="n">consolidated</span><span class="o">/&lt;</span><span class="n">algorithm</span><span class="o">&gt;.</span><span class="n">ndjson</span>
 </pre></div>
 </div>
 <p>Notes:</p>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">init_label</span></code> always receives a timestamp suffix.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">tag_ts</span></code> is the tag with a timestamp suffix (e.g., <code class="docutils literal notranslate"><span class="pre">run_20250119_102030</span></code>).</p></li>
+<li><p>The session timestamp appears once, in the canonical session ID.</p></li>
+<li><p>All dynamic path components are filesystem-safe.</p></li>
+<li><p>Sensor-address separators are removed in <code class="docutils literal notranslate"><span class="pre">sensor_id</span></code>.</p></li>
 <li><p>Real-time results are per subject + algorithm + sensor address/location.</p></li>
 <li><p>Intermediate and consolidated results are per subject + algorithm.</p></li>
-<li><p>Computed NDJSON names include <code class="docutils literal notranslate"><span class="pre">algorithm</span></code>, <code class="docutils literal notranslate"><span class="pre">stage</span></code>, <code class="docutils literal notranslate"><span class="pre">activity</span></code>, and <code class="docutils literal notranslate"><span class="pre">timestamp</span></code>.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">location</span></code> and <code class="docutils literal notranslate"><span class="pre">address</span></code> are included only for real-time sensor-level files.</p></li>
+<li><p>Directory context identifies the activity, algorithm, and compute stage.</p></li>
 </ul>
 </section>
 </section>
@@ -514,8 +527,8 @@ using <code class="docutils literal notranslate"><span class="pre">kind:</span> 
     <a class="float-left" href="../operations_user_guide.html" title="Previous">
         <span aria-hidden="true">←&nbsp;</span>Operations User Guide
     </a>
-    <a class="float-right" href="nexus_n3_examples.html" title="Next">
-        nexus_n3_examples <span aria-hidden="true">&nbsp;→</span>
+    <a class="float-right" href="nexus_n3_gateway.html" title="Next">
+        nexus_n3.gateway <span aria-hidden="true">&nbsp;→</span>
     </a>
 </nav>
                     </div>

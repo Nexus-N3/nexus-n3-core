@@ -37,6 +37,8 @@ class GatewayInterface(ABC):
     @abstractmethod
     def publish_command(self, command: dict):
         """
+        unused! 
+
         Send a command to connected clients.
 
         This provides a client-facing API for triggering client actions.

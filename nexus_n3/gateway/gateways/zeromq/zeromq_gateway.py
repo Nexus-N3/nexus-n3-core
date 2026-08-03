@@ -93,6 +93,8 @@ class ZeroMQGateway(GatewayInterface):
 
     def publish_command(self, command: dict):
         """
+        currently unused!
+        
         Publish a command to clients.
 
         Args:
