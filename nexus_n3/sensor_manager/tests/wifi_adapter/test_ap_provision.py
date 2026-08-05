@@ -1,19 +1,22 @@
-"""Verify x-IMU3 UDP communication through the sensor's access point.
+"""Provision an x-IMU3 from AP mode onto the Nexus sensor AP.
 
-This live hardware test:
+This live hardware test changes persistent settings on the first x-IMU3 AP it
+finds. It:
 
 1. Confirms that the Nexus sensor AP is active.
 2. Stops the Nexus sensor AP.
-3. Scans for an x-IMU3 access point.
-4. Connects to the first matching x-IMU3 AP.
-5. Confirms that a usable IPv4 address was assigned.
-6. Uses the vendor ximu3 test API to receive a network announcement.
-7. Opens the advertised UDP connection and pings the sensor.
-8. Disconnects from the x-IMU3.
-9. Restores the Nexus sensor AP.
+3. Scans for and connects to the first x-IMU3 access point.
+4. Discovers and pings the sensor over UDP.
+5. Writes the Nexus SSID, key, channel, DHCP setting, and Wi-Fi client mode.
+6. Saves and applies the settings.
+7. Restores the Nexus sensor AP.
+8. Waits for the same x-IMU3 serial number to announce on the Nexus network.
+9. Opens the new UDP connection and pings the sensor again.
 
 The ximu3 package is a hardware-test dependency only. It must not be imported
 by the eventual nexus-n3-core Wi-Fi adapter implementation.
+
+This test is not repeatable until the sensor is returned to Wi-Fi AP mode.
 """
 
 from __future__ import annotations
@@ -21,7 +24,9 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 import ipaddress
+import json
 import os
+import time
 from typing import Any
 
 import pytest
@@ -36,11 +41,18 @@ from dbus_fast.aio import MessageBus
 from dbus_fast.constants import BusType, MessageType
 
 
+TEST_VERSION = "2026-08-05-v6-direct-recovery"
+
 NETWORK_MANAGER_SERVICE = "org.freedesktop.NetworkManager"
 NETWORK_MANAGER_PATH = "/org/freedesktop/NetworkManager"
+NETWORK_MANAGER_SETTINGS_PATH = "/org/freedesktop/NetworkManager/Settings"
 
 NETWORK_MANAGER_INTERFACE = "org.freedesktop.NetworkManager"
 DBUS_PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties"
+NETWORK_MANAGER_SETTINGS_INTERFACE = "org.freedesktop.NetworkManager.Settings"
+SETTINGS_CONNECTION_INTERFACE = (
+    "org.freedesktop.NetworkManager.Settings.Connection"
+)
 
 DEVICE_INTERFACE = "org.freedesktop.NetworkManager.Device"
 WIRELESS_DEVICE_INTERFACE = "org.freedesktop.NetworkManager.Device.Wireless"
@@ -70,6 +82,24 @@ XIMU3_SSID_PREFIX = os.getenv(
     "x-IMU3",
 )
 
+NEXUS_SENSOR_AP_SSID = os.getenv(
+    "NEXUS_SENSOR_AP_SSID",
+    "nexus-n3-sensors",
+)
+
+NEXUS_SENSOR_AP_PASSWORD = os.getenv(
+    "NEXUS_SENSOR_AP_PASSWORD",
+    "",
+)
+
+NEXUS_SENSOR_AP_CHANNEL = int(
+    os.getenv("NEXUS_SENSOR_AP_CHANNEL", "36")
+)
+
+SENSOR_JOIN_TIMEOUT_SECONDS = float(
+    os.getenv("XIMU3_SENSOR_JOIN_TIMEOUT_SECONDS", "90")
+)
+
 SCAN_TIMEOUT_SECONDS = float(
     os.getenv("XIMU3_SCAN_TIMEOUT_SECONDS", "20")
 )
@@ -79,7 +109,24 @@ CONNECT_TIMEOUT_SECONDS = float(
 )
 
 RESTORE_TIMEOUT_SECONDS = float(
-    os.getenv("NEXUS_AP_RESTORE_TIMEOUT_SECONDS", "60")
+    os.getenv("NEXUS_AP_RESTORE_TIMEOUT_SECONDS", "45")
+)
+
+NORMAL_RESTORE_GRACE_SECONDS = float(
+    os.getenv("NEXUS_AP_NORMAL_RESTORE_GRACE_SECONDS", "5")
+)
+
+ALLOW_NETWORK_STACK_RESTART = (
+    os.getenv("NEXUS_TEST_ALLOW_NETWORK_STACK_RESTART", "0") == "1"
+)
+
+NETWORK_STACK_RESTART_TIMEOUT_SECONDS = float(
+    os.getenv("NEXUS_NETWORK_STACK_RESTART_TIMEOUT_SECONDS", "30")
+)
+
+REGULATORY_DOMAIN = os.getenv(
+    "NEXUS_WIFI_REGULATORY_DOMAIN",
+    "EE",
 )
 
 DEVICE_STATE_DISCONNECTED = 30
@@ -128,6 +175,12 @@ class Ximu3UdpResult:
     tcp_port: int
     udp_send_port: int
     udp_receive_port: int
+
+
+@dataclass(frozen=True)
+class Ximu3ProvisioningResult:
+    serial_number: str
+    ap_ip_address: str
 
 
 def _discover_and_ping_ximu3_udp_sync(
@@ -246,6 +299,288 @@ async def discover_and_ping_ximu3_udp(
     )
 
 
+
+def _normalise_command_key(value: str) -> str:
+    return "".join(character for character in value.casefold() if character.isalnum())
+
+
+def _assert_command_responses(
+    commands: list[str],
+    responses: list[Any],
+) -> None:
+    if len(responses) != len(commands):
+        raise AssertionError(
+            f"Expected {len(commands)} command responses, got {len(responses)}"
+        )
+
+    for command, response in zip(commands, responses):
+        expected_key = str(next(iter(json.loads(command))))
+
+        if response is None:
+            raise AssertionError(
+                f"No response received for x-IMU3 command {expected_key!r}"
+            )
+
+        error = getattr(response, "error", None)
+        if error:
+            raise AssertionError(
+                f"x-IMU3 command {expected_key!r} failed: {error}"
+            )
+
+        actual_key = str(getattr(response, "key", ""))
+        if _normalise_command_key(actual_key) != _normalise_command_key(expected_key):
+            raise AssertionError(
+                f"Unexpected response key for {expected_key!r}: {actual_key!r}"
+            )
+
+
+def _find_ximu3_announcement_on_network(
+    *,
+    local_ipv4: IPv4Configuration,
+    serial_number: str | None = None,
+) -> Any:
+    local_network = ipaddress.ip_interface(local_ipv4.cidr).network
+    announcements = ximu3.NetworkAnnouncement().get_messages_after_short_delay()
+
+    for announcement in announcements:
+        device_name = str(announcement.device_name)
+
+        if not device_name.casefold().startswith(XIMU3_SSID_PREFIX.casefold()):
+            continue
+
+        try:
+            announced_ip = ipaddress.ip_address(str(announcement.ip_address))
+        except ValueError:
+            continue
+
+        if announced_ip not in local_network:
+            continue
+
+        if (
+            serial_number is not None
+            and str(announcement.serial_number) != serial_number
+        ):
+            continue
+
+        return announcement
+
+    visible = [
+        {
+            "name": str(message.device_name),
+            "serial": str(message.serial_number),
+            "ip": str(message.ip_address),
+        }
+        for message in announcements
+    ]
+
+    raise LookupError(
+        f"No matching x-IMU3 announcement on {local_network}; "
+        f"announcements={visible}"
+    )
+
+
+def _provision_ximu3_udp_sync(
+    local_ipv4: IPv4Configuration,
+    *,
+    ssid: str,
+    password: str,
+    channel: int,
+) -> Ximu3ProvisioningResult:
+    """Write persistent Wi-Fi client settings over the AP-mode UDP link."""
+
+    announcement = _find_ximu3_announcement_on_network(local_ipv4=local_ipv4)
+    serial_number = str(announcement.serial_number)
+
+    print(
+        "Provisioning x-IMU3: "
+        f"serial={serial_number!r}, "
+        f"ap_ip={announcement.ip_address}, "
+        f"target_ssid={ssid!r}, "
+        f"target_channel={channel}"
+    )
+
+    connection = ximu3.Connection(
+        announcement.to_udp_connection_config()
+    ).open()
+
+    try:
+        ping_response = connection.ping()
+        if not ping_response:
+            raise AssertionError(
+                "The x-IMU3 did not respond before provisioning"
+            )
+
+        if str(ping_response.serial_number) != serial_number:
+            raise AssertionError(
+                "The UDP ping serial number did not match the announcement"
+            )
+
+        commands = [
+            json.dumps(
+                {"wi_fi_client_ssid": ssid},
+                separators=(",", ":"),
+            ),
+            json.dumps(
+                {"wi_fi_client_key": password},
+                separators=(",", ":"),
+            ),
+            json.dumps(
+                {"wi_fi_client_channel": channel},
+                separators=(",", ":"),
+            ),
+            json.dumps(
+                {"wi_fi_client_dhcp_enabled": True},
+                separators=(",", ":"),
+            ),
+            json.dumps(
+                {"wireless_mode": 1},
+                separators=(",", ":"),
+            ),
+            '{"save":null}',
+        ]
+
+        print(
+            "Writing x-IMU3 Wi-Fi client settings "
+            "(the password is intentionally not logged)"
+        )
+
+        responses = connection.send_commands(commands)
+        _assert_command_responses(commands, responses)
+
+        print("Settings acknowledged and saved; applying Wi-Fi client mode")
+
+        try:
+            response = connection.send_command('{"apply":null}')
+
+            if response is not None:
+                error = getattr(response, "error", None)
+                if error:
+                    raise AssertionError(
+                        f"x-IMU3 apply command failed: {error}"
+                    )
+        except Exception as exc:
+            # Applying Wi-Fi client mode removes the AP and can tear down the
+            # UDP route before the host API sees the acknowledgement. The
+            # final same-serial announcement on the Nexus network is the
+            # authoritative proof that apply succeeded.
+            print(
+                "The AP-mode UDP connection ended while applying settings: "
+                f"{type(exc).__name__}: {exc}"
+            )
+
+        return Ximu3ProvisioningResult(
+            serial_number=serial_number,
+            ap_ip_address=str(announcement.ip_address),
+        )
+
+    finally:
+        connection.close()
+
+
+async def provision_ximu3_udp(
+    local_ipv4: IPv4Configuration,
+    *,
+    ssid: str,
+    password: str,
+    channel: int,
+    timeout: float = 25.0,
+) -> Ximu3ProvisioningResult:
+    return await asyncio.wait_for(
+        asyncio.to_thread(
+            _provision_ximu3_udp_sync,
+            local_ipv4,
+            ssid=ssid,
+            password=password,
+            channel=channel,
+        ),
+        timeout=timeout,
+    )
+
+
+def _wait_for_ximu3_on_nexus_network_sync(
+    local_ipv4: IPv4Configuration,
+    *,
+    serial_number: str,
+    timeout: float,
+) -> Ximu3UdpResult:
+    """Wait for the provisioned serial number and verify UDP communication."""
+
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+
+    while time.monotonic() < deadline:
+        try:
+            announcement = _find_ximu3_announcement_on_network(
+                local_ipv4=local_ipv4,
+                serial_number=serial_number,
+            )
+
+            print(
+                "Received provisioned x-IMU3 announcement: "
+                f"name={announcement.device_name!r}, "
+                f"serial={announcement.serial_number!r}, "
+                f"ip={announcement.ip_address}, "
+                f"tcp={announcement.tcp_port}, "
+                f"udp_send={announcement.udp_send}, "
+                f"udp_receive={announcement.udp_receive}"
+            )
+
+            connection = ximu3.Connection(
+                announcement.to_udp_connection_config()
+            ).open()
+
+            try:
+                response = connection.ping()
+
+                if not response:
+                    raise AssertionError(
+                        "The provisioned x-IMU3 did not respond to UDP ping"
+                    )
+
+                if str(response.serial_number) != serial_number:
+                    raise AssertionError(
+                        "The post-provisioning UDP ping returned the wrong serial"
+                    )
+
+                return Ximu3UdpResult(
+                    device_name=str(response.device_name),
+                    serial_number=str(response.serial_number),
+                    interface=str(response.interface),
+                    ip_address=str(announcement.ip_address),
+                    tcp_port=int(announcement.tcp_port),
+                    udp_send_port=int(announcement.udp_send),
+                    udp_receive_port=int(announcement.udp_receive),
+                )
+            finally:
+                connection.close()
+
+        except Exception as exc:
+            last_error = exc
+            time.sleep(1.0)
+
+    raise TimeoutError(
+        f"x-IMU3 serial {serial_number!r} did not join and respond on "
+        f"{local_ipv4.cidr} within {timeout:.1f} seconds"
+    ) from last_error
+
+
+async def wait_for_ximu3_on_nexus_network(
+    local_ipv4: IPv4Configuration,
+    *,
+    serial_number: str,
+    timeout: float,
+) -> Ximu3UdpResult:
+    return await asyncio.wait_for(
+        asyncio.to_thread(
+            _wait_for_ximu3_on_nexus_network_sync,
+            local_ipv4,
+            serial_number=serial_number,
+            timeout=timeout,
+        ),
+        timeout=timeout + 5.0,
+    )
+
+
 class NetworkManagerClient:
     """Small NetworkManager D-Bus client used by this hardware test."""
 
@@ -343,6 +678,68 @@ class NetworkManagerClient:
                 return str(active_path)
 
         return None
+
+    async def find_saved_connection(
+        self,
+        connection_id: str,
+    ) -> str | None:
+        body = await self.call(
+            path=NETWORK_MANAGER_SETTINGS_PATH,
+            interface=NETWORK_MANAGER_SETTINGS_INTERFACE,
+            member="ListConnections",
+        )
+
+        connection_paths = body[0] if body else []
+
+        for connection_path in connection_paths:
+            try:
+                settings_body = await self.call(
+                    path=str(connection_path),
+                    interface=SETTINGS_CONNECTION_INTERFACE,
+                    member="GetSettings",
+                )
+            except NetworkManagerDBusError:
+                continue
+
+            settings = settings_body[0] if settings_body else {}
+            connection_settings = settings.get("connection", {})
+            id_variant = connection_settings.get("id")
+
+            if id_variant is not None and id_variant.value == connection_id:
+                return str(connection_path)
+
+        return None
+
+    async def wait_for_network_manager(
+        self,
+        *,
+        interface_name: str,
+        connection_id: str,
+        timeout: float,
+    ) -> tuple[str, str]:
+        """Wait for NetworkManager to return after a service restart."""
+
+        deadline = asyncio.get_running_loop().time() + timeout
+        last_error: Exception | None = None
+
+        while asyncio.get_running_loop().time() < deadline:
+            try:
+                device_path = await self.get_device_path(interface_name)
+                connection_path = await self.find_saved_connection(
+                    connection_id
+                )
+
+                if connection_path is not None:
+                    return device_path, connection_path
+            except Exception as exc:
+                last_error = exc
+
+            await asyncio.sleep(0.5)
+
+        raise TimeoutError(
+            f"NetworkManager did not restore device {interface_name!r} "
+            f"and connection {connection_id!r}"
+        ) from last_error
 
     async def deactivate_connection(
         self,
@@ -868,98 +1265,264 @@ class NetworkManagerClient:
         )
 
 
+async def _run_privileged_command(
+    *args: str,
+    timeout: float,
+) -> None:
+    """Run one bounded non-interactive privileged recovery command."""
+
+    process = await asyncio.create_subprocess_exec(
+        "sudo",
+        "-n",
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=timeout,
+        )
+    except TimeoutError:
+        process.kill()
+        await process.wait()
+        raise RuntimeError(
+            f"Timed out running privileged command: {' '.join(args)}"
+        )
+
+    if process.returncode != 0:
+        detail = stderr.decode("utf-8", errors="replace").strip()
+        if not detail:
+            detail = stdout.decode("utf-8", errors="replace").strip()
+
+        raise RuntimeError(
+            f"Privileged command failed ({process.returncode}): "
+            f"{' '.join(args)}: {detail}"
+        )
+
+
+async def restart_network_stack_for_ap_recovery() -> None:
+    """Reset the supplicant state that can remain after the sensor AP vanishes."""
+
+    if not ALLOW_NETWORK_STACK_RESTART:
+        raise RuntimeError(
+            "Normal AP restoration failed after the x-IMU3 removed its AP. "
+            "This mt76x2u/wpa_supplicant combination requires a network-stack "
+            "restart for this transition. Run 'sudo -v', set "
+            "NEXUS_TEST_ALLOW_NETWORK_STACK_RESTART=1, and rerun the test."
+        )
+
+    print(
+        "Restarting wpa_supplicant and NetworkManager to recover "
+        "the station-to-AP transition"
+    )
+
+    await _run_privileged_command(
+        "systemctl",
+        "restart",
+        "wpa_supplicant.service",
+        timeout=NETWORK_STACK_RESTART_TIMEOUT_SECONDS,
+    )
+    await asyncio.sleep(3.0)
+
+    await _run_privileged_command(
+        "systemctl",
+        "restart",
+        "NetworkManager.service",
+        timeout=NETWORK_STACK_RESTART_TIMEOUT_SECONDS,
+    )
+    await asyncio.sleep(5.0)
+
+    await _run_privileged_command(
+        "iw",
+        "reg",
+        "set",
+        REGULATORY_DOMAIN,
+        timeout=10.0,
+    )
+
+
+async def _activate_sensor_ap_once(
+    network_manager: NetworkManagerClient,
+    *,
+    connection_path: str,
+    device_path: str,
+    timeout: float,
+) -> str:
+    """Perform one bounded AP activation attempt."""
+
+    await network_manager.quiesce_device(
+        device_path=device_path,
+        timeout=20,
+    )
+
+    await asyncio.sleep(2.0)
+
+    existing_active_path = await network_manager.find_active_connection(
+        SENSOR_CONNECTION
+    )
+
+    if existing_active_path is not None:
+        try:
+            await network_manager.deactivate_connection(
+                existing_active_path
+            )
+            await network_manager.wait_for_active_connection_to_disappear(
+                active_connection_path=existing_active_path,
+                timeout=15,
+            )
+        except NetworkManagerDBusError:
+            pass
+
+    print(
+        f"Restoring sensor AP connection {SENSOR_CONNECTION!r}"
+    )
+
+    await network_manager.activate_saved_connection(
+        connection_path=connection_path,
+        device_path=device_path,
+    )
+
+    return await network_manager.wait_for_connection_id_activated(
+        connection_id=SENSOR_CONNECTION,
+        device_path=device_path,
+        timeout=timeout,
+    )
+
+
 async def restore_sensor_ap(
     network_manager: NetworkManagerClient,
     *,
     connection_path: str,
     device_path: str,
-) -> None:
-    """Restore the saved Nexus sensor AP with one controlled retry."""
+    force_network_stack_restart: bool = False,
+) -> tuple[str, str, str]:
+    """Restore the AP, directly resetting the stack after x-IMU3 apply."""
 
-    last_error: Exception | None = None
+    print(
+        f"Preparing {SENSOR_INTERFACE!r} to restore "
+        f"{SENSOR_CONNECTION!r}"
+    )
 
-    for attempt in range(1, 3):
+    if force_network_stack_restart:
         print(
-            f"Restoring sensor AP connection {SENSOR_CONNECTION!r} "
-            f"on {SENSOR_INTERFACE!r} (attempt {attempt}/2)"
+            "Skipping normal AP activation because x-IMU3 apply "
+            "is known to leave this adapter in NetworkManager state 50"
         )
-
+    else:
         try:
-            existing_active_path = (
-                await network_manager.find_active_connection(
-                    SENSOR_CONNECTION
-                )
-            )
-
-            if existing_active_path is not None:
-                try:
-                    await network_manager.deactivate_connection(
-                        existing_active_path
-                    )
-                    await network_manager.wait_for_active_connection_to_disappear(
-                        active_connection_path=existing_active_path,
-                        timeout=15,
-                    )
-                except NetworkManagerDBusError:
-                    pass
-
-            await network_manager.activate_saved_connection(
+            active_path = await _activate_sensor_ap_once(
+                network_manager,
                 connection_path=connection_path,
-                device_path=device_path,
-            )
-
-            await network_manager.wait_for_connection_id_activated(
-                connection_id=SENSOR_CONNECTION,
                 device_path=device_path,
                 timeout=RESTORE_TIMEOUT_SECONDS,
             )
 
             print(
-                f"Sensor AP connection "
-                f"{SENSOR_CONNECTION!r} restored"
-            )
-            return
-
-        except Exception as exc:
-            last_error = exc
-
-            try:
-                device_state = await network_manager.get_property(
-                    path=device_path,
-                    interface=DEVICE_INTERFACE,
-                    property_name="State",
-                )
-                state_reason = await network_manager.get_property(
-                    path=device_path,
-                    interface=DEVICE_INTERFACE,
-                    property_name="StateReason",
-                )
-            except Exception:
-                device_state = "unknown"
-                state_reason = "unknown"
-
-            print(
-                f"Restore attempt {attempt} failed: {exc}; "
-                f"device_state={device_state}, "
-                f"state_reason={state_reason}"
+                f"Sensor AP connection {SENSOR_CONNECTION!r} restored "
+                "without restarting the network stack"
             )
 
-            if attempt < 2:
-                print(
-                    f"Quiescing {SENSOR_INTERFACE!r} once before retry"
-                )
-                await network_manager.quiesce_device(
-                    device_path=device_path,
-                    timeout=20,
-                )
-                await asyncio.sleep(3.0)
+            return device_path, connection_path, active_path
 
-    raise RuntimeError(
-        f"Failed to restore {SENSOR_CONNECTION!r} after two attempts"
-    ) from last_error
+        except Exception as normal_error:
+            print(f"Normal AP restore failed: {normal_error}")
+
+    await restart_network_stack_for_ap_recovery()
+
+    # NetworkManager recreates device and saved-connection object paths after
+    # its service restart. Resolve both paths again before activating.
+    device_path, connection_path = (
+        await network_manager.wait_for_network_manager(
+            interface_name=SENSOR_INTERFACE,
+            connection_id=SENSOR_CONNECTION,
+            timeout=NETWORK_STACK_RESTART_TIMEOUT_SECONDS,
+        )
+    )
+
+    print(
+        f"NetworkManager returned; activating {SENSOR_CONNECTION!r} "
+        f"on the refreshed device path"
+    )
+
+    await network_manager.activate_saved_connection(
+        connection_path=connection_path,
+        device_path=device_path,
+    )
+
+    active_path = await network_manager.wait_for_connection_id_activated(
+        connection_id=SENSOR_CONNECTION,
+        device_path=device_path,
+        timeout=RESTORE_TIMEOUT_SECONDS,
+    )
+
+    print(
+        f"Sensor AP connection {SENSOR_CONNECTION!r} restored "
+        "after restarting the network stack"
+    )
+
+    return device_path, connection_path, active_path
 
 
-async def test_ximu3_udp_announcement_and_ping() -> None:
+async def ensure_sensor_ap_active(
+    network_manager: NetworkManagerClient,
+    *,
+    device_path: str,
+) -> tuple[str, str, str]:
+    """Return refreshed device, active, and saved connection paths."""
+
+    connection_path = await network_manager.find_saved_connection(
+        SENSOR_CONNECTION
+    )
+
+    assert connection_path is not None, (
+        f"Precondition failed: saved NetworkManager connection "
+        f"{SENSOR_CONNECTION!r} does not exist"
+    )
+
+    active_path = await network_manager.find_active_connection(
+        SENSOR_CONNECTION
+    )
+
+    if active_path is None:
+        print(
+            f"Precondition: {SENSOR_CONNECTION!r} is saved but inactive; "
+            "activating it before the provisioning test"
+        )
+
+        (
+            device_path,
+            connection_path,
+            active_path,
+        ) = await restore_sensor_ap(
+            network_manager,
+            connection_path=connection_path,
+            device_path=device_path,
+        )
+
+    await network_manager.wait_for_connection_id_activated(
+        connection_id=SENSOR_CONNECTION,
+        device_path=device_path,
+        timeout=RESTORE_TIMEOUT_SECONDS,
+    )
+
+    return device_path, active_path, connection_path
+
+
+async def test_ap_provisions_ximu3_onto_nexus_sensor_network() -> None:
+    print(f"test_ap_provision version: {TEST_VERSION}")
+    assert NEXUS_SENSOR_AP_PASSWORD, (
+        "Set NEXUS_SENSOR_AP_PASSWORD to the password used by "
+        f"{NEXUS_SENSOR_AP_SSID!r}"
+    )
+    assert 8 <= len(NEXUS_SENSOR_AP_PASSWORD) <= 31, (
+        "NEXUS_SENSOR_AP_PASSWORD must contain between 8 and 31 characters"
+    )
+    assert len(NEXUS_SENSOR_AP_SSID) <= 31, (
+        "NEXUS_SENSOR_AP_SSID must contain no more than 31 characters"
+    )
+
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     network_manager = NetworkManagerClient(bus)
 
@@ -967,28 +1530,21 @@ async def test_ximu3_udp_announcement_and_ping() -> None:
     sensor_connection_path: str | None = None
     temporary_active_path: str | None = None
     sensor_ap_was_deactivated = False
+    sensor_ap_restored = False
+    sensor_switched_to_client_mode = False
 
     try:
         device_path = await network_manager.get_device_path(
             SENSOR_INTERFACE
         )
 
-        sensor_active_path = (
-            await network_manager.find_active_connection(
-                SENSOR_CONNECTION
-            )
-        )
-
-        assert sensor_active_path is not None, (
-            f"Precondition failed: {SENSOR_CONNECTION!r} is not active"
-        )
-
-        sensor_connection_path = str(
-            await network_manager.get_property(
-                path=sensor_active_path,
-                interface=ACTIVE_CONNECTION_INTERFACE,
-                property_name="Connection",
-            )
+        (
+            device_path,
+            sensor_active_path,
+            sensor_connection_path,
+        ) = await ensure_sensor_ap_active(
+            network_manager,
+            device_path=device_path,
         )
 
         print(
@@ -996,12 +1552,18 @@ async def test_ximu3_udp_announcement_and_ping() -> None:
             f"on {SENSOR_INTERFACE!r}"
         )
 
+        # Match the first passing UDP test: deactivate the AP's active
+        # connection rather than calling Device.Disconnect at this point.
         await network_manager.deactivate_connection(sensor_active_path)
         sensor_ap_was_deactivated = True
 
-        await network_manager.wait_for_device_state(
+        await network_manager.wait_for_active_connection_to_disappear(
+            active_connection_path=sensor_active_path,
+            timeout=CONNECT_TIMEOUT_SECONDS,
+        )
+
+        await network_manager.wait_for_device_disconnected(
             device_path=device_path,
-            expected_state=DEVICE_STATE_DISCONNECTED,
             timeout=CONNECT_TIMEOUT_SECONDS,
         )
 
@@ -1062,78 +1624,144 @@ async def test_ximu3_udp_announcement_and_ping() -> None:
             timeout=CONNECT_TIMEOUT_SECONDS,
         )
 
-        ipv4 = await network_manager.wait_for_ipv4_configuration(
+        ap_mode_ipv4 = await network_manager.wait_for_ipv4_configuration(
             active_connection_path=temporary_active_path,
             timeout=CONNECT_TIMEOUT_SECONDS,
         )
 
         print(
             f"Connected to {selected.ssid!r}: "
-            f"address={ipv4.cidr}, gateway={ipv4.gateway!r}"
+            f"address={ap_mode_ipv4.cidr}, "
+            f"gateway={ap_mode_ipv4.gateway!r}"
         )
 
-        assert ipv4.address
-        assert ipv4.prefix > 0
-
-        print("Waiting for an x-IMU3 UDP network announcement")
-
-        udp_result = await discover_and_ping_ximu3_udp(
-            ipv4,
-            timeout=20.0,
+        provisioning_result = await provision_ximu3_udp(
+            ap_mode_ipv4,
+            ssid=NEXUS_SENSOR_AP_SSID,
+            password=NEXUS_SENSOR_AP_PASSWORD,
+            channel=NEXUS_SENSOR_AP_CHANNEL,
         )
-
-        assert udp_result.device_name.casefold().startswith(
-            XIMU3_SSID_PREFIX.casefold()
-        )
-        assert udp_result.serial_number
-        assert udp_result.ip_address
-        assert udp_result.udp_send_port > 0
-        assert udp_result.udp_receive_port > 0
+        sensor_switched_to_client_mode = True
 
         print(
-            "x-IMU3 UDP communication verified: "
-            f"serial={udp_result.serial_number!r}, "
-            f"ip={udp_result.ip_address}, "
-            f"send_port={udp_result.udp_send_port}, "
-            f"receive_port={udp_result.udp_receive_port}"
+            "x-IMU3 settings applied; deactivating the temporary "
+            "x-IMU3 connection"
+        )
+
+        # Applying client mode removes the remote AP. Ask NetworkManager to
+        # deactivate the temporary connection and give its ActiveConnection
+        # object a short opportunity to disappear. Do not call
+        # quiesce_device() here: restore_sensor_ap() performs the one and only
+        # quiesce immediately before activating the saved AP profile.
+        if temporary_active_path is not None:
+            try:
+                await network_manager.deactivate_connection(
+                    temporary_active_path
+                )
+            except NetworkManagerDBusError as exc:
+                print(
+                    "Temporary connection was already unavailable: "
+                    f"{exc}"
+                )
+
+            try:
+                await (
+                    network_manager
+                    .wait_for_active_connection_to_disappear(
+                        active_connection_path=temporary_active_path,
+                        timeout=10,
+                    )
+                )
+                print("Temporary x-IMU3 connection disappeared")
+            except TimeoutError:
+                print(
+                    "Temporary x-IMU3 connection is still present; "
+                    "the single restore quiesce will clear it"
+                )
+
+        temporary_active_path = None
+
+        print(
+            f"Restoring the Nexus sensor AP and waiting for serial "
+            f"{provisioning_result.serial_number!r}"
+        )
+
+        (
+            device_path,
+            sensor_connection_path,
+            restored_active_path,
+        ) = await restore_sensor_ap(
+            network_manager,
+            connection_path=sensor_connection_path,
+            device_path=device_path,
+            force_network_stack_restart=True,
+        )
+        sensor_ap_restored = True
+
+        nexus_ap_ipv4 = await network_manager.wait_for_ipv4_configuration(
+            active_connection_path=restored_active_path,
+            timeout=CONNECT_TIMEOUT_SECONDS,
+        )
+
+        print(
+            f"Nexus sensor AP active at {nexus_ap_ipv4.cidr}; "
+            "waiting for the provisioned sensor"
+        )
+
+        joined = await wait_for_ximu3_on_nexus_network(
+            nexus_ap_ipv4,
+            serial_number=provisioning_result.serial_number,
+            timeout=SENSOR_JOIN_TIMEOUT_SECONDS,
+        )
+
+        assert joined.serial_number == provisioning_result.serial_number
+        assert ipaddress.ip_address(joined.ip_address) in (
+            ipaddress.ip_interface(nexus_ap_ipv4.cidr).network
+        )
+
+        print(
+            "x-IMU3 provisioning verified: "
+            f"serial={joined.serial_number!r}, "
+            f"ip={joined.ip_address}, "
+            f"interface={joined.interface!r}, "
+            f"udp_send={joined.udp_send_port}, "
+            f"udp_receive={joined.udp_receive_port}"
         )
 
     finally:
         try:
-            if (
-                temporary_active_path is not None
-                and device_path is not None
-            ):
-                print("Disconnecting temporary x-IMU3 connection")
+            if temporary_active_path is not None and device_path is not None:
+                print("Deactivating temporary x-IMU3 connection during cleanup")
 
                 try:
                     await network_manager.deactivate_connection(
                         temporary_active_path
                     )
-                except NetworkManagerDBusError as exc:
-                    print(
-                        "Temporary connection was already unavailable: "
-                        f"{exc}"
-                    )
+                except NetworkManagerDBusError:
+                    pass
 
-                # Cancel any automatic activation that started while the
-                # temporary connection was being removed.
-                await network_manager.quiesce_device(
-                    device_path=device_path,
-                    timeout=20,
-                )
-
+                # Do not quiesce here. If the Nexus AP still needs restoring,
+                # restore_sensor_ap() below performs the single quiesce.
+                temporary_active_path = None
         finally:
             try:
                 if (
                     sensor_ap_was_deactivated
+                    and not sensor_ap_restored
                     and sensor_connection_path is not None
                     and device_path is not None
                 ):
-                    await restore_sensor_ap(
+                    (
+                        device_path,
+                        sensor_connection_path,
+                        _,
+                    ) = await restore_sensor_ap(
                         network_manager,
                         connection_path=sensor_connection_path,
                         device_path=device_path,
+                        force_network_stack_restart=(
+                            sensor_switched_to_client_mode
+                        ),
                     )
             finally:
                 bus.disconnect()

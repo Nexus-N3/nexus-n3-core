@@ -15,6 +15,7 @@ Use an external wifi adapter as an access point.
 scan for -imu3 device and restore the ap
 ```bash
 test_ap_scan.py 
+pytest tests/wifi_adapter/test_ap_scan.py -s
 ```
 discover the x-imu3 and connect to it, disconnect and restore the ap
 ```bash
@@ -23,6 +24,17 @@ test_ap_connect.py
 connect and send a hamless command over udp - this uses the ximu3 api (requies pip install)
 ```bash
 test_sensor_udp.py
+```
+
+Provision a x-imu3 device to connect to the ap
+```bash
+export NEXUS_SENSOR_AP_PASSWORD='your-password'
+sudo -v
+
+export NEXUS_TEST_ALLOW_NETWORK_STACK_RESTART=1
+export NEXUS_AP_NORMAL_RESTORE_GRACE_SECONDS=5
+
+pytest tests/wifi_adapter/test_ap_provision.py -s
 ```
 
 
