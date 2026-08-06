@@ -142,7 +142,7 @@ class BLEAdapter:
         return devices
 
     @staticmethod
-    async def discover_devices(names: list[str], timeout: float = 5.0):
+    async def discover_devices(requested, timeout: float = 5.0):
         """
         Discover devices and match by local names.
 
@@ -150,8 +150,9 @@ class BLEAdapter:
 
         Parameters
         ----------
-        names : list[str]
-            List of device names to match.
+        requested : list[str] | list[SensorBase]
+            Device names or requested sensor instances. SensorManager supplies
+            instances; direct and battery-precheck callers may still use names.
         timeout : float
             Seconds to scan for devices (default 5.0)
 
@@ -160,6 +161,13 @@ class BLEAdapter:
         list[tuple]
             Each tuple contains (device, advertisement_data)
         """
+        # Normalize at the adapter boundary to preserve the historical BLE
+        # name-list contract while SensorManager supplies richer sensor objects.
+        requested_names = [
+            item if isinstance(item, str) else item.name
+            for item in requested
+        ]
+        logger.debug("BLE discovery requested names=%s", requested_names)
         devices = await BleakScanner.discover(return_adv=True)
         return devices
 

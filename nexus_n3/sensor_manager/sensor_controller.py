@@ -95,8 +95,14 @@ class SensorController:
         )
 
     async def handle_discover_and_connect(self):
-        await self.handle_discover()
-        return await self.handle_connect_all()
+        discovered = await self.handle_discover()
+        if not discovered:
+            return []
+        return await self.connection_service.connect_all(
+            sensors=discovered,
+            set_up_sensor=self.set_up_sensor,
+            emit_to_client=self.emit_to_client,
+        )
 
     async def handle_disconnect_all(self):
         return await self.connection_service.disconnect(

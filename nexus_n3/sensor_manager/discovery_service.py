@@ -78,7 +78,7 @@ class DiscoveryService:
             matched = []
             validation = None
             for attempt in range(1, 3):
-                devices = await adapter.discover_devices(sensor_names)
+                devices = await adapter.discover_devices(sensors_for_adapter)
                 matched = utils.match_devices(sensor_names, devices)
                 validation = utils.validate_matched_devices(sensors_for_adapter, matched)
                 if validation.valid:

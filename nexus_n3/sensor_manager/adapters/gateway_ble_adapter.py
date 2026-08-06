@@ -151,13 +151,18 @@ class GatewayBLEAdapter:
         """Test discovery through the gateway."""
         return await self.discover_devices([], timeout=timeout)
 
-    async def discover_devices(self, names: list[str], timeout: float = 5.0):
+    async def discover_devices(self, requested, timeout: float = 5.0):
         """Discover devices through the gateway.
 
         This must eventually return enough metadata for host-side discovery
         matching in `DiscoveryService`.
         """
-        requested_names = [str(name).strip() for name in names if str(name).strip()]
+        requested_names = []
+        for item in requested:
+            name = item if isinstance(item, str) else getattr(item, "name", "")
+            normalized = str(name).strip()
+            if normalized:
+                requested_names.append(normalized)
         unique_names = sorted(set(requested_names))
         multi_family_scan = len(unique_names) > 1
         effective_timeout_s = timeout
