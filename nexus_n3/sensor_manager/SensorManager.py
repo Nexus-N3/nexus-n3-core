@@ -18,6 +18,7 @@ from nexus_n3.sensor_manager.streaming_service import StreamingService
 from nexus_n3.sensor_manager.battery_precheck_service import BatteryPrecheckService
 from nexus_n3.sensor_manager.sensor_controller import SensorController
 from nexus_n3.logger.logger import get_module_logger
+from nexus_n3.sensor_manager.adapters.wifi.config import WifiRuntimeConfig
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 
 
@@ -28,11 +29,18 @@ class SensorManager:
     Uses callbacks to propagate events to clients (e.g., Core).
     """
 
-    def __init__(self, system_event_bus=None, error_cb=None, ble_runtime_config: BLERuntimeConfig | None = None):
+    def __init__(
+        self,
+        system_event_bus=None,
+        error_cb=None,
+        ble_runtime_config: BLERuntimeConfig | None = None,
+        wifi_runtime_config: WifiRuntimeConfig | None = None,
+    ):
         self.logger = get_module_logger("Sensor Manager")
         self.logger.info("Initialising Sensor Manager.")
         self.system_event_bus = system_event_bus
         self.ble_runtime_config = ble_runtime_config or BLERuntimeConfig.from_env()
+        self.wifi_runtime_config = wifi_runtime_config or WifiRuntimeConfig.from_env()
 
         # Clear any stale BLE connections on Linux
         if platform.system() == "Linux":
@@ -64,6 +72,7 @@ class SensorManager:
 
         self.adapter_pool = AdapterPool(
             ble_runtime_config=self.ble_runtime_config,
+            wifi_runtime_config=self.wifi_runtime_config,
             diagnostics_callback=self._emit_adapter_diagnostics,
         )
         self.adapters = self.adapter_pool.adapters  # compatibility alias
@@ -263,6 +272,14 @@ class SensorManager:
 
         self.adapters = self.adapter_pool.adapters
         self.routing_table = self._build_routing_table()
+        if (
+            self.adapter_pool.requires_initialization()
+            or self.adapter_pool.requires_async_shutdown()
+        ):
+            self.loop.call_soon_threadsafe(
+                self.queue.put_nowait,
+                {"message": "__initialize_adapters__"},
+            )
 
     # ----------------- Event loop ----------------- #
     def _start_loop(self):
@@ -277,7 +294,11 @@ class SensorManager:
                 if msg.get("message") == "__stop__":
                     break
                 try:
-                    handled = await self.controller.dispatch(msg)
+                    if msg.get("message") == "__initialize_adapters__":
+                        await self.adapter_pool.initialize_all()
+                        handled = True
+                    else:
+                        handled = await self.controller.dispatch(msg)
                 except Exception as exc:
                     command_name = msg.get("message", "unknown")
                     error_msg = f"{command_name} failed: {type(exc).__name__}: {exc}"
@@ -375,14 +396,22 @@ class SensorManager:
         return await self.adapter_pool.collect_diagnostics()
 
     def stop_manager(self):
-        """Stop streaming, queue loop, and background thread."""
+        """Stop streaming and adapters before stopping the manager loop."""
         if not self.running:
             return
-        self.running = False
         try:
             asyncio.run_coroutine_threadsafe(self.streaming_service.shutdown(), self.loop).result(timeout=3)
         except Exception:
             pass
+        if self.adapter_pool.requires_async_shutdown():
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    self.adapter_pool.shutdown_all(),
+                    self.loop,
+                ).result(timeout=30)
+            except Exception:
+                self.adapter_pool.close_all()
+        self.running = False
         try:
             self.loop.call_soon_threadsafe(self.queue.put_nowait, {"message": "__stop__"})
         except Exception:

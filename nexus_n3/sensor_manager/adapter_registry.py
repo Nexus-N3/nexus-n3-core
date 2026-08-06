@@ -3,12 +3,12 @@
 from nexus_n3.sensor_manager.adapters.ble_adapter import BLEAdapter
 from nexus_n3.sensor_manager.adapters.gateway_ble_adapter import GatewayBLEAdapter
 from nexus_n3.sensor_manager.adapters.usb_camera_adapter import USBCameraAdapter
+from nexus_n3.sensor_manager.adapters.wifi_adapter import WifiAdapter
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
-from nexus_n3.sensor_manager.adapters.wifi_adapter import WiFiAdapter
 
 ADAPTER_REGISTRY = {
     "USB_CAMERA": USBCameraAdapter,
-    "WIFI": WiFiAdapter,
+    "WIFI": WifiAdapter,
 }
 
 BLE_BACKEND_REGISTRY = {
@@ -16,7 +16,6 @@ BLE_BACKEND_REGISTRY = {
     "gateway": GatewayBLEAdapter,
 }
 
-# WIFI_BACKEND_REGISTRY = {}
 
 def resolve_adapter_class(
     adapter_type: str,
