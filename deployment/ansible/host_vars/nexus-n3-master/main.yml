@@ -5,7 +5,6 @@ nexus_usb_gid: 1000
 # Runtime identity and node role
 nexus_role: standalone # standalone or master
 nexus_gateway: zeromq_gateway
-nexus_kiosk_url: http://localhost:8050
 nexus_site: lunar
 nexus_site_id: lunar_facility_cologne
 nexus_site_name: "Lunar Cologne"
