@@ -69,7 +69,19 @@
 <p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="modules/client_message_flow.html">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_gateway.html">nexus_n3.gateway</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_sensor_manager.html">nexus_n3.sensor_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_plugins.html">nexus_n3.plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_compute_manager.html">nexus_n3.compute_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_core.html">nexus_n3.core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_file_manager.html">nexus_n3.file_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_bridge.html">nexus_n3.bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_azure_bridge.html">nexus_n3.azure_bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_distributed.html">nexus_n3.distributed</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_logger.html">nexus_n3.logger</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_admin.html">nexus_n3.admin</a></li>
 <li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_data_file_offload.html">nexus_n3.data_file_offload</a></li>
 <li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_tests.html">nexus_n3_tests</a></li>
 </ul>
 
@@ -167,6 +179,25 @@ expected plugin inventory.</p>
 <p>On Windows development machines, prefer <code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code> over host BLE when
 the gateway hardware is available.</p>
 </section>
+<section id="gateway-checksum-or-parser-resynchronisation-reported">
+<h2>Gateway Checksum or Parser Resynchronisation Reported<a class="headerlink" href="#gateway-checksum-or-parser-resynchronisation-reported" title="Permalink to this heading">¶</a></h2>
+<p>Inspect <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.json</span></code> or the <code class="docutils literal notranslate"><span class="pre">sensor_diagnostics</span></code>
+records in <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.jsonl</span></code> inside the session archive.</p>
+<p>The host parser counters are reset at the beginning of every recording session,
+including when a new session is started without reinitializing core. A non-zero
+<code class="docutils literal notranslate"><span class="pre">stream_checksum_failures</span></code> value therefore belongs to the current recording in
+core version 0.1.12 or later.</p>
+<p>One checksum failure normally also produces resynchronisation activity: the
+parser drops data until it finds the next valid JSON or binary-frame boundary.
+Consequently, one checksum failure plus one or more resynchronisation events may
+describe a single corruption incident. <code class="docutils literal notranslate"><span class="pre">stream_resync_drop_bytes</span></code> shows how many
+bytes were discarded.</p>
+<p>Partial JSON/frame waits are not themselves checksum errors. They can occur when
+a valid serial message arrives across multiple reads.</p>
+<p>If failures recur, compare their event timestamps with gateway transport drops,
+BLE receive counters, GATT timeout logs, and sensor sample-rate changes. Do not
+assume a parser checksum failure identifies a particular sensor plugin.</p>
+</section>
 <section id="no-session-output">
 <h2>No Session Output<a class="headerlink" href="#no-session-output" title="Permalink to this heading">¶</a></h2>
 <p>Verify:</p>
@@ -207,6 +238,7 @@ the gateway hardware is available.</p>
 <li><a class="reference internal" href="#admin-ui-not-reachable">Admin UI Not Reachable</a></li>
 <li><a class="reference internal" href="#plugin-not-detected">Plugin Not Detected</a></li>
 <li><a class="reference internal" href="#ble-gateway-not-available">BLE Gateway Not Available</a></li>
+<li><a class="reference internal" href="#gateway-checksum-or-parser-resynchronisation-reported">Gateway Checksum or Parser Resynchronisation Reported</a></li>
 <li><a class="reference internal" href="#no-session-output">No Session Output</a></li>
 <li><a class="reference internal" href="#deployment-mismatch">Deployment Mismatch</a></li>
 </ul>
@@ -274,7 +306,7 @@ the gateway hardware is available.</p>
     </div>
         </div>
     </footer>
-        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=2389946f"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=515f6337"></script>
         <script src="_static/doctools.js?v=888ff710"></script>
         <script src="_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="_static/clipboard.min.js?v=a7894cd8"></script>

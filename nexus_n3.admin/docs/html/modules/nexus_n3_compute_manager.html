@@ -14,6 +14,8 @@
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
             <link rel="top" title="Nexus N3 Core" href="#" />
+            <link rel="next" title="nexus_n3.core" href="nexus_n3_core.html" />
+            <link rel="prev" title="nexus_n3.plugins" href="nexus_n3_plugins.html" />
     </head>
 <body>
     <script type="text/javascript" src="../_static/dist/blocking.js"></script>
@@ -65,9 +67,21 @@
 <li class="toctree-l1"><a class="reference internal" href="../operations_user_guide.html">Operations User Guide</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="client_message_flow.html">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_gateway.html">nexus_n3.gateway</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_sensor_manager.html">nexus_n3.sensor_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_plugins.html">nexus_n3.plugins</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">nexus_n3.compute_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_core.html">nexus_n3.core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_file_manager.html">nexus_n3.file_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_bridge.html">nexus_n3.bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_azure_bridge.html">nexus_n3.azure_bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_distributed.html">nexus_n3.distributed</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_logger.html">nexus_n3.logger</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_admin.html">nexus_n3.admin</a></li>
 <li class="toctree-l1"><a class="reference internal" href="nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_data_file_offload.html">nexus_n3.data_file_offload</a></li>
 <li class="toctree-l1"><a class="reference internal" href="nexus_n3_tests.html">nexus_n3_tests</a></li>
 </ul>
 
@@ -147,7 +161,8 @@ for maintainability:</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">register_consolidation_executor(algorithm_name,</span> <span class="pre">executor)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">register_result_listener(callback)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">register_intermediate_result_listener(callback)</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">ingest_sample(sample)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">register_performance_listener(callback)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ingest_sample(sample,</span> <span class="pre">timing_metadata=None)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_results(algorithm_name,</span> <span class="pre">address=None,</span> <span class="pre">limit=None)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">run_consolidation_for_subject(subject_id,</span> <span class="pre">algorithm_name,</span> <span class="pre">intermediate_records)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">set_registry(registry)</span></code></p></li>
@@ -164,6 +179,7 @@ for maintainability:</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">Core._on_discover()</span></code> registers algorithms/executors</p></li>
 <li><p>Samples -&gt; queue -&gt; algorithm <code class="docutils literal notranslate"><span class="pre">on_sample()</span></code></p></li>
 <li><p>Result -&gt; <code class="docutils literal notranslate"><span class="pre">on_algorithm_result()</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">ResultRouter</span></code></p></li>
+<li><p>Result -&gt; core-owned timing record -&gt; performance listener</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">ResultRouter</span></code> -&gt; compute result listener + <code class="docutils literal notranslate"><span class="pre">IntermediateStage</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">IntermediateStage</span></code> optionally emits aggregated intermediate results</p></li>
 <li><p>On stop, core/orchestrator calls <code class="docutils literal notranslate"><span class="pre">run_consolidation_for_subject(...)</span></code>
@@ -184,6 +200,30 @@ to execute optional algorithm-level consolidation executors</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">reset()</span></code> clears algorithms, intermediate/consolidation executors, buffered results, and queued samples;
 it does not stop the background worker thread.</p></li>
 <li><p>Performance logging can be enabled with <code class="docutils literal notranslate"><span class="pre">NEXUS_PERF_LOG=1</span></code>.</p></li>
+<li><p>Core emits one <code class="docutils literal notranslate"><span class="pre">compute_performance</span></code> event per compute result and appends the
+same payload to <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.jsonl</span></code>.</p></li>
+<li><p>The algorithm host wraps <code class="docutils literal notranslate"><span class="pre">execute_real_time()</span></code> at runtime when that method is
+available. Those records use <code class="docutils literal notranslate"><span class="pre">execution_measurement=wrapped_execute_real_time</span></code>
+and are exact for that method boundary. Plugins without that conventional
+method report <code class="docutils literal notranslate"><span class="pre">result_callback_ms</span></code> with
+<code class="docutils literal notranslate"><span class="pre">execution_measurement_exact=false</span></code>; callback duration is not presented as
+algorithm execution time.</p></li>
+<li><p>Result cadence is measured at <code class="docutils literal notranslate"><span class="pre">ComputeManager</span></code> receipt using the host
+monotonic clock. The first result has no interval; each later result reports
+its interval from the preceding result for the same algorithm and address.</p></li>
+<li><p>Trigger-sample metadata preserves available source, BLE gateway, host-receive,
+and normalized session timestamps without modifying the plugin result schema.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">result_interval_ms</span></code> is the monotonic interval between consecutive results for
+the same algorithm and sensor address. It is absent for the first result.
+When <code class="docutils literal notranslate"><span class="pre">window_seconds</span></code> is available, <code class="docutils literal notranslate"><span class="pre">expected_result_interval_ms</span></code> and
+<code class="docutils literal notranslate"><span class="pre">cadence_drift_ms</span></code> make the expected runtime cadence directly checkable.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trigger_sample_to_result_ms</span></code> starts at host receipt of the sample that caused
+the result and therefore measures trigger-sample latency, not the time to
+collect the complete algorithm window. <code class="docutils literal notranslate"><span class="pre">queue_wait_ms</span></code> and
+<code class="docutils literal notranslate"><span class="pre">compute_enqueue_to_result_ms</span></code> isolate the core queue and dispatch portions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">samples_since_previous_result</span></code> reports how many samples core dispatched for
+the sensor since its preceding result. Timing instrumentation is owned by core
+and the core algorithm host; released plugins do not need to emit these fields.</p></li>
 </ul>
 </section>
 <section id="key-files">
@@ -200,7 +240,14 @@ it does not stop the background worker thread.</p></li>
 </section>
 
 </main>
-                        
+                        <nav aria-label="Page navigation" class="py-4 my-5 clearfix font-weight-bold border-top">
+    <a class="float-left" href="nexus_n3_plugins.html" title="Previous">
+        <span aria-hidden="true">←&nbsp;</span>nexus_n3.plugins
+    </a>
+    <a class="float-right" href="nexus_n3_core.html" title="Next">
+        nexus_n3.core <span aria-hidden="true">&nbsp;→</span>
+    </a>
+</nav>
                     </div>
                     
                     <nav class="col-12 col-lg-3 pb-4">
@@ -278,7 +325,7 @@ it does not stop the background worker thread.</p></li>
     </div>
         </div>
     </footer>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=515f6337"></script>
         <script src="../_static/doctools.js?v=888ff710"></script>
         <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>

@@ -55,6 +55,12 @@ class AdapterPool:
                 except Exception:
                     pass
 
+    def reset_session_diagnostics(self):
+        """Reset adapter-owned counters at the boundary of a recording session."""
+        for adapter in self.adapters.values():
+            if self.has_method(adapter, "reset_session_diagnostics"):
+                adapter.reset_session_diagnostics()
+
     async def collect_diagnostics(self):
         snapshots = {}
         for key, adapter in self.adapters.items():

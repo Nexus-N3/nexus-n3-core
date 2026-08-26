@@ -161,6 +161,10 @@ the file manager persists them through the common session structure.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">write_intermediate_json(subject_id,</span> <span class="pre">algorithm_name,</span> <span class="pre">result)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">read_intermediate_json(subject_id,</span> <span class="pre">algorithm_name=None)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">write_consolidated_json(subject_id,</span> <span class="pre">algorithm_name,</span> <span class="pre">result)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">start_session_diagnostics(session_index,</span> <span class="pre">metadata=None)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">append_session_diagnostics_event(session_index,</span> <span class="pre">event_type,</span> <span class="pre">payload=None)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">enqueue_session_diagnostics_event(session_index,</span> <span class="pre">event_type,</span> <span class="pre">payload=None)</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">finalize_session_diagnostics(session_index,</span> <span class="pre">status,</span> <span class="pre">reason=None,</span> <span class="pre">summary_updates=None)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">archive_session(session_index)</span></code></p></li>
 </ul>
 </li>
@@ -181,6 +185,8 @@ the file manager persists them through the common session structure.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">Subject.ingest_result()</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">write_computed_json()</span></code> to real-time NDJSON (per sensor)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">Subject.ingest_intermediate_result()</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">write_intermediate_json()</span></code> (per subject+algorithm)</p></li>
 <li><p>Stop-stream consolidation -&gt; <code class="docutils literal notranslate"><span class="pre">write_consolidated_json()</span></code> (per subject+algorithm)</p></li>
+<li><p>Runtime events -&gt; <code class="docutils literal notranslate"><span class="pre">session_diagnostics.jsonl</span></code>; current/final state -&gt;
+<code class="docutils literal notranslate"><span class="pre">session_diagnostics.json</span></code></p></li>
 <li><p>Stop-stream finalization -&gt; <code class="docutils literal notranslate"><span class="pre">flush()</span></code> -&gt; <code class="docutils literal notranslate"><span class="pre">archive_session()</span></code> -&gt; zip archive under the session base directory</p></li>
 </ul>
 </section>
@@ -212,6 +218,22 @@ directory is removed.</p></li>
 <li><p>diagnostics events -&gt; NDJSON</p></li>
 </ul>
 </section>
+<section id="session-diagnostics">
+<h2>Session Diagnostics<a class="headerlink" href="#session-diagnostics" title="Permalink to this heading">¶</a></h2>
+<p>Structured diagnostics are created for every recording under the session’s
+<code class="docutils literal notranslate"><span class="pre">diagnostics/</span></code> directory:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">session_diagnostics.json</span></code>: merged summary containing lifecycle state,
+<code class="docutils literal notranslate"><span class="pre">official_stream</span></code> (<code class="docutils literal notranslate"><span class="pre">pending</span></code>, then <code class="docutils literal notranslate"><span class="pre">passed</span></code> or <code class="docutils literal notranslate"><span class="pre">failed</span></code>), the latest gateway
+diagnostics, errors, stop state, and drain state</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">session_diagnostics.jsonl</span></code>: ordered diagnostic events, including one
+<code class="docutils literal notranslate"><span class="pre">compute_performance</span></code> record per compute result</p></li>
+</ul>
+<p>Compute-performance writes use a background queue so the compute callback does
+not wait for disk I/O. Finalization drains that queue and seals the diagnostics
+state before the session directory is archived. Late events cannot recreate the
+already archived session directory.</p>
+</section>
 <section id="key-files">
 <h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
@@ -242,6 +264,7 @@ directory is removed.</p></li>
 <li><a class="reference internal" href="#message-flow">Message Flow</a></li>
 <li><a class="reference internal" href="#session-finalization">Session Finalization</a></li>
 <li><a class="reference internal" href="#generic-output-mechanisms">Generic Output Mechanisms</a></li>
+<li><a class="reference internal" href="#session-diagnostics">Session Diagnostics</a></li>
 <li><a class="reference internal" href="#key-files">Key Files</a></li>
 </ul>
 </li>
@@ -308,7 +331,7 @@ directory is removed.</p></li>
     </div>
         </div>
     </footer>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=515f6337"></script>
         <script src="../_static/doctools.js?v=888ff710"></script>
         <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>

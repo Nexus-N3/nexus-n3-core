@@ -61,6 +61,17 @@ for maintainability:
   its interval from the preceding result for the same algorithm and address.
 - Trigger-sample metadata preserves available source, BLE gateway, host-receive,
   and normalized session timestamps without modifying the plugin result schema.
+- `result_interval_ms` is the monotonic interval between consecutive results for
+  the same algorithm and sensor address. It is absent for the first result.
+  When `window_seconds` is available, `expected_result_interval_ms` and
+  `cadence_drift_ms` make the expected runtime cadence directly checkable.
+- `trigger_sample_to_result_ms` starts at host receipt of the sample that caused
+  the result and therefore measures trigger-sample latency, not the time to
+  collect the complete algorithm window. `queue_wait_ms` and
+  `compute_enqueue_to_result_ms` isolate the core queue and dispatch portions.
+- `samples_since_previous_result` reports how many samples core dispatched for
+  the sensor since its preceding result. Timing instrumentation is owned by core
+  and the core algorithm host; released plugins do not need to emit these fields.
 
 ## Key Files
 - `nexus_n3.compute_manager/compute_manager.py`

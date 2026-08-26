@@ -83,6 +83,10 @@ class GatewayBLEAdapter:
         """Register a callback for structured transport and gateway diagnostics."""
         self.diagnostics_callback = callback
 
+    def reset_session_diagnostics(self) -> None:
+        """Reset core-owned gateway diagnostics for a new recording session."""
+        self.gateway_client.reset_parser_diagnostics()
+
     async def connect(self, ble_device: GatewayBLETransportClient):
         """Connect a BLE device through the gateway and return True/False."""
         return await self.execute(self._connect_sync, ble_device)

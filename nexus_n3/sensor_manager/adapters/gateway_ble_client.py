@@ -251,6 +251,15 @@ class GatewaySerialClient:
         finally:
             self._unregister_request(request_id)
 
+    def reset_parser_diagnostics(self) -> None:
+        """Reset host-side parser counters for a new recording session."""
+        self.stream_checksum_failures = 0
+        self.stream_resync_drop_bytes = 0
+        self.stream_resync_events = 0
+        self.stream_partial_json_waits = 0
+        self.stream_partial_frame_waits = 0
+        self._clear_partial_block()
+
     def scan(
         self,
         timeout_ms: int,

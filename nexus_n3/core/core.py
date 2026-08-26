@@ -712,6 +712,7 @@ class Core:
                 "official_stream": "pending",
             },
         )
+        self.sensor_orch.reset_session_diagnostics()
         self.sensor_orch.start_all()
 
     def start_stream_for_subjects(self, payload):
@@ -750,6 +751,7 @@ class Core:
                 "official_stream": "pending",
             },
         )
+        self.sensor_orch.reset_session_diagnostics()
         if addresses:
             self.sensor_orch.start_specific(addresses)
 

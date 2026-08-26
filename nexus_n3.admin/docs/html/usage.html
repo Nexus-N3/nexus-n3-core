@@ -371,7 +371,7 @@ sensor-specific storage code.</p>
 <li><p>real-time NDJSON result streams</p></li>
 <li><p>intermediate NDJSON files</p></li>
 <li><p>consolidated NDJSON files</p></li>
-<li><p>diagnostics events when enabled</p></li>
+<li><p>structured session diagnostics</p></li>
 </ul>
 <p>When a session is fully finalized, the session directory is zipped locally and
 the directory tree is removed.</p>
@@ -381,6 +381,42 @@ hosts, file output remains local-only.</p>
 </section>
 <section id="diagnostics">
 <h2>Diagnostics<a class="headerlink" href="#diagnostics" title="Permalink to this heading">¶</a></h2>
+<p>Every recording session contains structured diagnostics under:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>diagnostics/session_diagnostics.json
+diagnostics/session_diagnostics.jsonl
+</pre></div>
+</div>
+<p>These files are created independently of the optional pipeline-debug switch and
+are included in the finalized session archive. The JSON file is the current
+session summary. The JSONL file is the time-ordered event record and includes
+stream lifecycle events, compute-performance records, gateway diagnostics, and
+errors. The summary field <code class="docutils literal notranslate"><span class="pre">official_stream</span></code> begins as <code class="docutils literal notranslate"><span class="pre">pending</span></code> and is finalized
+as <code class="docutils literal notranslate"><span class="pre">passed</span></code> or <code class="docutils literal notranslate"><span class="pre">failed</span></code>.</p>
+<p>Core emits one <code class="docutils literal notranslate"><span class="pre">compute_performance</span></code> event for every compute result. Important
+fields include:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">algorithm_execution_ms</span></code>: exact execution time only when
+<code class="docutils literal notranslate"><span class="pre">execution_measurement_exact</span></code> is <code class="docutils literal notranslate"><span class="pre">true</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">result_callback_ms</span></code>: fallback duration of the result-producing
+<code class="docutils literal notranslate"><span class="pre">algorithm.on_sample()</span></code> callback; this is not presented as algorithm execution
+time</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">result_interval_ms</span></code>: interval between successive results for the same sensor
+and algorithm; absent from the first result</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">expected_result_interval_ms</span></code> and <code class="docutils literal notranslate"><span class="pre">cadence_drift_ms</span></code>: expected cadence and
+deviation when the algorithm exposes its window duration</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">queue_wait_ms</span></code>: time between compute enqueue and dispatch</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">compute_enqueue_to_result_ms</span></code>: enqueue-to-result latency</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trigger_sample_to_result_ms</span></code>: host receipt of the result-producing sample to
+result receipt; it is not the duration of the complete sample window</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">samples_since_previous_result</span></code>: samples dispatched since the preceding result</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trigger_sample</span></code>: available source, gateway, host, core, and normalized session
+timestamps for the sample that produced the result</p></li>
+</ul>
+<p><code class="docutils literal notranslate"><span class="pre">compute_result</span></code> remains the application-facing algorithm output. Timing fields
+are deliberately emitted separately through <code class="docutils literal notranslate"><span class="pre">compute_performance</span></code>, so plugin
+result schemas do not need to change.</p>
+<section id="optional-pipeline-debugging">
+<h3>Optional pipeline debugging<a class="headerlink" href="#optional-pipeline-debugging" title="Permalink to this heading">¶</a></h3>
 <p>Enable low-overhead pipeline diagnostics only when needed:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--diagnostics
 </pre></div>
@@ -389,7 +425,11 @@ hosts, file output remains local-only.</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nexus_n3_outputs/&lt;site&gt;/sessions/&lt;session_name&gt;_&lt;timestamp&gt;/diagnostics/pipeline_debug.ndjson
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">pipeline_debug.ndjson</span></code> is an additional debugging artifact. It is not required
+for the structured session diagnostics or compute-performance events described
+above.</p>
 <p>Set <code class="docutils literal notranslate"><span class="pre">NEXUS_PERF_LOG=1</span></code> to enable periodic performance logging.</p>
+</section>
 </section>
 <section id="deployment-paths">
 <h2>Deployment Paths<a class="headerlink" href="#deployment-paths" title="Permalink to this heading">¶</a></h2>
@@ -432,7 +472,10 @@ hosts, file output remains local-only.</p>
 </li>
 <li><a class="reference internal" href="#ble-backends">BLE Backends</a></li>
 <li><a class="reference internal" href="#file-output">File Output</a></li>
-<li><a class="reference internal" href="#diagnostics">Diagnostics</a></li>
+<li><a class="reference internal" href="#diagnostics">Diagnostics</a><ul>
+<li><a class="reference internal" href="#optional-pipeline-debugging">Optional pipeline debugging</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#deployment-paths">Deployment Paths</a></li>
 </ul>
 </li>
@@ -499,7 +542,7 @@ hosts, file output remains local-only.</p>
     </div>
         </div>
     </footer>
-        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=2389946f"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=515f6337"></script>
         <script src="_static/doctools.js?v=888ff710"></script>
         <script src="_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="_static/clipboard.min.js?v=a7894cd8"></script>
