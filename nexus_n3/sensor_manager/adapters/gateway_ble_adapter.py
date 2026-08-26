@@ -17,6 +17,7 @@ per-sensor proxy transport clients keyed by BLE address.
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -220,12 +221,15 @@ class GatewayBLEAdapter:
         shape expected by existing sensor plugins.
         """
 
-        def wrapped_callback(sender, data):
+        def wrapped_callback(sender, data, timing_metadata=None):
             address = getattr(ble_device, "address", None)
             pipeline_diagnostics.mark_first_ble_notify(address)
             pipeline_diagnostics.increment(address, "ble_notify_count", 1)
             try:
-                result = callback_func(sender, data)
+                if timing_metadata and getattr(callback_func, "_nexus_accepts_timing_metadata", False):
+                    result = callback_func(sender, data, timing_metadata)
+                else:
+                    result = callback_func(sender, data)
 
                 if asyncio.iscoroutine(result):
                     print("[BLE_CALLBACK_ASYNC]", address, uuid, flush=True)
@@ -256,14 +260,45 @@ class GatewayBLEAdapter:
 
     async def write(self, ble_device, uuid, char):
         """Write a GATT characteristic through the gateway."""
-        return await self.execute(
-            self.gateway_client.write_gatt,
-            ble_device.address,
-            str(uuid),
-            bytes(char).hex(),
+        address = str(ble_device.address)
+        characteristic_uuid = str(uuid)
+        payload_hex = bytes(char).hex()
+        started_ns = time.monotonic_ns()
+        logger.info(
+            "GATT write starting address=%s uuid=%s payload_hex=%s timeout_s=%.3f without_response=false",
+            address,
+            characteristic_uuid,
+            payload_hex,
             self.ble_runtime_config.gateway_write_timeout_s,
-            without_response=False,
         )
+        try:
+            result = await self.execute(
+                self.gateway_client.write_gatt,
+                address,
+                characteristic_uuid,
+                payload_hex,
+                self.ble_runtime_config.gateway_write_timeout_s,
+                without_response=False,
+            )
+        except Exception as exc:
+            logger.error(
+                "GATT write failed address=%s uuid=%s payload_hex=%s duration_ms=%.3f error=%s: %s",
+                address,
+                characteristic_uuid,
+                payload_hex,
+                (time.monotonic_ns() - started_ns) / 1_000_000.0,
+                type(exc).__name__,
+                exc,
+            )
+            raise
+        logger.info(
+            "GATT write completed address=%s uuid=%s payload_hex=%s duration_ms=%.3f",
+            address,
+            characteristic_uuid,
+            payload_hex,
+            (time.monotonic_ns() - started_ns) / 1_000_000.0,
+        )
+        return result
 
     async def read(self, ble_device, uuid):
         """Read a GATT characteristic through the gateway."""
@@ -347,7 +382,15 @@ class GatewayBLEAdapter:
         callback = transport_client.notify_callbacks.get(uuid)
         if not callback:
             return
-        callback(uuid, bytes.fromhex(payload_hex))
+        timing_metadata = {"host_receive_monotonic_ns": time.monotonic_ns()}
+        gateway_timestamp_us = msg.get("gateway_timestamp_us")
+        if isinstance(gateway_timestamp_us, int):
+            timing_metadata["gateway_timestamp_us"] = gateway_timestamp_us
+        callback(
+            uuid,
+            bytes.fromhex(payload_hex),
+            timing_metadata,
+        )
 
     def _handle_stream_frame(self, frame: StreamFrame) -> None:
         transport_client = None
@@ -360,7 +403,14 @@ class GatewayBLEAdapter:
         callback = transport_client.notify_callbacks.get(transport_client.binary_notify_uuid)
         if not callback:
             return
-        callback(transport_client.binary_notify_uuid, frame.payload)
+        callback(
+            transport_client.binary_notify_uuid,
+            frame.payload,
+            {
+                "gateway_timestamp_us": frame.gateway_timestamp_us,
+                "host_receive_monotonic_ns": time.monotonic_ns(),
+            },
+        )
 
     def _handle_notification_drops(self, msg: dict[str, Any]) -> None:
         self._emit_diagnostics(

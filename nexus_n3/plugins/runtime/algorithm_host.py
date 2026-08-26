@@ -6,8 +6,10 @@ import argparse
 import importlib
 import json
 import sys
+import time
 from collections import deque
 from dataclasses import is_dataclass
+from functools import wraps
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +72,7 @@ class AlgorithmHost:
             self._consolidation_executor = _load_symbol(executor_entry_points["consolidation"])()
         self._instances: dict[str, Any] = {}
         self._emitted_results: list[dict[str, Any]] = []
+        self._execution_timings_ms: dict[str, list[float]] = {}
 
     def describe(self) -> dict[str, Any]:
         return {
@@ -100,6 +103,7 @@ class AlgorithmHost:
             algorithm.register_compute_delegate(lambda *_args, **_kwargs: False)
         else:
             algorithm.compute_delegate = lambda *_args, **_kwargs: False
+        self._install_execution_timer(address, algorithm)
         self._instances[address] = algorithm
         return {"address": address, "started": True}
 
@@ -108,10 +112,29 @@ class AlgorithmHost:
         algorithm = self._instances[address]
         sample = _sample_from_payload(params["sample"])
         self._emitted_results = []
+        self._execution_timings_ms.setdefault(address, []).clear()
+        callback_started_ns = time.perf_counter_ns()
         algorithm.on_sample(sample)
+        callback_ms = (time.perf_counter_ns() - callback_started_ns) / 1_000_000.0
         results = list(self._emitted_results)
         self._emitted_results = []
-        return {"results": results}
+        performance = None
+        if results:
+            execution_timings = list(self._execution_timings_ms.get(address, []))
+            if execution_timings:
+                performance = {
+                    "algorithm_execution_ms": round(sum(execution_timings), 6),
+                    "execution_measurement": "wrapped_execute_real_time",
+                    "execution_measurement_exact": True,
+                }
+            else:
+                performance = {
+                    "result_callback_ms": round(callback_ms, 6),
+                    "execution_measurement": "result_producing_on_sample",
+                    "execution_measurement_exact": False,
+                }
+            performance.update(self._window_metadata(algorithm))
+        return {"results": results, "performance": performance}
 
     def should_run_intermediate(self, params: dict[str, Any]) -> bool:
         if not self._intermediate_executor:
@@ -163,7 +186,39 @@ class AlgorithmHost:
 
     def shutdown(self) -> dict[str, Any]:
         self._instances.clear()
+        self._execution_timings_ms.clear()
         return {"ok": True}
+
+    def _install_execution_timer(self, address: str, algorithm: Any) -> None:
+        """Wrap a conventional execution method without modifying the plugin package."""
+        execute = getattr(algorithm, "execute_real_time", None)
+        self._execution_timings_ms[address] = []
+        if not callable(execute):
+            return
+
+        @wraps(execute)
+        def timed_execute(*args, **kwargs):
+            started_ns = time.perf_counter_ns()
+            try:
+                return execute(*args, **kwargs)
+            finally:
+                elapsed_ms = (time.perf_counter_ns() - started_ns) / 1_000_000.0
+                self._execution_timings_ms[address].append(elapsed_ms)
+
+        try:
+            algorithm.execute_real_time = timed_execute
+        except (AttributeError, TypeError):
+            # Slotted/read-only plugin instances retain the honest callback fallback.
+            self._execution_timings_ms[address] = []
+
+    @staticmethod
+    def _window_metadata(algorithm: Any) -> dict[str, Any]:
+        metadata: dict[str, Any] = {}
+        for field in ("window_size", "window_seconds", "sampling_rate"):
+            value = getattr(algorithm, field, None)
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                metadata[field] = value
+        return metadata
 
     def _capture_result(self, result: Any) -> None:
         if is_dataclass(result):

@@ -25,9 +25,11 @@ class ComputeOrchestrator:
     def set_registry(self, registry):
         self.compute_manager.set_registry(registry)
 
-    def register_listeners(self, on_compute_result, on_intermediate_result):
+    def register_listeners(self, on_compute_result, on_intermediate_result, on_compute_performance=None):
         self.compute_manager.register_result_listener(on_compute_result)
         self.compute_manager.register_intermediate_result_listener(on_intermediate_result)
+        if on_compute_performance is not None:
+            self.compute_manager.register_performance_listener(on_compute_performance)
 
     def reset(self):
         self.compute_manager.reset()
@@ -35,8 +37,8 @@ class ComputeOrchestrator:
         self._registered_executors.clear()
         self._registered_consolidation_executors.clear()
 
-    def ingest_sample(self, sample):
-        self.compute_manager.ingest_sample(sample)
+    def ingest_sample(self, sample, timing_metadata=None):
+        self.compute_manager.ingest_sample(sample, timing_metadata=timing_metadata)
 
     def register_algorithms(self, subjects):
         for sub in subjects:

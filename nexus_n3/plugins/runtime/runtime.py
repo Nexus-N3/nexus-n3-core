@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -88,6 +89,7 @@ class AlgorithmHostClient:
     def ingest_sample(self, address: str, sample: Any) -> list[RemoteComputeResult]:
         payload = object_to_mapping(sample)
         payload["sample_type"] = getattr(sample, "sample_type", payload.get("sample_type"))
+        rpc_started_ns = time.perf_counter_ns()
         result = self.transport.request(
             "ingest_sample",
             {
@@ -95,7 +97,15 @@ class AlgorithmHostClient:
                 "sample": to_jsonable(payload),
             },
         )
-        return [RemoteComputeResult(item) for item in (result or {}).get("results", [])]
+        rpc_ms = (time.perf_counter_ns() - rpc_started_ns) / 1_000_000.0
+        response = result or {}
+        performance = dict(response.get("performance") or {})
+        if response.get("results"):
+            performance["plugin_rpc_ms"] = round(rpc_ms, 6)
+        results = [RemoteComputeResult(item) for item in response.get("results", [])]
+        for compute_result in results:
+            compute_result._compute_performance = dict(performance)
+        return results
 
     def should_run_intermediate(self, result_buffers: dict[str, Any]) -> bool:
         return bool(

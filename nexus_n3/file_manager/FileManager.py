@@ -56,6 +56,7 @@ class FileManager:
         self._session_diagnostics_lock = Lock()
         self._session_diagnostics_state = {}
         self._finalized_diagnostics_sessions: set[str] = set()
+        self._session_diagnostics_queue = Queue()
         self.logger = get_module_logger("File Manager")
         self._raw_writer_thread = Thread(
             target=self._writer_loop,
@@ -63,6 +64,12 @@ class FileManager:
             daemon=True,
         )
         self._raw_writer_thread.start()
+        self._session_diagnostics_writer_thread = Thread(
+            target=self._session_diagnostics_writer_loop,
+            name="nexus-n3-session-diagnostics-writer",
+            daemon=True,
+        )
+        self._session_diagnostics_writer_thread.start()
         self.logger.info("file manger intialised")
 
     # -------------------------
@@ -580,6 +587,7 @@ class FileManager:
         session_ts = str(session_index) if session_index else None
         if not session_ts:
             return
+        self._session_diagnostics_queue.join()
         with self._session_diagnostics_lock:
             self._finalized_diagnostics_sessions.add(session_ts)
             if self._session_diagnostics_state.get("session_timestamp") == session_ts:
@@ -619,6 +627,33 @@ class FileManager:
             elif event_type == "error":
                 summary.setdefault("errors", []).append(record)
             self._write_session_diagnostics_summary_locked()
+
+    def enqueue_session_diagnostics_event(
+        self,
+        session_index: str | None,
+        event_type: str,
+        payload: dict | None = None,
+    ) -> None:
+        """Queue a diagnostics event so compute callbacks never wait for disk I/O."""
+        if not session_index:
+            return
+        self._session_diagnostics_queue.put(
+            (str(session_index), str(event_type), deepcopy(payload or {}))
+        )
+
+    def _session_diagnostics_writer_loop(self) -> None:
+        while True:
+            session_index, event_type, payload = self._session_diagnostics_queue.get()
+            try:
+                self.append_session_diagnostics_event(session_index, event_type, payload)
+            except Exception:
+                self.logger.exception(
+                    "failed to write session diagnostics event type=%s session=%s",
+                    event_type,
+                    session_index,
+                )
+            finally:
+                self._session_diagnostics_queue.task_done()
 
     def update_session_diagnostics_summary(self, session_index: str | None, updates: dict) -> None:
         """Merge structured summary fields into the current session diagnostics summary."""

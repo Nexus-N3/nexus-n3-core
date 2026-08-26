@@ -52,6 +52,11 @@ def test_finished_structured_diagnostics_ignore_late_events(tmp_path: Path):
     manager.set_session_label("session")
     timestamp = "20260803_120000"
     manager.start_session_diagnostics(timestamp)
+    manager.enqueue_session_diagnostics_event(
+        timestamp,
+        "compute_performance",
+        {"address": "sensor-1", "result_count": 1, "algorithm_execution_ms": 3.5},
+    )
     session_dir = tmp_path / "lunar" / "sessions" / f"session_{timestamp}"
     drain_summary = {
         "scope": "all",
@@ -75,5 +80,14 @@ def test_finished_structured_diagnostics_ignore_late_events(tmp_path: Path):
     assert not session_dir.exists()
     with zipfile.ZipFile(archive_path) as archive:
         summary = json.loads(archive.read("diagnostics/session_diagnostics.json"))
+        events = [
+            json.loads(line)
+            for line in archive.read("diagnostics/session_diagnostics.jsonl").decode().splitlines()
+        ]
     assert summary["drain_summary"] == drain_summary
     assert "late" not in summary
+    assert any(
+        event["type"] == "compute_performance"
+        and event["payload"]["algorithm_execution_ms"] == 3.5
+        for event in events
+    )

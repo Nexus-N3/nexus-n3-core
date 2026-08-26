@@ -3,6 +3,7 @@
 import threading
 import os
 import time
+from datetime import datetime, timezone
 from queue import Queue, Empty
 from collections import defaultdict
 
@@ -40,6 +41,11 @@ class ComputeManager:
         self.on_algorithm_result_listener = None
         self.on_intermeidate_result_listener = None
         self.on_intermediate_result_listener = None
+        self.on_compute_performance_listener = None
+        self._sample_context = threading.local()
+        self._timing_lock = threading.Lock()
+        self._last_result_monotonic_ns = {}
+        self._samples_since_result = defaultdict(int)
 
         # 1000 blocks is 5000 seconds which is about 83 minutes?
         # it might be an idea to use the written files and delete the
@@ -136,6 +142,10 @@ class ComputeManager:
         self.on_intermediate_result_listener = callback
         self._result_router.register_intermediate_result_listener(callback)
 
+    def register_performance_listener(self, callback):
+        """Register a callback for core-owned per-result timing diagnostics."""
+        self.on_compute_performance_listener = callback
+
     def register_consolidation_executor(self, algorithm_name, executor):
         """
         Register a consolidation executor for an algorithm name.
@@ -151,6 +161,9 @@ class ComputeManager:
         self._algorithms.clear()
         self._intermediate_stage.reset()
         self._consolidation_stage.reset()
+        with self._timing_lock:
+            self._last_result_monotonic_ns.clear()
+            self._samples_since_result.clear()
         try:
             while True:
                 self._queue.get_nowait()
@@ -159,7 +172,7 @@ class ComputeManager:
     # ------------------------
     # Ingestion
     # ------------------------
-    def ingest_sample(self, sample):
+    def ingest_sample(self, sample, timing_metadata=None):
         """
         Enqueue a sample for algorithm processing.
 
@@ -173,7 +186,18 @@ class ComputeManager:
                     self._perf_total_samples += 1
             except Exception:
                 pass
-        self._queue.put(sample)
+        enqueued_ns = time.monotonic_ns()
+        timing = dict(timing_metadata or {})
+        timing.setdefault("host_receive_monotonic_ns", enqueued_ns)
+        timing.setdefault("source_timestamp", getattr(sample, "timestamp", None))
+        self._queue.put(
+            {
+                "sample": sample,
+                "timing": timing,
+                "compute_enqueued_monotonic_ns": enqueued_ns,
+                "queue_depth_at_enqueue": self._queue.qsize(),
+            }
+        )
 
     # ------------------------
     # Remote compute delegation
@@ -193,17 +217,39 @@ class ComputeManager:
     def _run(self):
         """Worker loop that processes samples and dispatches to algorithms."""
         while True:
-            sample = self._queue.get()
+            queued = self._queue.get()
+            if isinstance(queued, dict) and "sample" in queued:
+                sample = queued["sample"]
+                sample_context = queued
+            else:
+                # Compatibility with callers that may put samples directly on the queue.
+                sample = queued
+                now_ns = time.monotonic_ns()
+                sample_context = {
+                    "sample": sample,
+                    "timing": {
+                        "host_receive_monotonic_ns": now_ns,
+                        "source_timestamp": getattr(sample, "timestamp", None),
+                    },
+                    "compute_enqueued_monotonic_ns": now_ns,
+                    "queue_depth_at_enqueue": self._queue.qsize(),
+                }
 
             algo = self._algorithms.get(sample.address)
             if algo:
                 try:
+                    sample_context["compute_dispatch_monotonic_ns"] = time.monotonic_ns()
+                    self._sample_context.value = sample_context
+                    with self._timing_lock:
+                        self._samples_since_result[sample.address] += 1
                     algo.on_sample(sample)
                 except Exception as e:
                     if self.error_cb:
                         self.error_cb(
                             f"Error processing sample from {sample.address}: {e}"
                         )
+                finally:
+                    self._sample_context.value = None
 
     # ------------------------
     # Result handling
@@ -216,6 +262,8 @@ class ComputeManager:
             result: Algorithm result object.
         """
         algo_name = result.algorithm_name
+        result_received_ns = time.monotonic_ns()
+        performance = self._build_compute_performance(result, result_received_ns)
 
         if self._perf_enabled:
             try:
@@ -227,11 +275,81 @@ class ComputeManager:
 
         self._result_router.handle_result(result)
 
+        if self.on_compute_performance_listener:
+            try:
+                self.on_compute_performance_listener(performance)
+            except Exception as exc:
+                if self.error_cb:
+                    self.error_cb(f"Error emitting compute performance diagnostics: {exc}")
+
     def on_remote_result(self, result, request_id=None):
         """
         Receive a remote result and enforce local result counting.
         """
         self._remote_service.on_remote_result(result, request_id=request_id)
+
+    def _build_compute_performance(self, result, result_received_ns):
+        """Build one core-owned timing record for a completed algorithm result."""
+        address = getattr(result, "address", None)
+        algorithm_name = getattr(result, "algorithm_name", None)
+        result_count = getattr(result, "result_count", None)
+        performance = dict(getattr(result, "_compute_performance", {}) or {})
+        with self._timing_lock:
+            samples_since_result = self._samples_since_result.get(address, 0)
+            self._samples_since_result[address] = 0
+            previous_ns = self._last_result_monotonic_ns.get((algorithm_name, address))
+            self._last_result_monotonic_ns[(algorithm_name, address)] = result_received_ns
+
+        performance.update(
+            {
+                "algorithm_name": algorithm_name,
+                "address": address,
+                "result_count": result_count,
+                "observed_at": datetime.now(timezone.utc).isoformat(),
+                "result_received_monotonic_ns": result_received_ns,
+                "samples_since_previous_result": samples_since_result,
+            }
+        )
+        if previous_ns is not None:
+            interval_ms = (result_received_ns - previous_ns) / 1_000_000.0
+            performance["result_interval_ms"] = round(interval_ms, 6)
+            window_seconds = performance.get("window_seconds")
+            if isinstance(window_seconds, (int, float)) and not isinstance(window_seconds, bool):
+                expected_ms = float(window_seconds) * 1000.0
+                performance["expected_result_interval_ms"] = round(expected_ms, 6)
+                performance["cadence_drift_ms"] = round(interval_ms - expected_ms, 6)
+
+        context = getattr(self._sample_context, "value", None) or {}
+        timing = dict(context.get("timing") or {})
+        performance["trigger_sample"] = {
+            key: timing.get(key)
+            for key in (
+                "source_timestamp",
+                "gateway_timestamp_us",
+                "host_receive_monotonic_ns",
+                "core_receive_monotonic_ns",
+                "normalized_session_ns",
+            )
+            if timing.get(key) is not None
+        }
+        enqueued_ns = context.get("compute_enqueued_monotonic_ns")
+        dispatch_ns = context.get("compute_dispatch_monotonic_ns")
+        host_receive_ns = timing.get("host_receive_monotonic_ns")
+        if enqueued_ns is not None and dispatch_ns is not None:
+            performance["queue_wait_ms"] = round((dispatch_ns - enqueued_ns) / 1_000_000.0, 6)
+        if enqueued_ns is not None:
+            performance["compute_enqueue_to_result_ms"] = round(
+                (result_received_ns - enqueued_ns) / 1_000_000.0,
+                6,
+            )
+        if host_receive_ns is not None:
+            performance["trigger_sample_to_result_ms"] = round(
+                (result_received_ns - host_receive_ns) / 1_000_000.0,
+                6,
+            )
+        if context:
+            performance["queue_depth_at_enqueue"] = context.get("queue_depth_at_enqueue", 0)
+        return performance
 
 
     # ------------------------

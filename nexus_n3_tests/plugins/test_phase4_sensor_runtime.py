@@ -187,6 +187,7 @@ def test_phase4_sensor_host_runtime_preserves_callback_shapes(
         assert data_payload.location == "CHEST"
         assert data_payload.sample_type == "imu"
         assert tuple(data_payload.quat) == (1.0, 0.0, 0.0, 0.0)
+        assert data_payload._nexus_timing["host_receive_monotonic_ns"] > 0
 
         button_payload = events["button"][0]
         assert button_payload["address"] == "AA:BB:CC:DD:EE:01"

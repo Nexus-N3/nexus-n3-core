@@ -224,9 +224,30 @@ class GatewaySerialClient:
     def reset_session(self, timeout_s: float = 5.0) -> None:
         request_id = self.request_id("reset")
         request_queue = self._register_request(request_id)
+        started_ns = time.monotonic_ns()
+        logger.info(
+            "Gateway reset_session starting request_id=%s timeout_s=%.3f",
+            request_id,
+            timeout_s,
+        )
         try:
             self.send({"type": "reset_session", "request_id": request_id})
             self._wait_for_success(request_id, request_queue, "reset_session_complete", timeout_s)
+        except Exception as exc:
+            logger.error(
+                "Gateway reset_session failed request_id=%s duration_ms=%.3f error=%s: %s",
+                request_id,
+                (time.monotonic_ns() - started_ns) / 1_000_000.0,
+                type(exc).__name__,
+                exc,
+            )
+            raise
+        else:
+            logger.info(
+                "Gateway reset_session completed request_id=%s duration_ms=%.3f",
+                request_id,
+                (time.monotonic_ns() - started_ns) / 1_000_000.0,
+            )
         finally:
             self._unregister_request(request_id)
 
@@ -391,9 +412,25 @@ class GatewaySerialClient:
         allow_timeout: bool = False,
     ) -> float | None:
         """Perform a GATT write through the gateway."""
+        attempt = 0
+
         def _write_once() -> float | None:
+            nonlocal attempt
+            attempt += 1
             request_id = self.request_id("write")
             request_queue = self._register_request(request_id)
+            started_ns = time.monotonic_ns()
+            logger.info(
+                "Gateway GATT write request starting request_id=%s attempt=%d address=%s uuid=%s "
+                "payload_hex=%s timeout_s=%.3f without_response=%s",
+                request_id,
+                attempt,
+                address,
+                characteristic_uuid,
+                payload_hex,
+                timeout_s,
+                without_response,
+            )
             try:
                 self.send(
                     {
@@ -407,8 +444,30 @@ class GatewaySerialClient:
                 )
                 try:
                     self._wait_for_success(request_id, request_queue, "write_complete", timeout_s)
+                    logger.info(
+                        "Gateway GATT write request completed request_id=%s attempt=%d address=%s "
+                        "uuid=%s payload_hex=%s duration_ms=%.3f",
+                        request_id,
+                        attempt,
+                        address,
+                        characteristic_uuid,
+                        payload_hex,
+                        (time.monotonic_ns() - started_ns) / 1_000_000.0,
+                    )
                     return time.monotonic()
-                except TimeoutError:
+                except TimeoutError as exc:
+                    logger.warning(
+                        "Gateway GATT write request timed out request_id=%s attempt=%d address=%s "
+                        "uuid=%s payload_hex=%s duration_ms=%.3f allow_timeout=%s error=%s",
+                        request_id,
+                        attempt,
+                        address,
+                        characteristic_uuid,
+                        payload_hex,
+                        (time.monotonic_ns() - started_ns) / 1_000_000.0,
+                        allow_timeout,
+                        exc,
+                    )
                     if allow_timeout:
                         return None
                     raise
