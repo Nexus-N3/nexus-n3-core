@@ -13,8 +13,16 @@ class EventAssembler:
             result_dict = to_jsonable(result)
         elif is_dataclass(result):
             result_dict = to_jsonable(asdict(result))
+        elif hasattr(result, "to_dict"):
+            result_dict = to_jsonable(result.to_dict())
         else:
-            result_dict = to_jsonable(vars(result))
+            result_dict = to_jsonable(
+                {
+                    key: value
+                    for key, value in vars(result).items()
+                    if not str(key).startswith("_")
+                }
+            )
         address = result_dict.get("address")
         payload = {
             "subject_id": subject_id,

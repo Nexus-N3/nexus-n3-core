@@ -91,12 +91,40 @@ serial device is currently available.
 `bleak` remains available mainly for development/testing. Its host-platform
 behavior is owned by Bleak itself.
 
+### Gateway timing and diagnostics
+
+For binary gateway stream frames, core preserves the gateway timestamp and adds
+a host monotonic receive timestamp before forwarding the sample through the
+sensor callback. Plugins that opt into timing metadata can propagate it with the
+sample; plugins that use the existing two-argument callback continue to work.
+
+Gateway diagnostic snapshots contain:
+
+- `parser`: host serial parser checksum failures, resynchronisation events and
+  dropped bytes, plus partial JSON/frame waits
+- `transport`: gateway-reported control and stream transport counters
+- `ble_rx`: gateway-reported per-sensor notification receive counters
+- `notification_drop_count`: the latest gateway notification-drop total
+- `sensors`: the adapter's current sensor connection state
+
+The host-owned `parser` counters are reset immediately before the first stream
+start of each new recording session. A user may therefore start another session
+without reinitializing core and still receive session-specific checksum and
+resynchronisation totals. Automatic startup retries within that recording do not
+reset the counters. This operation clears counters only: it does not issue a
+gateway `reset_session`, disconnect sensors, or alter gateway firmware state.
+
+Gateway-reported `transport`, `ble_rx`, and notification-drop fields have their
+own gateway-side lifetime/reset semantics and should not be interpreted as the
+same host parser-counter scope.
+
 ## Message Flow
 - `Core._init_sensor_manager()` resolves installed sensor plugin classes and passes sensor instances and metadata
 - Commands are queued to the manager loop and dispatched by `SensorController`
 - Discovery -> adapter scan -> name matching -> address assignment -> callbacks to `Core`
 - Connect -> adapter connect -> sensor setup hook
 - Streaming -> sensor stream hooks (`start_stream`/`stop_stream`) -> `on_data`
+- New recording session -> reset host parser diagnostics -> stream start hooks
 - Polling fallback (`request_sample`) remains available but optional
 - Battery check runs as a standalone pre-init BLE flow and returns
   `{"sensors": [...], "errors": {...}}`

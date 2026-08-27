@@ -61,6 +61,9 @@ class SensorOrchestrator:
     def start_all(self):
         self.manager.start_all()
 
+    def reset_session_diagnostics(self):
+        self.manager.reset_session_diagnostics()
+
     def start_specific(self, addresses):
         self.manager.start_specific_sensors(addresses)
 

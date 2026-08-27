@@ -359,6 +359,12 @@ class SensorManager:
     def start_all(self):
         self.loop.call_soon_threadsafe(self.queue.put_nowait, {"message": "start_all"})
 
+    def reset_session_diagnostics(self):
+        self.loop.call_soon_threadsafe(
+            self.queue.put_nowait,
+            {"message": "reset_session_diagnostics"},
+        )
+
     def start_specific_sensors(self, addresses: List):
         self.loop.call_soon_threadsafe(
             self.queue.put_nowait,

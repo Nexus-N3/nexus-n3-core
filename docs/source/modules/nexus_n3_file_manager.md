@@ -22,6 +22,10 @@ the file manager persists them through the common session structure.
   - `write_intermediate_json(subject_id, algorithm_name, result)`
   - `read_intermediate_json(subject_id, algorithm_name=None)`
   - `write_consolidated_json(subject_id, algorithm_name, result)`
+  - `start_session_diagnostics(session_index, metadata=None)`
+  - `append_session_diagnostics_event(session_index, event_type, payload=None)`
+  - `enqueue_session_diagnostics_event(session_index, event_type, payload=None)`
+  - `finalize_session_diagnostics(session_index, status, reason=None, summary_updates=None)`
   - `archive_session(session_index)`
 - `session_archive`
   - `build_session_archive_name(...)`
@@ -34,6 +38,8 @@ the file manager persists them through the common session structure.
 - `Subject.ingest_result()` -> `write_computed_json()` to real-time NDJSON (per sensor)
 - `Subject.ingest_intermediate_result()` -> `write_intermediate_json()` (per subject+algorithm)
 - Stop-stream consolidation -> `write_consolidated_json()` (per subject+algorithm)
+- Runtime events -> `session_diagnostics.jsonl`; current/final state ->
+  `session_diagnostics.json`
 - Stop-stream finalization -> `flush()` -> `archive_session()` -> zip archive under the session base directory
 
 ## Session Finalization
@@ -52,6 +58,22 @@ the file manager persists them through the common session structure.
 - intermediate results -> NDJSON
 - consolidated results -> NDJSON
 - diagnostics events -> NDJSON
+
+## Session Diagnostics
+
+Structured diagnostics are created for every recording under the session's
+`diagnostics/` directory:
+
+- `session_diagnostics.json`: merged summary containing lifecycle state,
+  `official_stream` (`pending`, then `passed` or `failed`), the latest gateway
+  diagnostics, errors, stop state, and drain state
+- `session_diagnostics.jsonl`: ordered diagnostic events, including one
+  `compute_performance` record per compute result
+
+Compute-performance writes use a background queue so the compute callback does
+not wait for disk I/O. Finalization drains that queue and seals the diagnostics
+state before the session directory is archived. Late events cannot recreate the
+already archived session directory.
 
 ## Key Files
 - `nexus_n3.file_manager/FileManager.py`

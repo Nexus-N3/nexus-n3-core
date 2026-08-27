@@ -12,9 +12,6 @@
           Windows hosts as development environments only.
   roles:
     - nexus_dependencies
-    - role: nexus_kiosk
-      tags:
-        - nexus_kiosk
     - role: nexus_usb_hotplug
       tags:
         - nexus_usb_hotplug

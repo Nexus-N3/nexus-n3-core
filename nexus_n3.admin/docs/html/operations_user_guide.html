@@ -69,7 +69,19 @@
 <p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="modules/client_message_flow.html">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_gateway.html">nexus_n3.gateway</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_sensor_manager.html">nexus_n3.sensor_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_plugins.html">nexus_n3.plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_compute_manager.html">nexus_n3.compute_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_core.html">nexus_n3.core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_file_manager.html">nexus_n3.file_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_bridge.html">nexus_n3.bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_azure_bridge.html">nexus_n3.azure_bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_distributed.html">nexus_n3.distributed</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_logger.html">nexus_n3.logger</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_admin.html">nexus_n3.admin</a></li>
 <li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_data_file_offload.html">nexus_n3.data_file_offload</a></li>
 <li class="toctree-l1"><a class="reference internal" href="modules/nexus_n3_tests.html">nexus_n3_tests</a></li>
 </ul>
 
@@ -177,6 +189,10 @@ deployed systems.</p>
 <h2>Storage<a class="headerlink" href="#storage" title="Permalink to this heading">¶</a></h2>
 <p>Session data is written under the configured output root and finalized into zip
 archives when a session is fully drained.</p>
+<p>Each archive contains <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.json</span></code> for the final
+session summary and <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.jsonl</span></code> for ordered runtime
+events. These structured diagnostics are written for every recording; they do
+not require the optional <code class="docutils literal notranslate"><span class="pre">--diagnostics</span></code> pipeline-debug mode.</p>
 <p>If using the removable USB disk workflow on a Linux edge host, the manual
 helper scripts are:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>bash<span class="w"> </span>scripts/usb_disk_add_or_remount.sh
@@ -286,7 +302,7 @@ USB management actions.</p>
     </div>
         </div>
     </footer>
-        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=2389946f"></script>
+        <script data-url_root="./" id="documentation_options" src="_static/documentation_options.js?v=515f6337"></script>
         <script src="_static/doctools.js?v=888ff710"></script>
         <script src="_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="_static/clipboard.min.js?v=a7894cd8"></script>

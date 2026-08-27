@@ -14,6 +14,8 @@
             <link rel="index" title="Index" href="../genindex.html" />
             <link rel="search" title="Search" href="../search.html" />
             <link rel="top" title="Nexus N3 Core" href="#" />
+            <link rel="next" title="nexus_n3.plugins" href="nexus_n3_plugins.html" />
+            <link rel="prev" title="nexus_n3.gateway" href="nexus_n3_gateway.html" />
     </head>
 <body>
     <script type="text/javascript" src="../_static/dist/blocking.js"></script>
@@ -65,9 +67,21 @@
 <li class="toctree-l1"><a class="reference internal" href="../operations_user_guide.html">Operations User Guide</a></li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">Module Guides</span></p>
-<ul>
+<ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="client_message_flow.html">Client Message Flow</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_gateway.html">nexus_n3.gateway</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">nexus_n3.sensor_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_plugins.html">nexus_n3.plugins</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_compute_manager.html">nexus_n3.compute_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_core.html">nexus_n3.core</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_file_manager.html">nexus_n3.file_manager</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_bridge.html">nexus_n3.bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_azure_bridge.html">nexus_n3.azure_bridge</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_distributed.html">nexus_n3.distributed</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_logger.html">nexus_n3.logger</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_admin.html">nexus_n3.admin</a></li>
 <li class="toctree-l1"><a class="reference internal" href="nexus_n3_examples.html">nexus_n3_examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nexus_n3_data_file_offload.html">nexus_n3.data_file_offload</a></li>
 <li class="toctree-l1"><a class="reference internal" href="nexus_n3_tests.html">nexus_n3_tests</a></li>
 </ul>
 
@@ -241,6 +255,31 @@ serial device is currently available.</p>
 <p><code class="docutils literal notranslate"><span class="pre">bleak</span></code> remains available mainly for development/testing. Its host-platform
 behavior is owned by Bleak itself.</p>
 </section>
+<section id="gateway-timing-and-diagnostics">
+<h3>Gateway timing and diagnostics<a class="headerlink" href="#gateway-timing-and-diagnostics" title="Permalink to this heading">¶</a></h3>
+<p>For binary gateway stream frames, core preserves the gateway timestamp and adds
+a host monotonic receive timestamp before forwarding the sample through the
+sensor callback. Plugins that opt into timing metadata can propagate it with the
+sample; plugins that use the existing two-argument callback continue to work.</p>
+<p>Gateway diagnostic snapshots contain:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">parser</span></code>: host serial parser checksum failures, resynchronisation events and
+dropped bytes, plus partial JSON/frame waits</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">transport</span></code>: gateway-reported control and stream transport counters</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">ble_rx</span></code>: gateway-reported per-sensor notification receive counters</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">notification_drop_count</span></code>: the latest gateway notification-drop total</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">sensors</span></code>: the adapter’s current sensor connection state</p></li>
+</ul>
+<p>The host-owned <code class="docutils literal notranslate"><span class="pre">parser</span></code> counters are reset immediately before the first stream
+start of each new recording session. A user may therefore start another session
+without reinitializing core and still receive session-specific checksum and
+resynchronisation totals. Automatic startup retries within that recording do not
+reset the counters. This operation clears counters only: it does not issue a
+gateway <code class="docutils literal notranslate"><span class="pre">reset_session</span></code>, disconnect sensors, or alter gateway firmware state.</p>
+<p>Gateway-reported <code class="docutils literal notranslate"><span class="pre">transport</span></code>, <code class="docutils literal notranslate"><span class="pre">ble_rx</span></code>, and notification-drop fields have their
+own gateway-side lifetime/reset semantics and should not be interpreted as the
+same host parser-counter scope.</p>
+</section>
 </section>
 <section id="message-flow">
 <h2>Message Flow<a class="headerlink" href="#message-flow" title="Permalink to this heading">¶</a></h2>
@@ -250,6 +289,7 @@ behavior is owned by Bleak itself.</p>
 <li><p>Discovery -&gt; adapter scan -&gt; name matching -&gt; address assignment -&gt; callbacks to <code class="docutils literal notranslate"><span class="pre">Core</span></code></p></li>
 <li><p>Connect -&gt; adapter connect -&gt; sensor setup hook</p></li>
 <li><p>Streaming -&gt; sensor stream hooks (<code class="docutils literal notranslate"><span class="pre">start_stream</span></code>/<code class="docutils literal notranslate"><span class="pre">stop_stream</span></code>) -&gt; <code class="docutils literal notranslate"><span class="pre">on_data</span></code></p></li>
+<li><p>New recording session -&gt; reset host parser diagnostics -&gt; stream start hooks</p></li>
 <li><p>Polling fallback (<code class="docutils literal notranslate"><span class="pre">request_sample</span></code>) remains available but optional</p></li>
 <li><p>Battery check runs as a standalone pre-init BLE flow and returns
 <code class="docutils literal notranslate"><span class="pre">{&quot;sensors&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;errors&quot;:</span> <span class="pre">{...}}</span></code></p></li>
@@ -278,7 +318,14 @@ optional <code class="docutils literal notranslate"><span class="pre">consume_in
 </section>
 
 </main>
-                        
+                        <nav aria-label="Page navigation" class="py-4 my-5 clearfix font-weight-bold border-top">
+    <a class="float-left" href="nexus_n3_gateway.html" title="Previous">
+        <span aria-hidden="true">←&nbsp;</span>nexus_n3.gateway
+    </a>
+    <a class="float-right" href="nexus_n3_plugins.html" title="Next">
+        nexus_n3.plugins <span aria-hidden="true">&nbsp;→</span>
+    </a>
+</nav>
                     </div>
                     
                     <nav class="col-12 col-lg-3 pb-4">
@@ -292,6 +339,7 @@ optional <code class="docutils literal notranslate"><span class="pre">consume_in
 <li><a class="reference internal" href="#bleak"><code class="docutils literal notranslate"><span class="pre">bleak</span></code></a></li>
 <li><a class="reference internal" href="#nexus-ble-gateway"><code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code></a></li>
 <li><a class="reference internal" href="#runtime-selection">Runtime Selection</a></li>
+<li><a class="reference internal" href="#gateway-timing-and-diagnostics">Gateway timing and diagnostics</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#message-flow">Message Flow</a></li>
@@ -361,7 +409,7 @@ optional <code class="docutils literal notranslate"><span class="pre">consume_in
     </div>
         </div>
     </footer>
-        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=2389946f"></script>
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js?v=515f6337"></script>
         <script src="../_static/doctools.js?v=888ff710"></script>
         <script src="../_static/sphinx_highlight.js?v=4825356b"></script>
         <script src="../_static/clipboard.min.js?v=a7894cd8"></script>

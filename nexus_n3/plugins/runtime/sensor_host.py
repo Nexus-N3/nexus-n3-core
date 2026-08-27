@@ -39,6 +39,7 @@ class HostAdapterProxy:
         self._callbacks_by_uuid: dict[str, str] = {}
         self._connection.register_handler("adapter.notification", self._handle_notification)
         self._notification_lock = threading.Lock()
+        self._notification_context = threading.local()
 
     async def read(self, transport_client, uuid):
         result = self._connection.request("adapter.read", {"uuid": str(uuid)})
@@ -73,8 +74,15 @@ class HostAdapterProxy:
             callback = self._callbacks[str(params["callback_id"])]
             sender = params.get("sender")
             data = base64.b64decode(params["data_b64"].encode("ascii"))
-            result = callback(sender, data)
-            return {"awaited": bool(_run_maybe_async(result) is not None)}
+            self._notification_context.timing = dict(params.get("timing") or {})
+            try:
+                result = callback(sender, data)
+                return {"awaited": bool(_run_maybe_async(result) is not None)}
+            finally:
+                self._notification_context.timing = None
+
+    def current_notification_timing(self) -> dict[str, Any]:
+        return dict(getattr(self._notification_context, "timing", None) or {})
 
 
 class SensorHost:
@@ -170,6 +178,7 @@ class SensorHost:
             {
                 "event": event_name,
                 "payload": serialized,
+                "timing": self._adapter.current_notification_timing() if event_name == "on_data" else None,
             },
         )
 

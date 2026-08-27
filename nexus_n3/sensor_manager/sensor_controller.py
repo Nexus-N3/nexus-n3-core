@@ -40,6 +40,7 @@ class SensorController:
             "discover_and_connect": (self.handle_discover_and_connect, None),
             "disconnect_all": (self.handle_disconnect_all, None),
             "disconnect_addresses": (self.handle_disconnect_addresses, "addresses"),
+            "reset_session_diagnostics": (self.handle_reset_session_diagnostics, None),
             "start_all": (self.handle_start_all, None),
             "start_specific_sensors": (self.handle_start_specific_sensors, "addresses"),
             "stop_all": (self.handle_stop_all, None),
@@ -118,6 +119,9 @@ class SensorController:
             emit_to_client=self.emit_to_client,
             disconnected_status=ConnectionStatus.DISCONNECTED,
         )
+
+    async def handle_reset_session_diagnostics(self):
+        self.adapter_pool.reset_session_diagnostics()
 
     async def handle_start_all(self):
         return await self.streaming_service.start(

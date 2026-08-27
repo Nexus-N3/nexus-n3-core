@@ -59,6 +59,11 @@ python -m nexus_n3.plugins install /path/to/plugin.rsnxplugin --plugin-root /opt
 Session data is written under the configured output root and finalized into zip
 archives when a session is fully drained.
 
+Each archive contains `diagnostics/session_diagnostics.json` for the final
+session summary and `diagnostics/session_diagnostics.jsonl` for ordered runtime
+events. These structured diagnostics are written for every recording; they do
+not require the optional `--diagnostics` pipeline-debug mode.
+
 If using the removable USB disk workflow on a Linux edge host, the manual
 helper scripts are:
 

@@ -145,6 +145,9 @@ EVT_SENSOR_DIAGNOSTICS = "sensor_diagnostics"
 #: Event: Compute Result
 EVT_COMPUTE_RESULT = "compute_result"
 
+#: Event: Core-owned timing diagnostics for a compute result
+EVT_COMPUTE_PERFORMANCE = "compute_performance"
+
 #: Event: Intermediate Result
 EVT_INTERMEDIATE_RESULT = "intermediate_result"
 

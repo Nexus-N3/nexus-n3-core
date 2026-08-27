@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.abspath('../../'))
 project = 'Nexus N3 Core'
 copyright = '2026, Mike Crooks'
 author = 'Mike Crooks'
-release = '0.1.0'
+release = '0.1.12'
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

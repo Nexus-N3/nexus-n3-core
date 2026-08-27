@@ -6,6 +6,7 @@ import asyncio
 import base64
 import copy
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -143,6 +144,7 @@ class SensorHostClient:
         self.proxy._handle_host_event(
             str(params["event"]),
             params.get("payload"),
+            timing=params.get("timing"),
         )
         return {"ok": True}
 
@@ -250,23 +252,31 @@ class InstalledSensorProxy(SensorBase):
         if callback_id in self._adapter_callbacks:
             return
 
-        def _notify(sender, data):
+        def _notify(sender, data, timing_metadata=None):
+            timing = dict(timing_metadata or {})
+            timing.setdefault("host_receive_monotonic_ns", time.monotonic_ns())
             transport.notify(
                 "adapter.notification",
                 {
                     "callback_id": callback_id,
                     "sender": str(sender),
                     "data_b64": base64.b64encode(bytes(data)).decode("ascii"),
+                    "timing": timing,
                 },
             )
+
+        _notify._nexus_accepts_timing_metadata = True
 
         self._adapter_callbacks[callback_id] = notify_uuid
         coro = adapter.set_notify_callback(self.transport_client, notify_uuid, _notify)
         asyncio.run_coroutine_threadsafe(coro, self._manager_loop).result(timeout=30.0)
 
-    def _handle_host_event(self, event_name: str, payload: Any) -> None:
+    def _handle_host_event(self, event_name: str, payload: Any, timing=None) -> None:
         if event_name == "on_data":
-            self._emit(event_name, deep_namespace(payload) if isinstance(payload, dict) else payload)
+            emitted_payload = deep_namespace(payload) if isinstance(payload, dict) else payload
+            if timing and hasattr(emitted_payload, "__dict__"):
+                emitted_payload._nexus_timing = dict(timing)
+            self._emit(event_name, emitted_payload)
             return
         self._emit(event_name, payload if not isinstance(payload, dict) else deep_namespace_dict(payload))
 

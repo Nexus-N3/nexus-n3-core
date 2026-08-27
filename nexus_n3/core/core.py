@@ -3,7 +3,7 @@
 import time
 import csv
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.gateway.messaging import message_types as mt
 from nexus_n3.gateway.gateways.gateway_registry import discover_gateways
@@ -105,6 +105,7 @@ class Core:
         self._startup_last_failure_reason: str | None = None
         self._stream_stop_finalization_lock = threading.RLock()
         self._stream_stop_finalization_pending = False
+        self._official_stream_origin_monotonic_ns = None
 
     def get_ble_runtime_config(self) -> dict:
         """Return the active BLE runtime backend configuration."""
@@ -360,7 +361,7 @@ class Core:
             status="startup_failed",
             reason=reason,
             summary_updates={
-                "official_stream_started": False,
+                "official_stream": "failed",
                 "startup_summary": self._startup_status_payload(phase="startup_failed", reason=reason),
                 "stop_summary": {
                     "scope": "all",
@@ -378,6 +379,7 @@ class Core:
         self._emit_stream_drained(drain_payload)
 
     def _activate_official_streaming(self) -> None:
+        self._official_stream_origin_monotonic_ns = time.monotonic_ns()
         active_subject_ids = set(self._startup_subject_ids)
         for sub in self.subjects:
             if sub.subject_id not in active_subject_ids:
@@ -389,7 +391,7 @@ class Core:
         self.storage.file_manager.update_session_diagnostics_summary(
             self.session_timestamp,
             {
-                "official_stream_started": True,
+                "official_stream": "passed",
                 "official_stream_started_at": datetime.now().isoformat(timespec="seconds"),
             },
         )
@@ -468,7 +470,11 @@ class Core:
         })
 
         """ Register callbacks with compute manager"""
-        self.compute_orch.register_listeners(self._on_compute_result, self._on_intermediate_result)
+        self.compute_orch.register_listeners(
+            self._on_compute_result,
+            self._on_intermediate_result,
+            self._on_compute_performance,
+        )
 
     # -------------------------
     # Public Methods
@@ -677,6 +683,7 @@ class Core:
         """Start streaming data for all subjects."""
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
         self.archived_session_timestamp = None
+        self._official_stream_origin_monotonic_ns = None
         tag_all = payload.get("tag")
         tags = payload.get("tags") or {}
         self._pending_stream_tags = {}
@@ -702,8 +709,10 @@ class Core:
                 "subject_ids": [sub.subject_id for sub in self.subjects],
                 "requested_sensor_addresses": list(stream_addresses),
                 "startup_policy": self._startup_policy_payload(),
+                "official_stream": "pending",
             },
         )
+        self.sensor_orch.reset_session_diagnostics()
         self.sensor_orch.start_all()
 
     def start_stream_for_subjects(self, payload):
@@ -711,6 +720,7 @@ class Core:
         subject_ids = payload["subject_ids"]
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
         self.archived_session_timestamp = None
+        self._official_stream_origin_monotonic_ns = None
         tag_all = payload.get("tag")
         tags = payload.get("tags") or {}
         subjects = self._get_subjects_by_ids(subject_ids)
@@ -738,8 +748,10 @@ class Core:
                 "subject_ids": [sub.subject_id for sub in subjects],
                 "requested_sensor_addresses": list(addresses),
                 "startup_policy": self._startup_policy_payload(),
+                "official_stream": "pending",
             },
         )
+        self.sensor_orch.reset_session_diagnostics()
         if addresses:
             self.sensor_orch.start_specific(addresses)
 
@@ -833,7 +845,11 @@ class Core:
                 session_info=self.storage.file_manager.describe_session(self.session_timestamp),
             )
             diagnostics_updates = {
-                "official_stream_started": self.stream_phase == "official_streaming",
+                "official_stream": (
+                    "passed"
+                    if getattr(self, "_official_stream_origin_monotonic_ns", None) is not None
+                    else "failed"
+                ),
                 "raw_write_failures": raw_write_failures,
                 "partial_markers": partial_markers,
                 "stop_summary": {
@@ -1125,6 +1141,7 @@ class Core:
 
     def _on_data(self, payload):
         """Callback invoked when sensor data is received."""
+        core_receive_ns = time.monotonic_ns()
         pipeline_diagnostics.increment(
             getattr(payload, "address", None),
             "core_on_data_count",
@@ -1148,7 +1165,19 @@ class Core:
         if subject:
             subject.ingest_sample(payload, self.storage.file_manager)
             # push to compute manager also
-            self.compute_orch.ingest_sample(payload)
+            transport_timing = dict(getattr(payload, "_nexus_timing", {}) or {})
+            host_receive_ns = transport_timing.get("host_receive_monotonic_ns", core_receive_ns)
+            timing_metadata = {
+                **transport_timing,
+                "source_timestamp": getattr(payload, "timestamp", None),
+                "host_receive_monotonic_ns": host_receive_ns,
+                "core_receive_monotonic_ns": core_receive_ns,
+            }
+            if self._official_stream_origin_monotonic_ns is not None:
+                timing_metadata["normalized_session_ns"] = (
+                    host_receive_ns - self._official_stream_origin_monotonic_ns
+                )
+            self.compute_orch.ingest_sample(payload, timing_metadata=timing_metadata)
         else:
             logger.warning(f"Data for unknown sensor {getattr(payload, 'address', 'unknown')}")
 
@@ -1244,6 +1273,37 @@ class Core:
                 "type": mt.EVT_COMPUTE_RESULT,
                 "payload": subject_result
             })
+
+    def _on_compute_performance(self, performance):
+        """Emit and archive core-owned timing diagnostics for one compute result."""
+        payload = dict(performance or {})
+        address = payload.get("address")
+        subject = self.subject_graph.find_subject_by_address(address)
+        if subject is not None:
+            entry = next(
+                (item for item in subject.sensors if item["sensor"].address == address),
+                None,
+            )
+            payload["subject_id"] = subject.subject_id
+            payload["location"] = entry["meta"].get("location") if entry else None
+            context = self._event_context(subject_ids=[subject.subject_id])
+        else:
+            context = self._event_context()
+        payload.update(context)
+        payload.setdefault("observed_at", datetime.now(timezone.utc).isoformat())
+
+        self.storage.file_manager.enqueue_session_diagnostics_event(
+            self.session_timestamp,
+            mt.EVT_COMPUTE_PERFORMANCE,
+            payload,
+        )
+        if self.system_event_bus:
+            self.system_event_bus.emit(
+                {
+                    "type": mt.EVT_COMPUTE_PERFORMANCE,
+                    "payload": payload,
+                }
+            )
 
     def _on_identify(self, sensor):
         """Callback invoked when a sensor identification occurs."""

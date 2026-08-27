@@ -281,7 +281,7 @@ That session tree contains:
 - real-time NDJSON result streams
 - intermediate NDJSON files
 - consolidated NDJSON files
-- diagnostics events when enabled
+- structured session diagnostics
 
 When a session is fully finalized, the session directory is zipped locally and
 the directory tree is removed.
@@ -291,6 +291,46 @@ that active output path onto the managed removable disk mount. On non-Linux
 hosts, file output remains local-only.
 
 ## Diagnostics
+
+Every recording session contains structured diagnostics under:
+
+```text
+diagnostics/session_diagnostics.json
+diagnostics/session_diagnostics.jsonl
+```
+
+These files are created independently of the optional pipeline-debug switch and
+are included in the finalized session archive. The JSON file is the current
+session summary. The JSONL file is the time-ordered event record and includes
+stream lifecycle events, compute-performance records, gateway diagnostics, and
+errors. The summary field `official_stream` begins as `pending` and is finalized
+as `passed` or `failed`.
+
+Core emits one `compute_performance` event for every compute result. Important
+fields include:
+
+- `algorithm_execution_ms`: exact execution time only when
+  `execution_measurement_exact` is `true`
+- `result_callback_ms`: fallback duration of the result-producing
+  `algorithm.on_sample()` callback; this is not presented as algorithm execution
+  time
+- `result_interval_ms`: interval between successive results for the same sensor
+  and algorithm; absent from the first result
+- `expected_result_interval_ms` and `cadence_drift_ms`: expected cadence and
+  deviation when the algorithm exposes its window duration
+- `queue_wait_ms`: time between compute enqueue and dispatch
+- `compute_enqueue_to_result_ms`: enqueue-to-result latency
+- `trigger_sample_to_result_ms`: host receipt of the result-producing sample to
+  result receipt; it is not the duration of the complete sample window
+- `samples_since_previous_result`: samples dispatched since the preceding result
+- `trigger_sample`: available source, gateway, host, core, and normalized session
+  timestamps for the sample that produced the result
+
+`compute_result` remains the application-facing algorithm output. Timing fields
+are deliberately emitted separately through `compute_performance`, so plugin
+result schemas do not need to change.
+
+### Optional pipeline debugging
 
 Enable low-overhead pipeline diagnostics only when needed:
 
@@ -303,6 +343,10 @@ This writes:
 ```text
 nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/diagnostics/pipeline_debug.ndjson
 ```
+
+`pipeline_debug.ndjson` is an additional debugging artifact. It is not required
+for the structured session diagnostics or compute-performance events described
+above.
 
 Set `NEXUS_PERF_LOG=1` to enable periodic performance logging.
 

@@ -26,7 +26,12 @@ def test_phase3_host_backed_algorithm_runtime(tmp_path: Path):
     orchestrator = ComputeOrchestrator(plugin_root=plugin_root)
     compute_results = []
     intermediate_results = []
-    orchestrator.register_listeners(compute_results.append, intermediate_results.append)
+    compute_performance = []
+    orchestrator.register_listeners(
+        compute_results.append,
+        intermediate_results.append,
+        compute_performance.append,
+    )
 
     sensor = SimpleNamespace(address="sensor-1", attributes={"SAMPLING_RATE": 50})
     subjects = [
@@ -58,7 +63,15 @@ def test_phase3_host_backed_algorithm_runtime(tmp_path: Path):
         sample_type="mock",
         value=3,
     )
-    orchestrator.ingest_sample(sample)
+    orchestrator.ingest_sample(
+        sample,
+        timing_metadata={
+            "source_timestamp": 1,
+            "gateway_timestamp_us": 99,
+            "host_receive_monotonic_ns": time.monotonic_ns(),
+            "normalized_session_ns": 123,
+        },
+    )
 
     deadline = time.time() + 3.0
     while time.time() < deadline and not compute_results:
@@ -69,6 +82,16 @@ def test_phase3_host_backed_algorithm_runtime(tmp_path: Path):
     assert result.address == "sensor-1"
     assert result.algorithm_name == "external_runtime_algo"
     assert result.value == 6
+    assert len(compute_performance) == 1
+    performance = compute_performance[0]
+    assert performance["execution_measurement"] == "wrapped_execute_real_time"
+    assert performance["execution_measurement_exact"] is True
+    assert performance["algorithm_execution_ms"] >= 0
+    assert performance["plugin_rpc_ms"] >= performance["algorithm_execution_ms"]
+    assert performance["samples_since_previous_result"] == 1
+    assert performance["trigger_sample"]["source_timestamp"] == 1
+    assert performance["trigger_sample"]["gateway_timestamp_us"] == 99
+    assert performance["trigger_sample"]["normalized_session_ns"] == 123
 
     buffered_results = orchestrator.compute_manager.get_results("external_runtime_algo")
     assert len(buffered_results) == 1
@@ -93,6 +116,16 @@ def test_phase3_host_backed_algorithm_runtime(tmp_path: Path):
         "stage": "consolidated_time",
         "results": [{"subject_id": "subject-1", "sum_total": 6}],
     }
+
+    orchestrator.ingest_sample(sample)
+    deadline = time.time() + 3.0
+    while time.time() < deadline and len(compute_performance) < 2:
+        time.sleep(0.05)
+    assert len(compute_performance) == 2
+    second_performance = compute_performance[1]
+    assert second_performance["result_interval_ms"] > 0
+    assert second_performance["expected_result_interval_ms"] == 20.0
+    assert "cadence_drift_ms" in second_performance
     orchestrator.reset()
 
 
@@ -179,6 +212,7 @@ def _build_algorithm_wheel(build_dir: Path) -> Path:
                 stage: str
                 algorithm_name: str
                 value: int
+                result_count: int
                 subject_id: str | None = None
                 location: str | None = None
 
@@ -194,6 +228,9 @@ def _build_algorithm_wheel(build_dir: Path) -> Path:
                     self.compute_delegate = None
                     self.subject_id = None
                     self.location = None
+                    self.result_count = 0
+                    self.window_size = 1
+                    self.window_seconds = 0.02
 
                 def register_result_listener(self, callback):
                     self.result_callback = callback
@@ -202,16 +239,22 @@ def _build_algorithm_wheel(build_dir: Path) -> Path:
                     self.compute_delegate = callback
 
                 def on_sample(self, sample):
-                    result = ExternalResult(
+                    self._sample = sample
+                    result = self.execute_real_time()
+                    if self.result_callback:
+                        self.result_callback(result)
+
+                def execute_real_time(self):
+                    self.result_count += 1
+                    return ExternalResult(
                         address=self.address,
                         stage="real_time",
                         algorithm_name=self.name,
-                        value=int(sample.value) * int(self.input_parameters.get("scale", 1)),
+                        value=int(self._sample.value) * int(self.input_parameters.get("scale", 1)),
+                        result_count=self.result_count,
                         subject_id=self.subject_id,
                         location=self.location,
                     )
-                    if self.result_callback:
-                        self.result_callback(result)
 
 
             def healthcheck():
