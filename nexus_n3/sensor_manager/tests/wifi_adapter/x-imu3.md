@@ -14,8 +14,36 @@ Use an external wifi adapter as an access point.
 
 scan for -imu3 device and restore the ap
 ```bash
-test_ap_scan.py 
-pytest tests/wifi_adapter/test_ap_scan.py -s
+PYTHONPATH=".:../nexus-n3-plugin-catalog/sensors/nexus-n3-sensor-x-imu3/src:../nexus-n3-plugin-tooling/packages/sdk/src" \
+NEXUS_N3_ENV_FILE=config/runtime.env \
+python -u nexus_n3/sensor_manager/tests/wifi_adapter/discover.py
+```
+
+This diagnostic uses the production NetworkManager backend and X-IMU3 plugin
+classifier. It does not configure the sensor and restores the Nexus AP before
+exiting.
+
+After `reset.py` has placed the sensor in AP mode and `discover.py` has found
+it, exercise the production provisioning, discovery, UDP connection, and
+disconnect path:
+
+```bash
+PYTHONPATH=".:../nexus-n3-plugin-catalog/sensors/nexus-n3-sensor-x-imu3/src:../nexus-n3-plugin-tooling/packages/sdk/src" \
+NEXUS_N3_ENV_FILE=config/runtime.env \
+python -u nexus_n3/sensor_manager/tests/wifi_adapter/lifecycle.py
+```
+
+The mt76x2u adapter may require the previously proven network-stack recovery
+after the x-IMU3 provisioning AP disappears. Authorise sudo first and opt in
+for this diagnostic run:
+
+```bash
+sudo -v
+
+PYTHONPATH=".:../nexus-n3-plugin-catalog/sensors/nexus-n3-sensor-x-imu3/src:../nexus-n3-plugin-tooling/packages/sdk/src" \
+NEXUS_N3_ENV_FILE=config/runtime.env \
+NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1 \
+python -u nexus_n3/sensor_manager/tests/wifi_adapter/lifecycle.py
 ```
 discover the x-imu3 and connect to it, disconnect and restore the ap
 ```bash
@@ -43,4 +71,3 @@ pytest tests/wifi_adapter/test_ap_provision.py -s
 
 - python examples
 https://github.com/xioTechnologies/x-IMU3-Software/tree/main/Examples/Python
-

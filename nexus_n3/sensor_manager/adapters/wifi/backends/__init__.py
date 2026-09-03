@@ -2,5 +2,6 @@
 
 from .base import WifiBackend
 from .fake import FakeWifiBackend
+from .linux_networkmanager import LinuxNetworkManagerBackend
 
-__all__ = ["FakeWifiBackend", "WifiBackend"]
+__all__ = ["FakeWifiBackend", "LinuxNetworkManagerBackend", "WifiBackend"]

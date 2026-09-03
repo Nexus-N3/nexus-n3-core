@@ -12,6 +12,9 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from nexus_n3.sensor_manager.adapters.wifi.backends.fake import FakeWifiBackend
+from nexus_n3.sensor_manager.adapters.wifi.backends.linux_networkmanager import (
+    LinuxNetworkManagerBackend,
+)
 from nexus_n3.sensor_manager.adapters.wifi.config import (
     ApAddressMode,
     WifiRuntimeConfig,
@@ -64,6 +67,17 @@ class InvalidWifiSensorDriver(FakeWifiSensorDriver):
         return [object()]
 
 
+class MappingWifiSensorDriver(FakeWifiSensorDriver):
+    async def discover_connected(self, network):
+        return [
+            {
+                "address": "serial-001",
+                "endpoint": "10.42.0.48",
+                "metadata": {"udp_send_port": 8048},
+            }
+        ]
+
+
 @dataclass
 class FakeSensor:
     name: str
@@ -95,6 +109,17 @@ def _config(**overrides) -> WifiRuntimeConfig:
 
 def test_compatibility_alias_uses_preferred_adapter_class():
     assert WiFiAdapter is WifiAdapter
+
+
+def test_linux_backend_is_selected_from_runtime_config():
+    adapter = WifiAdapter(
+        config=_config(
+            backend="linux-networkmanager",
+            interface_name="wlan-test",
+        )
+    )
+
+    assert isinstance(adapter.backend, LinuxNetworkManagerBackend)
 
 
 def test_adapter_requires_initialization():
@@ -218,6 +243,22 @@ def test_invalid_driver_discovery_result_is_rejected():
 
         with pytest.raises(WifiDiscoveryResultInvalid):
             await adapter.discover_devices([sensor])
+
+    asyncio.run(scenario())
+
+
+def test_json_safe_plugin_device_mapping_is_normalized():
+    async def scenario():
+        driver = MappingWifiSensorDriver("Test WiFi Sensor", [])
+        sensor = FakeSensor("Test WiFi Sensor", driver)
+        adapter = WifiAdapter(config=_config(), backend=FakeWifiBackend())
+        await adapter.initialize()
+
+        devices = await adapter.discover_devices([sensor])
+
+        device = devices["serial-001"][0]
+        assert device.endpoint == "10.42.0.48"
+        assert device.metadata == {"udp_send_port": 8048}
 
     asyncio.run(scenario())
 

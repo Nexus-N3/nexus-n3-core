@@ -15,6 +15,10 @@ from typing import Any
 import yaml
 
 from nexus_n3.sensor_manager.connection_status import ConnectionStatus
+from nexus_n3.sensor_manager.adapters.wifi.models import (
+    WifiAccessPoint,
+    WifiDevice,
+)
 from nexus_n3.sensor_manager.sensor_handle import SensorBase
 
 from ..common.jsonio import read_json
@@ -123,6 +127,61 @@ class SensorHostClient:
         )
         return bool((result or {}).get("ok"))
 
+    def wifi_discover_connected(self, network) -> list[dict[str, Any]]:
+        result = self.transport.request(
+            "wifi.discover_connected",
+            {
+                "network": {
+                    "address": network.address,
+                    "prefix": network.prefix,
+                    "gateway": network.gateway,
+                    "cidr": network.cidr,
+                }
+            },
+        )
+        return list((result or {}).get("devices") or [])
+
+    def wifi_connect_sensor(self, device: WifiDevice) -> bool:
+        self.bind_sensor()
+        result = self.transport.request(
+            "wifi.connect_sensor",
+            {
+                "device": {
+                    "address": device.address,
+                    "endpoint": to_jsonable(device.endpoint),
+                    "metadata": to_jsonable(dict(device.metadata)),
+                }
+            },
+        )
+        return bool((result or {}).get("ok"))
+
+    def wifi_disconnect_sensor(self) -> bool:
+        self.bind_sensor()
+        result = self.transport.request("wifi.disconnect_sensor", {})
+        return bool((result or {}).get("ok"))
+
+    def wifi_classify_access_points(
+        self,
+        access_points: list[WifiAccessPoint],
+    ) -> list[dict[str, Any]]:
+        result = self.transport.request(
+            "wifi.classify_access_points",
+            {
+                "access_points": [to_jsonable(point) for point in access_points],
+            },
+        )
+        return list((result or {}).get("candidates") or [])
+
+    def wifi_provision(self, network, target) -> dict[str, Any] | None:
+        result = self.transport.request(
+            "wifi.provision",
+            {
+                "network": to_jsonable(network),
+                "target": to_jsonable(target),
+            },
+        )
+        return (result or {}).get("device")
+
     def _handle_adapter_read(self, params: dict[str, Any]) -> dict[str, Any]:
         data = self.proxy._adapter_request("read", str(params["uuid"]))
         return {"data_b64": base64.b64encode(bytes(data)).decode("ascii")}
@@ -169,6 +228,7 @@ class InstalledSensorProxy(SensorBase):
         self._plugin_client: SensorHostClient | None = None
         self._manager_loop = None
         self._adapter_callbacks: dict[str, str] = {}
+        self._wifi_driver = _InstalledPluginWifiDriver(self)
 
     @classmethod
     def load_raw_spec(cls) -> dict:
@@ -178,6 +238,11 @@ class InstalledSensorProxy(SensorBase):
 
     def bind_manager_runtime(self, *, loop) -> None:
         self._manager_loop = loop
+
+    def get_wifi_driver(self):
+        """Return the core-side bridge for plugin-owned Wi-Fi operations."""
+
+        return self._wifi_driver
 
     def set_connection_status(self, status: ConnectionStatus):
         super().set_connection_status(status)
@@ -279,6 +344,47 @@ class InstalledSensorProxy(SensorBase):
             self._emit(event_name, emitted_payload)
             return
         self._emit(event_name, payload if not isinstance(payload, dict) else deep_namespace_dict(payload))
+
+
+class _InstalledPluginWifiDriver:
+    """Adapt isolated plugin RPC methods to the SensorManager Wi-Fi contract."""
+
+    def __init__(self, proxy: InstalledSensorProxy) -> None:
+        self.proxy = proxy
+
+    async def discover_connected(self, network) -> list[WifiDevice]:
+        client = self.proxy._ensure_client()
+        payloads = await asyncio.to_thread(client.wifi_discover_connected, network)
+        return [
+            WifiDevice(
+                address=str(payload["address"]),
+                endpoint=payload.get("endpoint"),
+                metadata=dict(payload.get("metadata") or {}),
+            )
+            for payload in payloads
+        ]
+
+    async def connect_sensor(self, sensor, device: WifiDevice, adapter) -> bool:
+        _ = sensor, adapter
+        client = self.proxy._ensure_client()
+        return await asyncio.to_thread(client.wifi_connect_sensor, device)
+
+    async def disconnect_sensor(self, sensor) -> bool:
+        _ = sensor
+        client = self.proxy._ensure_client()
+        return await asyncio.to_thread(client.wifi_disconnect_sensor)
+
+    async def classify_access_points(self, access_points):
+        client = self.proxy._ensure_client()
+        return await asyncio.to_thread(
+            client.wifi_classify_access_points,
+            access_points,
+        )
+
+    async def provision(self, network, target, controls):
+        _ = controls
+        client = self.proxy._ensure_client()
+        return await asyncio.to_thread(client.wifi_provision, network, target)
 
 
 def resolve_installed_sensor_class(

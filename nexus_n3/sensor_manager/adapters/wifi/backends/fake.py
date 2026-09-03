@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ..models import IPv4Configuration, WifiCapabilities
+from ..models import IPv4Configuration, WifiAccessPoint, WifiCapabilities
 
 
 class FakeWifiBackend:
@@ -16,6 +16,7 @@ class FakeWifiBackend:
         ipv4: IPv4Configuration | None = None,
         capabilities: WifiCapabilities | None = None,
         fail_on: Iterable[str] = (),
+        access_points: Iterable[WifiAccessPoint] = (),
     ) -> None:
         self.operations: list[str] = []
         self.ipv4 = ipv4 or IPv4Configuration(
@@ -30,6 +31,7 @@ class FakeWifiBackend:
             backend_recovery=True,
         )
         self.fail_on = set(fail_on)
+        self.access_points = list(access_points)
         self.initialized = False
         self.closed = False
 
@@ -57,3 +59,18 @@ class FakeWifiBackend:
         self._record("shutdown")
         self.closed = True
         self.initialized = False
+
+    async def begin_provisioning(self) -> list[WifiAccessPoint]:
+        self._record("begin_provisioning")
+        return list(self.access_points)
+
+    async def connect_temporary(
+        self,
+        access_point: WifiAccessPoint,
+    ) -> IPv4Configuration:
+        self._record(f"connect_temporary:{access_point.ssid}")
+        return IPv4Configuration(address="192.168.1.2", prefix=24)
+
+    async def restore_ap(self) -> IPv4Configuration:
+        self._record("restore_ap")
+        return self.ipv4

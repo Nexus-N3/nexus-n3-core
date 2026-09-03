@@ -154,7 +154,7 @@ class AlgorithmHostClient:
         return [RemoteComputeResult(item) for item in (result or {}).get("results", [])]
 
 
-class PluginRuntimeManager:
+class AlgorithmRuntimeManager:
     """Resolves installed algorithm bundles and manages their host clients."""
 
     def __init__(self, plugin_root: str | Path | None = None):

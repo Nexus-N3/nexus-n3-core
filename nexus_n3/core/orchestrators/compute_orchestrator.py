@@ -2,11 +2,11 @@
 
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.compute_manager.compute_manager import ComputeManager
-from nexus_n3.plugins.runtime.runtime import (
+from nexus_n3.plugins.runtime.algorithm_runtime import (
     HostBackedAlgorithm,
     HostBackedConsolidationExecutor,
     HostBackedIntermediateExecutor,
-    PluginRuntimeManager,
+    AlgorithmRuntimeManager,
 )
 
 logger = get_module_logger("ComputeOrchestrator")
@@ -18,7 +18,7 @@ class ComputeOrchestrator:
     def __init__(self, system_event_bus=None, error_cb=None, plugin_root=None):
         self.error_cb = error_cb
         self.compute_manager = ComputeManager(system_event_bus, error_cb)
-        self._plugin_runtime = PluginRuntimeManager(plugin_root)
+        self._plugin_runtime = AlgorithmRuntimeManager(plugin_root)
         self._registered_executors = set()
         self._registered_consolidation_executors = set()
 

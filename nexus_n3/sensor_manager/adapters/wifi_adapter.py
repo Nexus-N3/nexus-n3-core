@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+import inspect
 from typing import Any, Iterable, Mapping
 
 from nexus_n3.sensor_manager.connection_status import ConnectionStatus
 
 from .wifi.backends.base import WifiBackend
 from .wifi.backends.fake import FakeWifiBackend
+from .wifi.backends.linux_networkmanager import LinuxNetworkManagerBackend
 from .wifi.config import WifiRuntimeConfig
 from .wifi.errors import (
     WifiBackendUnavailable,
@@ -22,11 +24,16 @@ from .wifi.errors import (
 )
 from .wifi.models import (
     IPv4Configuration,
+    NexusWifiNetwork,
+    WifiAccessPoint,
     WifiAdvertisement,
     WifiCapabilities,
+    WifiCredentials,
     WifiDevice,
+    WifiProvisioningCandidate,
     WifiTransportHandle,
 )
+from .wifi.session import ProvisioningControls
 
 
 @dataclass(frozen=True)
@@ -55,12 +62,15 @@ class WifiAdapter:
         self._network: IPv4Configuration | None = None
         self._initialized = False
         self._shutting_down = False
+        self._provisioning_attempted = False
         self._operation_lock = asyncio.Lock()
 
     @staticmethod
     def _create_backend(config: WifiRuntimeConfig) -> WifiBackend:
         if config.backend == "fake":
             return FakeWifiBackend()
+        if config.backend == "linux-networkmanager":
+            return LinuxNetworkManagerBackend(config)
         raise WifiBackendUnavailable(
             f"Wi-Fi backend {config.backend!r} is not implemented"
         )
@@ -97,6 +107,7 @@ class WifiAdapter:
         await self.backend.initialize()
         self._network = await self.backend.ensure_ap_active()
         self._initialized = True
+        self._provisioning_attempted = False
 
     async def discover_devices(
         self,
@@ -121,6 +132,12 @@ class WifiAdapter:
                     f"Wi-Fi driver for {sensor_name!r} returned a non-iterable result"
                 )
             for device in devices:
+                if isinstance(device, Mapping):
+                    device = WifiDevice(
+                        address=str(device.get("address") or ""),
+                        endpoint=device.get("endpoint"),
+                        metadata=dict(device.get("metadata") or {}),
+                    )
                 if not isinstance(device, WifiDevice) or not device.address:
                     raise WifiDiscoveryResultInvalid(
                         f"Wi-Fi driver for {sensor_name!r} returned an invalid device"
@@ -138,8 +155,107 @@ class WifiAdapter:
                 )
                 discovered[device.address] = (device, advertisement)
 
+        if (
+            not records
+            and self.config.ap_password
+            and not self._provisioning_attempted
+        ):
+            self._provisioning_attempted = True
+            await self._provision(requests)
+            deadline = (
+                asyncio.get_running_loop().time()
+                + self.config.provisioning_join_timeout_s
+            )
+            while asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(1.0)
+                joined = await self.discover_devices(
+                    requested,
+                    timeout=timeout_s,
+                )
+                if joined:
+                    return joined
+            return {}
+
         self._discovered = records
         return discovered
+
+    async def _provision(self, requests: list[tuple[str, Any]]) -> None:
+        """Provision one claimed sensor AP and always restore the Nexus AP."""
+
+        async with self._operation_lock:
+            try:
+                access_points = await self.backend.begin_provisioning()
+                candidates: list[tuple[WifiProvisioningCandidate, Any]] = []
+                for _sensor_name, driver in requests:
+                    classifier = getattr(driver, "classify_access_points", None)
+                    if not callable(classifier):
+                        continue
+                    claimed = classifier(access_points)
+                    if inspect.isawaitable(claimed):
+                        claimed = await claimed
+                    for candidate in claimed or []:
+                        normalized = self._normalize_candidate(candidate)
+                        candidates.append((normalized, driver))
+
+                if not candidates:
+                    raise WifiSensorDriverUnavailable(
+                        "No Wi-Fi sensor driver claimed a visible provisioning AP"
+                    )
+
+                candidate, driver = max(
+                    candidates,
+                    key=lambda item: item[0].confidence,
+                )
+                temporary_network = await self.backend.connect_temporary(
+                    candidate.access_point
+                )
+                provision = getattr(driver, "provision", None)
+                if not callable(provision):
+                    raise WifiSensorDriverUnavailable(
+                        "Wi-Fi sensor driver does not implement provisioning"
+                    )
+                target = NexusWifiNetwork(
+                    ssid=self.config.ap_ssid,
+                    credentials=WifiCredentials(password=self.config.ap_password),
+                    channel=self.config.ap_channel,
+                )
+                controls = ProvisioningControls()
+                result = provision(temporary_network, target, controls)
+                if inspect.isawaitable(result):
+                    await asyncio.wait_for(
+                        result,
+                        timeout=self.config.connect_timeout_s,
+                    )
+            finally:
+                self._network = await self.backend.restore_ap()
+
+    @staticmethod
+    def _normalize_candidate(candidate: Any) -> WifiProvisioningCandidate:
+        if isinstance(candidate, WifiProvisioningCandidate):
+            return candidate
+        if not isinstance(candidate, Mapping):
+            raise WifiDiscoveryResultInvalid(
+                "Wi-Fi provisioning candidate must be a mapping"
+            )
+        raw_access_point = candidate.get("access_point")
+        if isinstance(raw_access_point, Mapping):
+            raw_access_point = WifiAccessPoint(
+                id=str(raw_access_point.get("id") or ""),
+                ssid=str(raw_access_point.get("ssid") or ""),
+                bssid=str(raw_access_point.get("bssid") or ""),
+                strength=int(raw_access_point.get("strength") or 0),
+                frequency_mhz=int(raw_access_point.get("frequency_mhz") or 0),
+                secured=bool(raw_access_point.get("secured", False)),
+            )
+        if raw_access_point is None:
+            raise WifiDiscoveryResultInvalid(
+                "Wi-Fi provisioning candidate is missing an access point"
+            )
+        return WifiProvisioningCandidate(
+            access_point=raw_access_point,
+            confidence=int(candidate.get("confidence") or 0),
+            metadata=dict(candidate.get("metadata") or {}),
+        )
 
     def create_transport_client(
         self,

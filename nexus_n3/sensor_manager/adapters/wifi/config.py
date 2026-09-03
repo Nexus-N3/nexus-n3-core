@@ -40,10 +40,15 @@ class WifiRuntimeConfig:
     ap_ssid: str = "nexus-n3-sensors"
     ap_password: str | None = field(default=None, repr=False)
     ap_channel: int | None = None
+    provisioning_profile: str = "nexus-n3-sensor-provision"
     ap_address_mode: ApAddressMode = ApAddressMode.NETWORKMANAGER_SHARED
     expected_ap_cidr: str | None = None
     discovery_timeout_s: float = 20.0
     connect_timeout_s: float = 30.0
+    provisioning_join_timeout_s: float = 90.0
+    allow_network_stack_restart: bool = False
+    network_stack_restart_timeout_s: float = 30.0
+    regulatory_domain: str = "EE"
 
     def __post_init__(self) -> None:
         backend = self.backend.strip().lower()
@@ -72,8 +77,19 @@ class WifiRuntimeConfig:
             )
         if self.ap_channel is not None and self.ap_channel <= 0:
             raise ValueError("Wi-Fi AP channel must be positive")
-        if self.discovery_timeout_s <= 0 or self.connect_timeout_s <= 0:
+        if not self.provisioning_profile.strip():
+            raise ValueError("Wi-Fi provisioning profile must not be empty")
+        if (
+            self.discovery_timeout_s <= 0
+            or self.connect_timeout_s <= 0
+            or self.provisioning_join_timeout_s <= 0
+            or self.network_stack_restart_timeout_s <= 0
+        ):
             raise ValueError("Wi-Fi timeouts must be positive")
+        regulatory_domain = self.regulatory_domain.strip().upper()
+        if len(regulatory_domain) != 2 or not regulatory_domain.isalpha():
+            raise ValueError("Wi-Fi regulatory domain must be a two-letter code")
+        object.__setattr__(self, "regulatory_domain", regulatory_domain)
         if self.expected_ap_cidr is not None:
             try:
                 expected_interface = ipaddress.ip_interface(self.expected_ap_cidr)
@@ -108,6 +124,10 @@ class WifiRuntimeConfig:
             ),
             ap_password=os.environ.get("NEXUS_SENSOR_AP_PASSWORD") or None,
             ap_channel=int(raw_channel) if raw_channel else None,
+            provisioning_profile=os.environ.get(
+                "NEXUS_WIFI_PROVISIONING_CONNECTION",
+                "nexus-n3-sensor-provision",
+            ),
             ap_address_mode=ApAddressMode(raw_mode.strip().lower()),
             expected_ap_cidr=(
                 os.environ.get("NEXUS_SENSOR_AP_EXPECTED_CIDR") or None
@@ -117,5 +137,25 @@ class WifiRuntimeConfig:
             ),
             connect_timeout_s=float(
                 os.environ.get("NEXUS_WIFI_CONNECT_TIMEOUT_S", "30")
+            ),
+            provisioning_join_timeout_s=float(
+                os.environ.get(
+                    "NEXUS_WIFI_PROVISIONING_JOIN_TIMEOUT_S",
+                    "90",
+                )
+            ),
+            allow_network_stack_restart=_env_bool(
+                "NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART",
+                False,
+            ),
+            network_stack_restart_timeout_s=float(
+                os.environ.get(
+                    "NEXUS_NETWORK_STACK_RESTART_TIMEOUT_SECONDS",
+                    "30",
+                )
+            ),
+            regulatory_domain=os.environ.get(
+                "NEXUS_WIFI_REGULATORY_DOMAIN",
+                "EE",
             ),
         )

@@ -78,7 +78,7 @@ python -m nexus_n3.plugins install-dev-list
 - `nexus_n3.plugins/install/installer.py`
 - `nexus_n3.plugins/install/catalog.py`
 - `nexus_n3.plugins/runtime/discovery.py`
-- `nexus_n3.plugins/runtime/runtime.py`
+- `nexus_n3.plugins/runtime/algorithm_runtime.py`
 - `nexus_n3.plugins/runtime/sensor_runtime.py`
 - `nexus_n3.plugins/runtime/sensor_host.py`
 - `nexus_n3.plugins/runtime/algorithm_host.py`

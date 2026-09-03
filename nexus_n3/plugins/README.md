@@ -91,7 +91,7 @@ Development example:
   Installs bundles into the configured plugin root.
 - `install/catalog.py`
   Persists plugin catalog and failure records.
-- `runtime/runtime.py`
+- `runtime/algorithm_runtime.py`
   Resolves installed external algorithm plugins and launches isolated hosts.
 - `runtime/transport.py`
   Implements the Phase 3 stdio JSON-RPC transport.

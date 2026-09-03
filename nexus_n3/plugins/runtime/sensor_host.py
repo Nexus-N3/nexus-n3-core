@@ -156,6 +156,56 @@ class SensorHost:
         )
         return {"ok": bool(result)}
 
+    def wifi_discover_connected(self, params: dict[str, Any]) -> dict[str, Any]:
+        discover = getattr(self._sensor, "discover_connected", None)
+        if not callable(discover):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi discovery")
+        devices = _run_maybe_async(discover(deep_namespace(params["network"])))
+        return {"devices": to_jsonable(devices or [])}
+
+    def wifi_connect_sensor(self, params: dict[str, Any]) -> dict[str, Any]:
+        connect = getattr(self._sensor, "connect_sensor", None)
+        if not callable(connect):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi connect")
+        result = _run_maybe_async(connect(deep_namespace(params["device"])))
+        return {"ok": bool(result)}
+
+    def wifi_disconnect_sensor(self, params: dict[str, Any]) -> dict[str, Any]:
+        _ = params
+        disconnect = getattr(self._sensor, "disconnect_sensor", None)
+        if not callable(disconnect):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi disconnect")
+        result = _run_maybe_async(disconnect())
+        return {"ok": bool(result)}
+
+    def wifi_classify_access_points(self, params: dict[str, Any]) -> dict[str, Any]:
+        classify = getattr(self._sensor, "classify_access_points", None)
+        if not callable(classify):
+            return {"candidates": []}
+        access_points = [
+            deep_namespace(item)
+            for item in (params.get("access_points") or [])
+        ]
+        result = _run_maybe_async(classify(access_points))
+        return {"candidates": to_jsonable(result or [])}
+
+    def wifi_provision(self, params: dict[str, Any]) -> dict[str, Any]:
+        provision = getattr(self._sensor, "provision", None)
+        if not callable(provision):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi provisioning")
+        controls = _HostProvisioningControls()
+        result = _run_maybe_async(
+            provision(
+                deep_namespace(params["network"]),
+                deep_namespace(params["target"]),
+                controls,
+            )
+        )
+        return {
+            "device": to_jsonable(result),
+            "remote_access_point_disappeared": controls.disappeared,
+        }
+
     def shutdown(self) -> dict[str, Any]:
         return {"ok": True}
 
@@ -204,6 +254,11 @@ def main(argv: list[str] | None = None) -> int:
         "stop_stream": host.stop_stream,
         "identify": host.identify,
         "consume_input": host.consume_input,
+        "wifi.discover_connected": host.wifi_discover_connected,
+        "wifi.connect_sensor": host.wifi_connect_sensor,
+        "wifi.disconnect_sensor": host.wifi_disconnect_sensor,
+        "wifi.classify_access_points": host.wifi_classify_access_points,
+        "wifi.provision": host.wifi_provision,
         "shutdown": lambda _params: host.shutdown(),
     }
     for method_name, handler in methods.items():
@@ -214,6 +269,14 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         connection.close()
     return 0
+
+
+class _HostProvisioningControls:
+    def __init__(self) -> None:
+        self.disappeared = False
+
+    def remote_access_point_disappeared(self) -> None:
+        self.disappeared = True
 
 
 if __name__ == "__main__":
