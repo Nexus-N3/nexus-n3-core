@@ -1,13 +1,13 @@
 """Gateway message handler for commands and core dispatch."""
 
 from nexus_n3.core.core import Core
+from nexus_n3.core.version import get_core_version
 from nexus_n3.gateway.messaging import message_types as mt
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.plugins.runtime.discovery import get_installed_plugin_inventory
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 
 from datetime import datetime, timezone
-from importlib import metadata
 
 logger = get_module_logger("Message Handler")
 
@@ -75,13 +75,8 @@ class MessageHandler:
         self._archive_service = dict(service) if service else {"available": False}
 
     def _release_version(self) -> str:
-        """Return the installed nexus-n3-core version or 'unknown'."""
-        for name in ("nexus-n3-core", "nexus_n3_core"):
-            try:
-                return metadata.version(name)
-            except metadata.PackageNotFoundError:
-                continue
-        return "unknown"
+        """Return the authoritative source or installed Core version."""
+        return get_core_version()
 
     def _capabilities_payload(self) -> dict:
         """Return currently supported edge capabilities."""

@@ -121,7 +121,7 @@ class SensorController:
         )
 
     async def handle_reset_session_diagnostics(self):
-        self.adapter_pool.reset_session_diagnostics()
+        await self.adapter_pool.reset_session_diagnostics()
 
     async def handle_start_all(self):
         return await self.streaming_service.start(

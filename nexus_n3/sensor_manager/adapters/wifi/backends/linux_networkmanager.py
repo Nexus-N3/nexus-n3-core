@@ -1,54 +1,53 @@
-"""Linux Wi-Fi backend implemented with the NetworkManager CLI."""
+"""Linux Wi-Fi backend implemented through NetworkManager's D-Bus API."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from collections import Counter
+from collections.abc import Awaitable, Callable
 import ipaddress
-import shutil
 
-from ..config import WifiRuntimeConfig
+from ..config import ApAddressMode, WifiRuntimeConfig
 from ..errors import WifiBackendUnavailable
 from ..models import IPv4Configuration, WifiAccessPoint, WifiCapabilities
-
-
-@dataclass(frozen=True)
-class _CommandResult:
-    returncode: int
-    stdout: str
-    stderr: str
-
-
-CommandRunner = Callable[[Sequence[str]], Awaitable[_CommandResult]]
+from .networkmanager_dbus import (
+    NetworkManagerAccessPoint,
+    NetworkManagerClient,
+    NetworkManagerDBusError,
+    unwrap_setting,
+)
+WIFI_RECOVERY_UNIT = "nexus-n3-wifi-recovery.service"
+RecoveryRunner = Callable[[str, float], Awaitable[None]]
 
 
 class LinuxNetworkManagerBackend:
-    """Validate and, when necessary, activate the configured sensor AP.
-
-    Sensor discovery and protocol traffic deliberately remain in sensor
-    drivers.  This backend owns only the shared host-network lifecycle.
-    """
+    """Own the shared Linux radio and saved Nexus sensor AP profile."""
 
     def __init__(
         self,
         config: WifiRuntimeConfig,
         *,
-        command_runner: CommandRunner | None = None,
+        client: NetworkManagerClient | None = None,
+        recovery_runner: RecoveryRunner | None = None,
     ) -> None:
         self.config = config
-        self._uses_system_runner = command_runner is None
-        self._run_command = command_runner or self._run_subprocess
+        self._client = client or NetworkManagerClient()
+        self._run_recovery = recovery_runner or self._run_fixed_recovery_unit
         self._initialized = False
-        self._closed = False
-        self._activated_by_backend = False
+        self._device_path: str | None = None
+        self._ap_connection_path: str | None = None
+        self._access_points: dict[str, NetworkManagerAccessPoint] = {}
+        self._temporary_connection_path: str | None = None
+        self._temporary_active_path: str | None = None
         self._provisioning_active = False
+        self._diagnostic_counts: Counter[str] = Counter()
+        self._last_recovery_error: str | None = None
         self._capabilities = WifiCapabilities(
             ap_hosting=True,
             scan_while_hosting=False,
             temporary_profiles=True,
             associated_client_reporting=False,
-            backend_recovery=config.allow_network_stack_restart,
+            backend_recovery=True,
         )
 
     @property
@@ -58,387 +57,370 @@ class LinuxNetworkManagerBackend:
     async def initialize(self) -> None:
         if self._initialized:
             return
-        if self._uses_system_runner and shutil.which("nmcli") is None:
+        self._diagnostic_counts["initialize_attempts"] += 1
+        try:
+            await self._client.connect()
+            await self._resolve_paths()
+        except (NetworkManagerDBusError, TimeoutError) as exc:
             raise WifiBackendUnavailable(
-                "The linux-networkmanager Wi-Fi backend requires nmcli"
-            )
-
-        await self._nmcli(
-            "-g",
-            "GENERAL.STATE",
-            "device",
-            "show",
-            self._interface,
-        )
+                "Unable to initialize the NetworkManager Wi-Fi backend"
+            ) from exc
         self._initialized = True
-        self._closed = False
+        self._diagnostic_counts["initialize_successes"] += 1
+
+    async def _resolve_paths(self) -> None:
+        self._device_path = await self._client.get_device_path(self._interface)
+        self._ap_connection_path = await self._client.find_saved_connection(
+            self.config.ap_profile
+        )
+        if self._ap_connection_path is None:
+            raise WifiBackendUnavailable(
+                f"NetworkManager profile {self.config.ap_profile!r} was not found"
+            )
 
     async def ensure_ap_active(self) -> IPv4Configuration:
-        if not self._initialized:
-            raise WifiBackendUnavailable(
-                "The linux-networkmanager Wi-Fi backend is not initialized"
+        self._ensure_initialized()
+        self._diagnostic_counts["ensure_ap_attempts"] += 1
+        try:
+            await self._resolve_paths()
+            settings = await self._client.get_connection_settings(
+                self._ap_connection_path
             )
+            mode = str(
+                unwrap_setting(settings, "802-11-wireless", "mode") or ""
+            ).lower()
+            if mode != "ap":
+                raise WifiBackendUnavailable(
+                    f"NetworkManager connection {self.config.ap_profile!r} is not an AP"
+                )
 
-        mode = (
-            await self._nmcli(
-                "-g",
-                "802-11-wireless.mode",
-                "connection",
-                "show",
-                self.config.ap_profile,
-            )
-        ).strip().lower()
-        if mode != "ap":
-            raise WifiBackendUnavailable(
-                f"NetworkManager connection {self.config.ap_profile!r} is not an AP"
-            )
+            raw_ssid = unwrap_setting(settings, "802-11-wireless", "ssid")
+            if isinstance(raw_ssid, (bytes, bytearray)):
+                ssid = bytes(raw_ssid).decode(errors="replace")
+            elif isinstance(raw_ssid, list):
+                ssid = bytes(raw_ssid).decode(errors="replace")
+            else:
+                ssid = str(raw_ssid or "")
+            if ssid != self.config.ap_ssid:
+                raise WifiBackendUnavailable(
+                    f"Sensor AP SSID is {ssid!r}, expected {self.config.ap_ssid!r}"
+                )
 
-        ssid = (
-            await self._nmcli(
-                "-g",
-                "802-11-wireless.ssid",
-                "connection",
-                "show",
-                self.config.ap_profile,
+            ipv4_method = str(
+                unwrap_setting(settings, "ipv4", "method") or ""
+            ).lower()
+            expected_method = (
+                "shared"
+                if self.config.ap_address_mode
+                is ApAddressMode.NETWORKMANAGER_SHARED
+                else "manual"
             )
-        ).strip()
-        if ssid != self.config.ap_ssid:
-            raise WifiBackendUnavailable(
-                f"Sensor AP SSID is {ssid!r}, expected {self.config.ap_ssid!r}"
-            )
+            if ipv4_method != expected_method:
+                raise WifiBackendUnavailable(
+                    f"Sensor AP IPv4 method is {ipv4_method!r}, "
+                    f"expected {expected_method!r}"
+                )
 
-        active_profile = (
-            await self._nmcli(
-                "-g",
-                "GENERAL.CONNECTION",
-                "device",
-                "show",
-                self._interface,
+            active_path = await self._client.find_active_connection(
+                self.config.ap_profile
             )
-        ).strip()
-        if active_profile != self.config.ap_profile:
-            await self._nmcli(
-                "connection",
-                "up",
-                self.config.ap_profile,
-                "ifname",
-                self._interface,
-            )
-            self._activated_by_backend = True
+            if active_path is None:
+                await self._client.activate(
+                    self._ap_connection_path,
+                    self._device_path,
+                )
+                active_path = await self._client.wait_for_connection_id(
+                    self.config.ap_profile,
+                    self._device_path,
+                    self.config.connect_timeout_s,
+                )
 
-        state = (
-            await self._nmcli(
-                "-g",
-                "GENERAL.STATE",
-                "device",
-                "show",
-                self._interface,
-            )
-        ).strip()
-        if not state.startswith("100"):
+            network = await self._client.get_ipv4(active_path)
+            if network is None:
+                network = await self._client.wait_for_ipv4(
+                    active_path,
+                    self.config.connect_timeout_s,
+                )
+            self._validate_network(network)
+            self._diagnostic_counts["ensure_ap_successes"] += 1
+            return network
+        except WifiBackendUnavailable:
+            raise
+        except (NetworkManagerDBusError, TimeoutError) as exc:
             raise WifiBackendUnavailable(
-                f"Wi-Fi interface {self._interface!r} is not connected: {state!r}"
-            )
-
-        network = await self._read_ipv4_configuration()
-        expected = self.config.expected_ap_cidr
-        if expected is not None and ipaddress.ip_interface(network.cidr) != ipaddress.ip_interface(expected):
-            raise WifiBackendUnavailable(
-                f"Sensor AP address is {network.cidr}, expected {expected}"
-            )
-        return network
+                f"Failed to activate sensor AP {self.config.ap_profile!r}"
+            ) from exc
 
     async def begin_provisioning(self) -> list[WifiAccessPoint]:
-        """Release the AP radio and return visible access points."""
+        """Release the AP radio and perform a fresh NetworkManager scan."""
 
-        if not self._initialized:
+        self._ensure_initialized()
+        self._diagnostic_counts["scan_attempts"] += 1
+        try:
+            await self._resolve_paths()
+            await self._client.quiesce(
+                self._device_path,
+                self.config.connect_timeout_s,
+            )
+            self._provisioning_active = True
+            native_access_points = await self._client.scan(
+                self._device_path,
+                self.config.discovery_timeout_s,
+            )
+        except (NetworkManagerDBusError, TimeoutError) as exc:
             raise WifiBackendUnavailable(
-                "The linux-networkmanager Wi-Fi backend is not initialized"
-            )
-        await self._nmcli("connection", "down", self.config.ap_profile)
-        self._provisioning_active = True
-        deadline = asyncio.get_running_loop().time() + self.config.discovery_timeout_s
-        access_points: list[WifiAccessPoint] = []
-        while asyncio.get_running_loop().time() < deadline:
-            output = await self._nmcli(
-                "-t",
-                "-f",
-                "SSID,SIGNAL,FREQ,SECURITY",
-                "device",
-                "wifi",
-                "list",
-                "ifname",
-                self._interface,
-                "--rescan",
-                "yes",
-            )
-            access_points = self._parse_access_points(output)
-            if access_points:
-                break
-            await asyncio.sleep(1.0)
-        return access_points
+                "NetworkManager failed to complete a fresh Wi-Fi scan"
+            ) from exc
 
-    @staticmethod
-    def _parse_access_points(output: str) -> list[WifiAccessPoint]:
-        access_points = []
-        for index, line in enumerate(output.splitlines()):
-            fields = line.split(":", 3)
-            if len(fields) != 4 or not fields[0].strip():
-                continue
-            ssid, strength, frequency, security = fields
-            try:
-                strength_value = int(strength)
-                # Older nmcli versions include the unit even in terse output
-                # (for example, ``5180 MHz``).
-                frequency_value = int(frequency.split()[0])
-            except ValueError:
-                continue
-            access_points.append(
-                WifiAccessPoint(
-                    id=f"nmcli:{index}:{ssid}",
-                    ssid=ssid,
-                    bssid="",
-                    strength=strength_value,
-                    frequency_mhz=frequency_value,
-                    secured=bool(security.strip() and security.strip() != "--"),
-                )
+        self._access_points = {item.path: item for item in native_access_points}
+        self._diagnostic_counts["scan_successes"] += 1
+        self._diagnostic_counts["access_points_seen"] += len(native_access_points)
+        return [
+            WifiAccessPoint(
+                id=item.path,
+                ssid=item.ssid,
+                bssid=item.bssid,
+                strength=item.strength,
+                frequency_mhz=item.frequency_mhz,
+                secured=item.secured,
             )
-        return access_points
+            for item in native_access_points
+        ]
 
     async def connect_temporary(
         self,
         access_point: WifiAccessPoint,
     ) -> IPv4Configuration:
-        """Connect the sensor radio to one open provisioning AP."""
+        """Create a volatile client connection to an open sensor AP."""
+
+        self._diagnostic_counts["temporary_connect_attempts"] += 1
 
         if access_point.secured:
             raise WifiBackendUnavailable(
                 f"Provisioning AP {access_point.ssid!r} is unexpectedly secured"
             )
-        profile = self.config.provisioning_profile
-        await self._nmcli_allow_failure("connection", "delete", profile)
-        await self._nmcli(
-            "connection",
-            "add",
-            "type",
-            "wifi",
-            "ifname",
-            self._interface,
-            "con-name",
-            profile,
-            "ssid",
-            access_point.ssid,
-        )
-        await self._nmcli(
-            "connection",
-            "modify",
-            profile,
-            "connection.autoconnect",
-            "no",
-            "802-11-wireless.mode",
-            "infrastructure",
-            "ipv4.method",
-            "auto",
-            "ipv4.never-default",
-            "yes",
-            "ipv6.method",
-            "disabled",
-        )
-        await self._nmcli(
-            "connection",
-            "up",
-            profile,
-            "ifname",
-            self._interface,
-        )
-        return await self._read_ipv4_configuration()
-
-    async def restore_ap(self) -> IPv4Configuration:
-        """Remove the temporary client profile and restore the Nexus AP."""
-
-        profile = self.config.provisioning_profile
-        await self._nmcli_allow_failure("connection", "down", profile)
-        await self._nmcli_allow_failure("connection", "delete", profile)
+        native = self._access_points.get(access_point.id)
+        if native is None:
+            raise WifiBackendUnavailable(
+                "The selected provisioning AP is no longer in the fresh scan"
+            )
         try:
-            network = await self._activate_ap()
-        except WifiBackendUnavailable as normal_error:
+            (
+                self._temporary_connection_path,
+                self._temporary_active_path,
+            ) = await self._client.add_and_activate_open_wifi(
+                self._device_path,
+                native,
+                self._interface,
+                self.config.provisioning_profile,
+            )
+            await self._client.wait_for_active(
+                self._temporary_active_path,
+                self.config.connect_timeout_s,
+            )
+            network = await self._client.wait_for_ipv4(
+                self._temporary_active_path,
+                self.config.connect_timeout_s,
+            )
+            self._diagnostic_counts["temporary_connect_successes"] += 1
+            return network
+        except (NetworkManagerDBusError, TimeoutError) as exc:
+            raise WifiBackendUnavailable(
+                f"Failed to connect to provisioning AP {access_point.ssid!r}"
+            ) from exc
+
+    async def restore_ap(
+        self,
+        *,
+        remote_access_point_disappeared: bool = False,
+    ) -> IPv4Configuration:
+        """Remove volatile state and restore the saved Nexus AP."""
+
+        self._diagnostic_counts["restore_ap_attempts"] += 1
+        await self._cleanup_temporary_connection()
+        if remote_access_point_disappeared:
             if not self.config.allow_network_stack_restart:
                 raise WifiBackendUnavailable(
-                    "Normal sensor AP restoration failed after provisioning. "
-                    "This adapter may require the proven network-stack recovery. "
-                    "Run sudo -v and set "
-                    "NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1 before retrying."
-                ) from normal_error
+                    "Direct sensor AP recovery is required. Install the fixed "
+                    "Wi-Fi recovery service and set "
+                    "NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1."
+                )
             await self._restart_network_stack()
-            network = await self._activate_ap()
+            network = await self._activate_ap_after_cleanup()
+        else:
+            try:
+                network = await self._activate_ap_after_cleanup()
+            except WifiBackendUnavailable as normal_error:
+                if not self.config.allow_network_stack_restart:
+                    raise
+                await self._restart_network_stack()
+                try:
+                    network = await self._activate_ap_after_cleanup()
+                except WifiBackendUnavailable as recovery_error:
+                    raise recovery_error from normal_error
 
         self._provisioning_active = False
+        self._diagnostic_counts["restore_ap_successes"] += 1
         return network
 
-    async def _activate_ap(self) -> IPv4Configuration:
-        await self._nmcli(
-            "connection",
-            "up",
-            self.config.ap_profile,
-            "ifname",
-            self._interface,
-        )
-        return await self.ensure_ap_active()
+    async def _cleanup_temporary_connection(self) -> None:
+        if self._temporary_active_path is not None:
+            try:
+                await self._client.deactivate(self._temporary_active_path)
+            except NetworkManagerDBusError:
+                pass
+        if self._temporary_connection_path is not None:
+            try:
+                await self._client.delete_connection(
+                    self._temporary_connection_path
+                )
+            except NetworkManagerDBusError:
+                pass
+        self._temporary_active_path = None
+        self._temporary_connection_path = None
+        self._access_points.clear()
+
+    async def _activate_ap_after_cleanup(self) -> IPv4Configuration:
+        try:
+            await self._resolve_paths()
+            await self._client.quiesce(
+                self._device_path,
+                self.config.connect_timeout_s,
+            )
+            await asyncio.sleep(2.0)
+            await self._client.activate(
+                self._ap_connection_path,
+                self._device_path,
+            )
+            active_path = await self._client.wait_for_connection_id(
+                self.config.ap_profile,
+                self._device_path,
+                self.config.connect_timeout_s,
+            )
+            network = await self._client.wait_for_ipv4(
+                active_path,
+                self.config.connect_timeout_s,
+            )
+            self._validate_network(network)
+            return network
+        except (NetworkManagerDBusError, TimeoutError) as exc:
+            raise WifiBackendUnavailable(
+                f"Failed to restore sensor AP {self.config.ap_profile!r}"
+            ) from exc
 
     async def _restart_network_stack(self) -> None:
-        """Apply the opt-in mt76x2u station-to-AP recovery sequence."""
-
-        await self._run_recovery_command(
-            "sudo",
-            "-n",
-            "systemctl",
-            "restart",
-            "wpa_supplicant.service",
-        )
-        await asyncio.sleep(3.0)
-        await self._run_recovery_command(
-            "sudo",
-            "-n",
-            "systemctl",
-            "restart",
-            "NetworkManager.service",
-        )
-        await asyncio.sleep(5.0)
-        await self._run_recovery_command(
-            "sudo",
-            "-n",
-            "iw",
-            "reg",
-            "set",
-            self.config.regulatory_domain,
-        )
-        await self._wait_for_networkmanager()
-
-    async def _run_recovery_command(self, *command: str) -> None:
+        timeout = self.config.network_stack_restart_timeout_s
+        self._diagnostic_counts["network_stack_recovery_attempts"] += 1
         try:
-            result = await asyncio.wait_for(
-                self._run_command(command),
-                timeout=self.config.network_stack_restart_timeout_s,
-            )
-        except asyncio.TimeoutError as exc:
-            raise WifiBackendUnavailable(
-                f"Network recovery command timed out: {' '.join(command)}"
-            ) from exc
-        if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
-            raise WifiBackendUnavailable(
-                f"Network recovery command failed ({' '.join(command)}): {detail}"
-            )
-
-    async def _wait_for_networkmanager(self) -> None:
-        deadline = (
-            asyncio.get_running_loop().time()
-            + self.config.network_stack_restart_timeout_s
-        )
-        while asyncio.get_running_loop().time() < deadline:
-            result = await self._nmcli_allow_failure(
-                "-g",
-                "GENERAL.STATE",
-                "device",
-                "show",
-                self._interface,
-            )
-            if result.returncode == 0:
-                return
-            await asyncio.sleep(1.0)
-        raise WifiBackendUnavailable(
-            "NetworkManager did not return after network-stack recovery"
-        )
-
-    async def _read_ipv4_configuration(self) -> IPv4Configuration:
-        address_value = self._first_value(
-            await self._nmcli(
-                "-g",
-                "IP4.ADDRESS",
-                "device",
-                "show",
-                self._interface,
-            )
-        )
+            await self._run_recovery(WIFI_RECOVERY_UNIT, timeout)
+        except Exception as exc:
+            self._diagnostic_counts["network_stack_recovery_failures"] += 1
+            self._last_recovery_error = f"{type(exc).__name__}: {exc}"
+            raise
+        self._diagnostic_counts["network_stack_recovery_successes"] += 1
+        self._last_recovery_error = None
+        self._client.close()
+        await self._client.connect()
         try:
-            address = ipaddress.ip_interface(address_value)
-        except ValueError as exc:
+            self._device_path, self._ap_connection_path = (
+                await self._client.wait_until_available(
+                    self._interface,
+                    self.config.ap_profile,
+                    timeout,
+                )
+            )
+        except (NetworkManagerDBusError, TimeoutError) as exc:
             raise WifiBackendUnavailable(
-                f"NetworkManager returned an invalid IPv4 address: {address_value!r}"
+                "NetworkManager did not return after Wi-Fi recovery"
             ) from exc
-        if not isinstance(address, ipaddress.IPv4Interface):
-            raise WifiBackendUnavailable("The sensor AP requires an IPv4 address")
-
-        gateway = self._first_value(
-            await self._nmcli(
-                "-g",
-                "IP4.GATEWAY",
-                "device",
-                "show",
-                self._interface,
-            ),
-            required=False,
-        )
-        return IPv4Configuration(
-            address=str(address.ip),
-            prefix=address.network.prefixlen,
-            gateway=gateway,
-        )
-
-    async def shutdown(self) -> None:
-        # The saved sensor AP is host infrastructure.  Do not tear it down when
-        # core stops, even if this backend had to reactivate it.
-        self._initialized = False
-        self._closed = True
-        self._activated_by_backend = False
-        self._provisioning_active = False
-
-    @property
-    def _interface(self) -> str:
-        interface_name = (self.config.interface_name or "").strip()
-        if not interface_name:
-            raise WifiBackendUnavailable(
-                "The linux-networkmanager backend requires a Wi-Fi interface"
-            )
-        return interface_name
-
-    async def _nmcli(self, *arguments: str) -> str:
-        command = ("nmcli", *arguments)
-        result = await self._run_command(command)
-        if result.returncode != 0:
-            detail = result.stderr.strip() or result.stdout.strip() or "unknown error"
-            raise WifiBackendUnavailable(
-                f"NetworkManager command failed ({' '.join(command)}): {detail}"
-            )
-        return result.stdout
-
-    async def _nmcli_allow_failure(self, *arguments: str) -> _CommandResult:
-        return await self._run_command(("nmcli", *arguments))
 
     @staticmethod
-    async def _run_subprocess(command: Sequence[str]) -> _CommandResult:
+    async def _run_fixed_recovery_unit(unit_name: str, timeout: float) -> None:
+        if unit_name != WIFI_RECOVERY_UNIT:
+            raise WifiBackendUnavailable("Refusing to run an unknown recovery unit")
         process = await asyncio.create_subprocess_exec(
-            *command,
+            "sudo",
+            "-n",
+            "/usr/bin/systemctl",
+            "restart",
+            WIFI_RECOVERY_UNIT,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, stderr = await process.communicate()
-        return _CommandResult(
-            returncode=process.returncode,
-            stdout=stdout.decode(errors="replace"),
-            stderr=stderr.decode(errors="replace"),
-        )
-
-    @staticmethod
-    def _first_value(output: str, *, required: bool = True) -> str:
-        values = [line.strip() for line in output.splitlines() if line.strip()]
-        if values:
-            return values[0]
-        if required:
-            raise WifiBackendUnavailable(
-                "NetworkManager did not report an IPv4 address for the sensor AP"
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout,
             )
-        return ""
+        except asyncio.TimeoutError as exc:
+            process.kill()
+            await process.wait()
+            raise WifiBackendUnavailable(
+                f"Fixed Wi-Fi recovery unit {unit_name!r} timed out"
+            ) from exc
+        if process.returncode != 0:
+            detail = stderr.decode(errors="replace").strip()
+            if not detail:
+                detail = stdout.decode(errors="replace").strip()
+            raise WifiBackendUnavailable(
+                f"Unable to run fixed Wi-Fi recovery unit {unit_name!r}: "
+                f"{detail or 'permission or service failure'}"
+            )
+
+    def _validate_network(self, network: IPv4Configuration) -> None:
+        expected = self.config.expected_ap_cidr
+        if expected is not None and (
+            ipaddress.ip_interface(network.cidr)
+            != ipaddress.ip_interface(expected)
+        ):
+            raise WifiBackendUnavailable(
+                f"Sensor AP address is {network.cidr}, expected {expected}"
+            )
+
+    async def shutdown(self) -> None:
+        self._client.close()
+        self._initialized = False
+        self._device_path = None
+        self._ap_connection_path = None
+        self._provisioning_active = False
+
+    def reset_session_diagnostics(self) -> None:
+        self._diagnostic_counts.clear()
+        self._last_recovery_error = None
+
+    def get_diagnostics_snapshot(self) -> dict:
+        return {
+            "implementation": "linux-networkmanager-dbus",
+            "initialized": self._initialized,
+            "interface": self.config.interface_name,
+            "device_path": self._device_path,
+            "ap_profile": self.config.ap_profile,
+            "ap_ssid": self.config.ap_ssid,
+            "ap_address_mode": self.config.ap_address_mode.value,
+            "provisioning_active": self._provisioning_active,
+            "temporary_profile_active": self._temporary_active_path is not None,
+            "visible_access_points": len(self._access_points),
+            "network_stack_recovery_enabled": (
+                self.config.allow_network_stack_restart
+            ),
+            "last_recovery_error": self._last_recovery_error,
+            "counters": dict(self._diagnostic_counts),
+        }
+
+    def _ensure_initialized(self) -> None:
+        if not self._initialized:
+            raise WifiBackendUnavailable(
+                "The linux-networkmanager Wi-Fi backend is not initialized"
+            )
+
+    @property
+    def _interface(self) -> str:
+        interface = (self.config.interface_name or "").strip()
+        if not interface:
+            raise WifiBackendUnavailable(
+                "The linux-networkmanager backend requires a Wi-Fi interface"
+            )
+        return interface
 
 
 __all__ = ["LinuxNetworkManagerBackend"]

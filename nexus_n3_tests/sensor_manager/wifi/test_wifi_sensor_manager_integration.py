@@ -22,7 +22,10 @@ from nexus_n3.sensor_manager.adapters.wifi.config import (
 from nexus_n3.sensor_manager.adapters.wifi.models import WifiDevice
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 from nexus_n3.sensor_manager.connection_service import ConnectionService
-from nexus_n3.sensor_manager.discovery_service import DiscoveryService
+from nexus_n3.sensor_manager.discovery_service import (
+    DiscoveryService,
+    _build_disconnect_callback,
+)
 from nexus_n3.sensor_manager.sensor_controller import SensorController
 from nexus_n3.sensor_manager.types.connections import ConnectionStatus
 
@@ -73,6 +76,16 @@ class FakeSensor:
 
     def _emit(self, event_name, payload):
         return None
+
+
+def test_unexpected_disconnect_callback_emits_an_address_list():
+    sensor = FakeSensor("Test WiFi Sensor", "WIFI", address="sensor-001")
+    sensor._emit = Mock()
+
+    _build_disconnect_callback(sensor)(None)
+
+    assert sensor.connection_status is ConnectionStatus.DISCONNECTED
+    sensor._emit.assert_called_once_with("on_disconnected", ["sensor-001"])
 
 
 def test_wifi_uses_normal_discover_connect_setup_and_disconnect_services(monkeypatch):

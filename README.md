@@ -308,7 +308,14 @@ Supported BLE backends:
 Select the backend with `BLE_BACKEND` in `runtime.env` or `--ble-backend` at
 startup.
 
-When using `nexus_ble_gateway`, set `GATEWAY_SERIAL_PORT` for the host OS:
+When using `nexus_ble_gateway`, automatic discovery is recommended:
+
+```text
+GATEWAY_SERIAL_PORT=auto
+```
+
+Core selects the sole attached Zephyr IFMCU CMSIS-DAP gateway data interface.
+If multiple gateways are attached, set an explicit port for the host OS:
 
 - Linux example: `/dev/serial/by-id/...`
 - Windows example: `COM3`

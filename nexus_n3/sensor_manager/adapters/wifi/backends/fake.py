@@ -71,6 +71,23 @@ class FakeWifiBackend:
         self._record(f"connect_temporary:{access_point.ssid}")
         return IPv4Configuration(address="192.168.1.2", prefix=24)
 
-    async def restore_ap(self) -> IPv4Configuration:
+    async def restore_ap(
+        self,
+        *,
+        remote_access_point_disappeared: bool = False,
+    ) -> IPv4Configuration:
         self._record("restore_ap")
+        if remote_access_point_disappeared:
+            self.operations.append("restore_ap:remote_disappeared")
         return self.ipv4
+
+    def reset_session_diagnostics(self) -> None:
+        self.operations.clear()
+
+    def get_diagnostics_snapshot(self) -> dict:
+        return {
+            "implementation": "fake",
+            "initialized": self.initialized,
+            "closed": self.closed,
+            "operations": list(self.operations),
+        }

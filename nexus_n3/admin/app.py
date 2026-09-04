@@ -7,7 +7,6 @@ import asyncio
 import shutil
 import time
 import zipfile
-from importlib import metadata
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 from typing import Callable
@@ -19,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from nexus_n3.bridge.bridge_registry import discover_bridges
 from nexus_n3.core.runtime_env import load_runtime_env
+from nexus_n3.core.version import get_core_version
 from nexus_n3.gateway.gateways.gateway_registry import discover_gateways
 from nexus_n3.plugins.install.installer import PluginInstallError, PluginInstaller
 from nexus_n3.plugins.runtime.discovery import (
@@ -37,13 +37,8 @@ from nexus_n3.admin.archive_service import (
 
 
 def _get_release_version() -> str:
-    """Return the installed nexus-n3-core version or 'unknown'."""
-    for name in ("nexus-n3-core", "nexus_n3_core"):
-        try:
-            return metadata.version(name)
-        except metadata.PackageNotFoundError:
-            continue
-    return "unknown"
+    """Return the authoritative source or installed Core version."""
+    return get_core_version()
 
 
 def _profile_to_css_class(profile: str | None) -> str:

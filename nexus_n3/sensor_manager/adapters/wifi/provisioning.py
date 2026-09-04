@@ -34,6 +34,11 @@ class WifiSensorDriver(Protocol):
         access_points: list[WifiAccessPoint],
     ) -> list[WifiProvisioningCandidate]: ...
 
+    async def identify_candidate(
+        self,
+        connection: IPv4Configuration,
+    ) -> WifiDevice: ...
+
     async def provision(
         self,
         connection: Any,

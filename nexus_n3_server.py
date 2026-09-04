@@ -17,7 +17,6 @@ from pathlib import Path
 import os
 import sys
 import json
-from importlib import metadata
 from threading import Thread
 from threading import Event
 from urllib.request import urlopen
@@ -26,6 +25,7 @@ from urllib.error import URLError, HTTPError
 from nexus_n3.bridge.bridge_registry import create_bridge, discover_bridges
 from nexus_n3.core.pipeline_diagnostics import pipeline_diagnostics
 from nexus_n3.core.runtime_env import load_runtime_env
+from nexus_n3.core.version import get_core_version
 from nexus_n3.gateway.server import Server
 from nexus_n3.gateway.gateways.gateway_registry import discover_gateways
 from nexus_n3.data_file_offload.sinks.usb import USBDiskManager
@@ -34,6 +34,10 @@ from nexus_n3.robots.runtime.factory import build_robot
 from nexus_n3.robots.runtime.service import RobotService
 from nexus_n3.plugins.dev.bootstrap import prepare_dev_plugins
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
+from nexus_n3.sensor_manager.gateway_serial import (
+    GatewaySerialPortError,
+    resolve_gateway_serial_port,
+)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -177,15 +181,9 @@ BRIDGE_SCOPES = {
     name: meta.get("scope", "unknown") for name, meta in BRIDGES.items()
 }
 
-# read the release version from the package
 def _release_version() -> str:
-    """Return the installed nexus-n3-core version or 'unknown'."""
-    for name in ("nexus-n3-core", "nexus_n3_core"):
-        try:
-            return metadata.version(name)
-        except metadata.PackageNotFoundError:
-            continue
-    return "unknown"
+    """Return the authoritative source or installed Core version."""
+    return get_core_version()
 
 
 def _format_uptime(seconds: int) -> str:
@@ -214,22 +212,24 @@ def _server_status_snapshot(server_start_time, usb_disk_manager, bridge_name, re
     ble_backend_status = {"status": "ready", "detail": "Internal Bleak backend ready"}
     if ble_runtime_config.backend == "gateway":
         port = ble_runtime_config.gateway_serial_port
-        if not port:
+        try:
+            resolved_port = resolve_gateway_serial_port(port)
+        except GatewaySerialPortError as exc:
             ble_backend_status = {
                 "status": "unavailable",
-                "detail": "Gateway serial port is not configured",
+                "detail": str(exc),
             }
         else:
-            port_path = Path(port).expanduser()
+            port_path = Path(resolved_port).expanduser()
             if port_path.exists():
                 ble_backend_status = {
                     "status": "ready",
-                    "detail": f"Gateway detected on {port}",
+                    "detail": f"Gateway detected on {resolved_port}",
                 }
             else:
                 ble_backend_status = {
                     "status": "unavailable",
-                    "detail": f"Gateway not detected on {port}",
+                    "detail": f"Gateway not detected on {resolved_port}",
                 }
     return {
         "status": "running",

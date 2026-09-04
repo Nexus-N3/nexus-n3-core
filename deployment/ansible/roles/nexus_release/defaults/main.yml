@@ -14,7 +14,7 @@ nexus_site_name: "{{ nexus_site }}"
 nexus_neia_apps_catalog_url: "http://127.0.0.1:8050/api/v1/apps/catalog"
 nexus_gateway: zeromq_gateway
 nexus_ble_backend: bleak
-nexus_ble_gateway_serial_port: ""
+nexus_ble_gateway_serial_port: auto
 nexus_ble_gateway_baudrate: 1000000
 nexus_ble_gateway_protocol_version: 1
 nexus_ble_gateway_connect_timeout_s: 15.0

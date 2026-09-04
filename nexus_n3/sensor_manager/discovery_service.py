@@ -9,7 +9,9 @@ from nexus_n3.sensor_manager.utils import utils as utils
 def _build_disconnect_callback(sensor):
     def handle_disconnect(_client):
         sensor.set_connection_status(ConnectionStatus.DISCONNECTED)
-        sensor._emit("on_disconnected", {"address": sensor.address})
+        # Keep the callback payload consistent with ConnectionService, which
+        # reports disconnected sensor addresses as a list.
+        sensor._emit("on_disconnected", [sensor.address])
 
     return handle_disconnect
 

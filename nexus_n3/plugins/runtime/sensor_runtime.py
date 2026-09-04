@@ -1,4 +1,8 @@
-"""Runtime support for host-backed sensor plugins."""
+""" Runtime support for host-backed sensor plugins.
+
+    The sensor runtime is the plugin support on the core side.
+
+"""
 
 from __future__ import annotations
 
@@ -28,6 +32,11 @@ from .serde import deep_namespace, to_jsonable
 from .transport import StdioJsonRpcTransport, PluginTransportError
 from .environment import prepend_pythonpath, resolve_runtime_python
 
+
+# the InstalledSensorPlugin is a descriptor for an installed plugin
+# it identifies the plugin package. not to be confused with a sensor instance
+# it is frozen because it is a descriptor and not a modifiable object.
+# it is the result of resolving a plugin from the installed catalog, and is used to create a proxy for the sensor instance.
 @dataclass(frozen=True)
 class InstalledSensorPlugin:
     plugin_id: str
@@ -38,6 +47,7 @@ class InstalledSensorPlugin:
     metadata: dict[str, Any]
 
 
+# SensorHostClient is the live communication link from Core to a running Sensor Host process
 class SensorHostClient:
     """Client wrapper for one sensor plugin host process."""
 
@@ -83,6 +93,8 @@ class SensorHostClient:
     def close(self) -> None:
         self.transport.close()
 
+    #bind sensor is the step that copies the current Core-side sensor
+    # state into the real sensor object running inside
     def bind_sensor(self) -> None:
         self.transport.request(
             "bind_sensor",
@@ -172,15 +184,28 @@ class SensorHostClient:
         )
         return list((result or {}).get("candidates") or [])
 
-    def wifi_provision(self, network, target) -> dict[str, Any] | None:
+    def wifi_identify_candidate(self, network) -> dict[str, Any] | None:
         result = self.transport.request(
+            "wifi.identify_candidate",
+            {"network": to_jsonable(network)},
+        )
+        return (result or {}).get("device")
+
+    def wifi_provision(self, network, target) -> dict[str, Any]:
+        return self.transport.request(
             "wifi.provision",
             {
                 "network": to_jsonable(network),
                 "target": to_jsonable(target),
             },
-        )
-        return (result or {}).get("device")
+        ) or {}
+
+    def get_diagnostics_snapshot(self) -> dict[str, Any]:
+        result = self.transport.request("get_diagnostics_snapshot", {}) or {}
+        return dict(result.get("snapshot") or {})
+
+    def reset_session_diagnostics(self) -> None:
+        self.transport.request("reset_session_diagnostics", {})
 
     def _handle_adapter_read(self, params: dict[str, Any]) -> dict[str, Any]:
         data = self.proxy._adapter_request("read", str(params["uuid"]))
@@ -208,9 +233,16 @@ class SensorHostClient:
         return {"ok": True}
 
 
+# InstalledSensorProxy is the object that represents an installed plugin sensor inside Nexus N3 Core.
+# inheriting from SensorBase makes it look like a Sensor to the sensor manager.
+# it therefore represents a live sensor instance
+# there will be one InstalledSensorProxy per sensor instance.
+# it is a dynamic class that is created by resolve_installed_sensor_class() and has the plugin descriptor baked in.
+# e.g Core2Proxy would be a subclass of InstalledSensorProxy with the plugin descriptor for Core2 baked in.
 class InstalledSensorProxy(SensorBase):
     """SensorBase-compatible proxy that forwards lifecycle to a sensor host."""
 
+    # this should have been already populated by the resolve_installed_sensor_class() function
     _plugin: InstalledSensorPlugin | None = None
     sensor_type = SimpleNamespace(local_name="unknown")
 
@@ -223,11 +255,21 @@ class InstalledSensorProxy(SensorBase):
         super().__init__(self.sensor_type, copy.deepcopy(self._plugin.metadata))
 
         self.plugin_id = self._plugin.plugin_id
+        # this gets the inputs / outputs list from the plugin manifest.
+        # these are used by the sensor manager to route events between sensors and plugins.
+        # most sensors will not have any inputs or outputs.
         self.routing_inputs = list(_routing_entries(self._plugin.manifest.get("inputs")))
         self.routing_outputs = list(_routing_entries(self._plugin.manifest.get("outputs")))
+        # this is the live client that talks to the sensor host process.
+        # it is created lazily when needed, and closed when the sensor is removed.
         self._plugin_client: SensorHostClient | None = None
+        # the sensor manager loop is the event loop that the sensor manager runs on.
+        # The sensor host runs on its own event loop, and the proxy needs to be able to send requests to the sensor host from the sensor manager loop.
         self._manager_loop = None
+        # this is used to register notify callbacks specifically
+        # it is because notifications are long lived.
         self._adapter_callbacks: dict[str, str] = {}
+        # this is new for Wifi Adapter support. it is the bridge that allows the sensor host to call back into the core for wifi operations.
         self._wifi_driver = _InstalledPluginWifiDriver(self)
 
     @classmethod
@@ -236,6 +278,8 @@ class InstalledSensorProxy(SensorBase):
             return {}           
         return copy.deepcopy(cls._plugin.metadata)
 
+    # this is the sensor manager loop. The sensor manager loop is its own event loop
+    # so the runtime needs to be able to place adapter requests onto that loop.
     def bind_manager_runtime(self, *, loop) -> None:
         self._manager_loop = loop
 
@@ -314,6 +358,8 @@ class InstalledSensorProxy(SensorBase):
             raise RuntimeError("sensor proxy transport client not bound")
         if self._manager_loop is None:
             raise RuntimeError("sensor proxy manager loop not bound")
+        # gaurd against duplicate callback registrations.
+        # this should not happen, but if it does, we don't want to register the same callback twice.
         if callback_id in self._adapter_callbacks:
             return
 
@@ -381,10 +427,24 @@ class _InstalledPluginWifiDriver:
             access_points,
         )
 
-    async def provision(self, network, target, controls):
-        _ = controls
+    async def identify_candidate(self, network):
         client = self.proxy._ensure_client()
-        return await asyncio.to_thread(client.wifi_provision, network, target)
+        return await asyncio.to_thread(client.wifi_identify_candidate, network)
+
+    async def provision(self, network, target, controls):
+        client = self.proxy._ensure_client()
+        result = await asyncio.to_thread(client.wifi_provision, network, target)
+        if result.get("remote_access_point_disappeared"):
+            controls.remote_access_point_disappeared()
+        return result.get("device")
+
+    async def get_diagnostics_snapshot(self) -> dict[str, Any]:
+        client = self.proxy._ensure_client()
+        return await asyncio.to_thread(client.get_diagnostics_snapshot)
+
+    async def reset_session_diagnostics(self) -> None:
+        client = self.proxy._ensure_client()
+        await asyncio.to_thread(client.reset_session_diagnostics)
 
 
 def resolve_installed_sensor_class(

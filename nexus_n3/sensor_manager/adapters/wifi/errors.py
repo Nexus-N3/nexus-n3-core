@@ -31,3 +31,19 @@ class WifiDiscoveryResultInvalid(WifiError):
 
 class WifiConnectionFailed(WifiError):
     """Raised when a sensor-specific connection operation fails."""
+
+
+class WifiCandidateNotFound(WifiError):
+    """Raised when no provisioning candidate satisfies a sensor deficit."""
+
+
+class WifiCandidateAmbiguous(WifiError):
+    """Raised when more than one sensor driver claims the same access point."""
+
+
+class WifiRequestedCountNotMet(WifiError):
+    """Raised when discovery cannot satisfy all requested sensor instances."""
+
+
+class WifiProvisioningCleanupError(WifiError):
+    """Raised when an exclusive session cannot restore the shared sensor AP."""

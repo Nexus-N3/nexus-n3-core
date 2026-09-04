@@ -556,6 +556,14 @@ The `ExecStart=` line must remain separate from `Restart=on-failure`.
 
 ## Troubleshooting
 
+When the `nexus_sensor_access_point` role is enabled, it installs the
+root-owned `nexus-n3-wifi-recovery.service` and an exact sudoers rule scoped to
+`nexus_sensor_ap_service_user` (the Ansible connection user by default). The
+rule authorizes only a non-interactive restart of that exact unit. Set the
+runtime opt-in
+`NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1` only where restarting the sensor
+Wi-Fi stack is operationally acceptable.
+
 Common failure signatures seen during Raspberry Pi rollout on July 21, 2026:
 
 - `unrecognized arguments: --azure-bridge-remote-controlRestart=on-failure`

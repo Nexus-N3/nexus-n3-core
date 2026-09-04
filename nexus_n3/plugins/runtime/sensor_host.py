@@ -206,6 +206,33 @@ class SensorHost:
             "remote_access_point_disappeared": controls.disappeared,
         }
 
+    def wifi_identify_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        identify = getattr(self._sensor, "identify_candidate", None)
+        if not callable(identify):
+            raise RuntimeError(
+                "sensor plugin does not implement Wi-Fi candidate identification"
+            )
+        result = _run_maybe_async(
+            identify(deep_namespace(params["network"]))
+        )
+        return {"device": to_jsonable(result)}
+
+    def get_diagnostics_snapshot(self, params: dict[str, Any]) -> dict[str, Any]:
+        _ = params
+        getter = getattr(self._sensor, "get_diagnostics_snapshot", None)
+        if not callable(getter):
+            return {"supported": False, "snapshot": {}}
+        result = _run_maybe_async(getter())
+        return {"supported": True, "snapshot": to_jsonable(result or {})}
+
+    def reset_session_diagnostics(self, params: dict[str, Any]) -> dict[str, Any]:
+        _ = params
+        reset = getattr(self._sensor, "reset_session_diagnostics", None)
+        if not callable(reset):
+            return {"supported": False}
+        _run_maybe_async(reset())
+        return {"supported": True}
+
     def shutdown(self) -> dict[str, Any]:
         return {"ok": True}
 
@@ -258,7 +285,10 @@ def main(argv: list[str] | None = None) -> int:
         "wifi.connect_sensor": host.wifi_connect_sensor,
         "wifi.disconnect_sensor": host.wifi_disconnect_sensor,
         "wifi.classify_access_points": host.wifi_classify_access_points,
+        "wifi.identify_candidate": host.wifi_identify_candidate,
         "wifi.provision": host.wifi_provision,
+        "get_diagnostics_snapshot": host.get_diagnostics_snapshot,
+        "reset_session_diagnostics": host.reset_session_diagnostics,
         "shutdown": lambda _params: host.shutdown(),
     }
     for method_name, handler in methods.items():

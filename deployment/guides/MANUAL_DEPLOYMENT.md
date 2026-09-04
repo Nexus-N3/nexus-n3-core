@@ -228,7 +228,7 @@ At minimum, set:
 NEXUS_N3_PLUGIN_ROOT=/opt/nexus-n3-plugins
 NEXUS_N3_PLUGIN_USE_SYSTEM_SITE_PACKAGES=0
 BLE_BACKEND=nexus_ble_gateway
-GATEWAY_SERIAL_PORT=/dev/serial/by-id/...
+GATEWAY_SERIAL_PORT=auto
 ZEROMQ_CMD_BIND=tcp://*:5555
 ZEROMQ_EVENT_BIND=tcp://*:5556
 ```

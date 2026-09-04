@@ -27,6 +27,7 @@ import serial
 
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
+from nexus_n3.sensor_manager.gateway_serial import resolve_gateway_serial_port
 
 logger = get_module_logger("Gateway BLE Client")
 
@@ -120,14 +121,15 @@ class GatewaySerialClient:
         self._partial_block_len: int = -1
         self.phase = "idle"
         self._transport_reset_lock = threading.Lock()
+        self.active_serial_port: str | None = None
 
     def start(self) -> None:
         """Open the serial port, start the reader, and complete the gateway handshake."""
         if self.started:
             return
-        port = self.config.gateway_serial_port
-        if not port:
-            raise ValueError("GATEWAY_SERIAL_PORT is required for BLE gateway backend")
+        port = resolve_gateway_serial_port(self.config.gateway_serial_port)
+        self.active_serial_port = port
+        logger.info("Using Nexus BLE gateway serial interface %s", port)
 
         try:
             self.ser = serial.Serial(
@@ -166,6 +168,7 @@ class GatewaySerialClient:
         self.disconnected_addresses.clear()
         self.started = False
         self.phase = "idle"
+        self.active_serial_port = None
 
     def _close_transport(self) -> None:
         """Close serial transport resources without clearing all cached state."""
@@ -178,9 +181,10 @@ class GatewaySerialClient:
                 self.ser.close()
             except Exception:
                 pass
-            self.ser = None
+        self.ser = None
         self.started = False
         self.phase = "idle"
+        self.active_serial_port = None
 
     def request_id(self, prefix: str) -> str:
         return f"{prefix}_{int(time.time() * 1000)}"

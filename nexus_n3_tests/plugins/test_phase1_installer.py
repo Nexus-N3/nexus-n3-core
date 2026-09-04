@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# ruff: noqa: E402 -- direct execution adds the core checkout before imports.
+
 import hashlib
 import json
 import os
@@ -23,6 +25,36 @@ from nexus_n3.plugins.install.config import (
 from nexus_n3.plugins.install.installer import PluginInstallError, PluginInstaller
 from nexus_n3.plugins.install import installer as installer_module
 from nexus_n3.plugins.install import bundle as bundle_module
+from nexus_n3.core import version as core_version_module
+
+
+def test_core_version_comes_from_source_project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    project_file = tmp_path / "pyproject.toml"
+    project_file.write_text(
+        '[build-system]\nrequires = []\n\n[project]\nname = "nexus-n3-core"\nversion = "9.8.7"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(core_version_module, "CORE_PROJECT_FILE", project_file)
+    monkeypatch.setattr(
+        core_version_module,
+        "distribution_version",
+        lambda _name: pytest.fail("installed metadata must not override a source checkout"),
+    )
+
+    assert core_version_module.get_core_version() == "9.8.7"
+
+
+def test_core_version_falls_back_to_installed_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr(
+        core_version_module, "CORE_PROJECT_FILE", tmp_path / "missing-pyproject.toml"
+    )
+    monkeypatch.setattr(
+        core_version_module, "distribution_version", lambda name: f"installed:{name}"
+    )
+
+    assert core_version_module.get_core_version() == "installed:nexus-n3-core"
 
 
 def test_resolve_plugin_root_precedence(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

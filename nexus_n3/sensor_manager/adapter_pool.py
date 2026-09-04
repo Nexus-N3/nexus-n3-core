@@ -154,11 +154,13 @@ class AdapterPool:
                     self._initialized_adapter_ids.discard(adapter_id)
                     self._shutdown_adapter_ids.add(adapter_id)
 
-    def reset_session_diagnostics(self):
+    async def reset_session_diagnostics(self):
         """Reset adapter-owned counters at the boundary of a recording session."""
         for adapter in self.adapters.values():
             if self.has_method(adapter, "reset_session_diagnostics"):
-                adapter.reset_session_diagnostics()
+                result = adapter.reset_session_diagnostics()
+                if inspect.isawaitable(result):
+                    await result
 
     async def collect_diagnostics(self):
         snapshots = {}

@@ -453,6 +453,10 @@ class GatewayBLEAdapter:
             )
         payload = {
             "backend": self.ble_runtime_config.backend_label,
+            "gateway_serial_port": (
+                self.gateway_client.active_serial_port
+                or self.ble_runtime_config.gateway_serial_port
+            ),
             "event": event,
             "notification_drop_count": self.gateway_client.notification_drop_count,
             "parser": {

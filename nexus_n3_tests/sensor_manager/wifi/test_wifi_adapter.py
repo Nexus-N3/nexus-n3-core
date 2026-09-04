@@ -12,14 +12,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from nexus_n3.sensor_manager.adapters.wifi.backends.fake import FakeWifiBackend
-from nexus_n3.sensor_manager.adapters.wifi.backends.linux_networkmanager import (
-    LinuxNetworkManagerBackend,
-)
 from nexus_n3.sensor_manager.adapters.wifi.config import (
     ApAddressMode,
     WifiRuntimeConfig,
 )
 from nexus_n3.sensor_manager.adapters.wifi.errors import (
+    WifiCandidateAmbiguous,
     WifiDeviceNotDiscovered,
     WifiDiscoveryResultInvalid,
     WifiNotInitialized,
@@ -29,6 +27,7 @@ from nexus_n3.sensor_manager.adapters.wifi.errors import (
 from nexus_n3.sensor_manager.adapters.wifi.models import (
     IPv4Configuration,
     WifiAdvertisement,
+    WifiAccessPoint,
     WifiCredentials,
     WifiDevice,
     WifiTransportHandle,
@@ -61,6 +60,15 @@ class FakeWifiSensorDriver:
     async def disconnect_sensor(self, sensor):
         self.operations.append(("disconnect_sensor", sensor.address))
 
+    def reset_session_diagnostics(self):
+        self.operations.clear()
+
+    def get_diagnostics_snapshot(self):
+        return {
+            "transport": "fake_wifi_sensor",
+            "operation_count": len(self.operations),
+        }
+
 
 class InvalidWifiSensorDriver(FakeWifiSensorDriver):
     async def discover_connected(self, network):
@@ -76,6 +84,38 @@ class MappingWifiSensorDriver(FakeWifiSensorDriver):
                 "metadata": {"udp_send_port": 8048},
             }
         ]
+
+
+class ProvisioningWifiSensorDriver(FakeWifiSensorDriver):
+    def __init__(self, sensor_name, devices, candidate_identities):
+        super().__init__(sensor_name, devices)
+        self.candidate_identities = list(candidate_identities)
+        self.pending_identity = None
+        self.provision_count = 0
+
+    async def classify_access_points(self, access_points):
+        return [
+            {
+                "access_point": access_point,
+                "confidence": 100,
+            }
+            for access_point in access_points
+        ]
+
+    async def identify_candidate(self, network):
+        self.pending_identity = self.candidate_identities[self.provision_count]
+        return WifiDevice(
+            address=self.pending_identity,
+            endpoint=network.address,
+        )
+
+    async def provision(self, network, target, controls):
+        device = WifiDevice(address=self.pending_identity, endpoint=network.address)
+        self.devices.append(device)
+        self.provision_count += 1
+        self.operations.append(("provision", device.address, target.ssid))
+        controls.remote_access_point_disappeared()
+        return device
 
 
 @dataclass
@@ -112,6 +152,11 @@ def test_compatibility_alias_uses_preferred_adapter_class():
 
 
 def test_linux_backend_is_selected_from_runtime_config():
+    pytest.importorskip("dbus_fast")
+    from nexus_n3.sensor_manager.adapters.wifi.backends.linux_networkmanager import (
+        LinuxNetworkManagerBackend,
+    )
+
     adapter = WifiAdapter(
         config=_config(
             backend="linux-networkmanager",
@@ -153,6 +198,36 @@ def test_initialize_and_shutdown_order():
 
         with pytest.raises(WifiShuttingDown):
             await adapter.discover_devices([])
+
+    asyncio.run(scenario())
+
+
+def test_wifi_diagnostics_include_backend_adapter_and_sensor_driver():
+    async def scenario():
+        backend = FakeWifiBackend()
+        driver = FakeWifiSensorDriver(
+            "Test WiFi Sensor",
+            [WifiDevice(address="sensor-001", endpoint="10.42.0.48")],
+        )
+        adapter = WifiAdapter(config=_config(), backend=backend)
+        await adapter.initialize()
+        await adapter.discover_devices([FakeSensor("Test WiFi Sensor", driver)])
+
+        snapshot = await adapter.get_diagnostics_snapshot()
+
+        assert snapshot["event"] == "wifi_status_snapshot"
+        assert snapshot["adapter"]["network"]["cidr"] == "10.42.0.1/24"
+        assert snapshot["adapter"]["discovered_addresses"] == ["sensor-001"]
+        assert snapshot["backend"]["implementation"] == "fake"
+        assert snapshot["sensors"]["sensor-001"]["transport"] == (
+            "fake_wifi_sensor"
+        )
+
+        await adapter.reset_session_diagnostics()
+        reset_snapshot = await adapter.get_diagnostics_snapshot()
+        assert reset_snapshot["adapter"]["counters"] == {}
+        assert reset_snapshot["backend"]["operations"] == []
+        assert reset_snapshot["sensors"]["sensor-001"]["operation_count"] == 0
 
     asyncio.run(scenario())
 
@@ -263,6 +338,119 @@ def test_json_safe_plugin_device_mapping_is_normalized():
     asyncio.run(scenario())
 
 
+def test_two_requested_with_one_connected_provisions_exactly_one():
+    async def scenario():
+        driver = ProvisioningWifiSensorDriver(
+            "Test WiFi Sensor",
+            [WifiDevice(address="sensor-001", endpoint="10.42.0.10")],
+            ["sensor-002"],
+        )
+        sensors = [
+            FakeSensor("Test WiFi Sensor", driver),
+            FakeSensor("Test WiFi Sensor", driver),
+        ]
+        backend = FakeWifiBackend(
+            access_points=[
+                WifiAccessPoint(
+                    id="candidate-2",
+                    ssid="Test-Sensor-2",
+                    bssid="00:00:00:00:00:02",
+                    strength=80,
+                    frequency_mhz=5180,
+                )
+            ]
+        )
+        adapter = WifiAdapter(
+            config=_config(ap_password="secret"),
+            backend=backend,
+        )
+        await adapter.initialize()
+
+        devices = await adapter.discover_devices(sensors)
+
+        assert set(devices) == {"sensor-001", "sensor-002"}
+        assert driver.provision_count == 1
+        assert backend.operations.count("begin_provisioning") == 1
+        assert "restore_ap:remote_disappeared" in backend.operations
+
+    asyncio.run(scenario())
+
+
+def test_two_requested_with_none_connected_provisions_sequentially():
+    async def scenario():
+        driver = ProvisioningWifiSensorDriver(
+            "Test WiFi Sensor",
+            [],
+            ["sensor-001", "sensor-002"],
+        )
+        sensors = [
+            FakeSensor("Test WiFi Sensor", driver),
+            FakeSensor("Test WiFi Sensor", driver),
+        ]
+        backend = FakeWifiBackend(
+            access_points=[
+                WifiAccessPoint(
+                    id="candidate-1",
+                    ssid="Test-Sensor-1",
+                    bssid="00:00:00:00:00:01",
+                    strength=90,
+                    frequency_mhz=5180,
+                ),
+                WifiAccessPoint(
+                    id="candidate-2",
+                    ssid="Test-Sensor-2",
+                    bssid="00:00:00:00:00:02",
+                    strength=80,
+                    frequency_mhz=5180,
+                ),
+            ]
+        )
+        adapter = WifiAdapter(
+            config=_config(ap_password="secret"),
+            backend=backend,
+        )
+        await adapter.initialize()
+
+        devices = await adapter.discover_devices(sensors)
+
+        assert set(devices) == {"sensor-001", "sensor-002"}
+        assert driver.provision_count == 2
+        assert backend.operations.count("begin_provisioning") == 2
+        assert backend.operations.count("restore_ap") == 2
+
+    asyncio.run(scenario())
+
+
+def test_candidate_claimed_by_multiple_sensor_groups_is_rejected():
+    async def scenario():
+        access_point = WifiAccessPoint(
+            id="shared-candidate",
+            ssid="Shared-Sensor",
+            bssid="00:00:00:00:00:03",
+            strength=90,
+            frequency_mhz=5180,
+        )
+        driver_a = ProvisioningWifiSensorDriver("Sensor A", [], ["sensor-a"])
+        driver_b = ProvisioningWifiSensorDriver("Sensor B", [], ["sensor-b"])
+        sensors = [
+            FakeSensor("Sensor A", driver_a),
+            FakeSensor("Sensor B", driver_b),
+        ]
+        backend = FakeWifiBackend(access_points=[access_point])
+        adapter = WifiAdapter(
+            config=_config(ap_password="secret"),
+            backend=backend,
+        )
+        await adapter.initialize()
+
+        with pytest.raises(WifiCandidateAmbiguous):
+            await adapter.discover_devices(sensors)
+
+        assert backend.operations[-1] == "restore_ap"
+
+    asyncio.run(scenario())
+
+
 def test_transport_handle_connect_and_disconnect_use_cached_driver():
     async def scenario():
         driver = FakeWifiSensorDriver(
@@ -292,7 +480,9 @@ def test_transport_handle_connect_and_disconnect_use_cached_driver():
         assert await adapter.disconnect_sensor(sensor)
         assert sensor.connection_status is ConnectionStatus.DISCONNECTED
         assert handle.is_connected is False
-        assert disconnected == [handle]
+        # Intentional disconnects are reported once by ConnectionService, not
+        # by the transport callback used for unexpected link loss.
+        assert disconnected == []
         assert driver.operations[-2:] == [
             ("connect_sensor", "sensor-001"),
             ("disconnect_sensor", "sensor-001"),

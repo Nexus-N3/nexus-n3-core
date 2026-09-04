@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
 from queue import Empty, Queue
 import signal
@@ -11,6 +10,7 @@ import threading
 import time
 
 from nexus_n3.gateway.messaging import message_types as mt
+from nexus_n3.core.version import get_core_version
 from nexus_n3.logger.logger import get_module_logger
 
 from .azure_device_client import AzureDeviceClientAdapter
@@ -82,13 +82,6 @@ NEIA_TARGET_ALIASES = {
 LOCAL_ONLY_EVENT_TYPES = {
     mt.EVT_CONTROL_CENTER_MESSAGE,
 }
-
-
-def _package_version(name: str) -> str:
-    try:
-        return version(name)
-    except PackageNotFoundError:
-        return "unknown"
 
 
 @dataclass(slots=True)
@@ -681,7 +674,7 @@ class AzureBridgeService:
     def _publish_reported_properties(self) -> None:
         payload = {
             "bridge": {
-                "version": _package_version("nexus-n3-core"),
+                "version": get_core_version(),
                 "device_id": self.config.device_id,
                 "site": self.config.site,
                 "gateway_mode": "local_zeromq_bridge",

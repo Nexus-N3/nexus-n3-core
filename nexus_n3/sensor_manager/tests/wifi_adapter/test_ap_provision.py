@@ -40,6 +40,11 @@ from dbus_fast import Message, Variant
 from dbus_fast.aio import MessageBus
 from dbus_fast.constants import BusType, MessageType
 
+from nexus_n3.sensor_manager.adapters.wifi.backends.linux_networkmanager import (
+    LinuxNetworkManagerBackend,
+    WIFI_RECOVERY_UNIT,
+)
+
 
 TEST_VERSION = "2026-08-05-v6-direct-recovery"
 
@@ -122,11 +127,6 @@ ALLOW_NETWORK_STACK_RESTART = (
 
 NETWORK_STACK_RESTART_TIMEOUT_SECONDS = float(
     os.getenv("NEXUS_NETWORK_STACK_RESTART_TIMEOUT_SECONDS", "30")
-)
-
-REGULATORY_DOMAIN = os.getenv(
-    "NEXUS_WIFI_REGULATORY_DOMAIN",
-    "EE",
 )
 
 DEVICE_STATE_DISCONNECTED = 30
@@ -1265,43 +1265,6 @@ class NetworkManagerClient:
         )
 
 
-async def _run_privileged_command(
-    *args: str,
-    timeout: float,
-) -> None:
-    """Run one bounded non-interactive privileged recovery command."""
-
-    process = await asyncio.create_subprocess_exec(
-        "sudo",
-        "-n",
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(),
-            timeout=timeout,
-        )
-    except TimeoutError:
-        process.kill()
-        await process.wait()
-        raise RuntimeError(
-            f"Timed out running privileged command: {' '.join(args)}"
-        )
-
-    if process.returncode != 0:
-        detail = stderr.decode("utf-8", errors="replace").strip()
-        if not detail:
-            detail = stdout.decode("utf-8", errors="replace").strip()
-
-        raise RuntimeError(
-            f"Privileged command failed ({process.returncode}): "
-            f"{' '.join(args)}: {detail}"
-        )
-
-
 async def restart_network_stack_for_ap_recovery() -> None:
     """Reset the supplicant state that can remain after the sensor AP vanishes."""
 
@@ -1309,7 +1272,8 @@ async def restart_network_stack_for_ap_recovery() -> None:
         raise RuntimeError(
             "Normal AP restoration failed after the x-IMU3 removed its AP. "
             "This mt76x2u/wpa_supplicant combination requires a network-stack "
-            "restart for this transition. Run 'sudo -v', set "
+            "restart for this transition. Install the fixed Wi-Fi recovery "
+            "service, set "
             "NEXUS_TEST_ALLOW_NETWORK_STACK_RESTART=1, and rerun the test."
         )
 
@@ -1318,28 +1282,9 @@ async def restart_network_stack_for_ap_recovery() -> None:
         "the station-to-AP transition"
     )
 
-    await _run_privileged_command(
-        "systemctl",
-        "restart",
-        "wpa_supplicant.service",
-        timeout=NETWORK_STACK_RESTART_TIMEOUT_SECONDS,
-    )
-    await asyncio.sleep(3.0)
-
-    await _run_privileged_command(
-        "systemctl",
-        "restart",
-        "NetworkManager.service",
-        timeout=NETWORK_STACK_RESTART_TIMEOUT_SECONDS,
-    )
-    await asyncio.sleep(5.0)
-
-    await _run_privileged_command(
-        "iw",
-        "reg",
-        "set",
-        REGULATORY_DOMAIN,
-        timeout=10.0,
+    await LinuxNetworkManagerBackend._run_fixed_recovery_unit(
+        WIFI_RECOVERY_UNIT,
+        NETWORK_STACK_RESTART_TIMEOUT_SECONDS,
     )
 
 

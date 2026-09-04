@@ -33,7 +33,7 @@
 
 - name: Fail if BLE gateway serial port is missing when gateway backend is enabled
   ansible.builtin.fail:
-    msg: "Set nexus_ble_gateway_serial_port in Ansible host/group vars when nexus_ble_backend is nexus_ble_gateway"
+    msg: "Set nexus_ble_gateway_serial_port to auto or an explicit port when nexus_ble_backend is nexus_ble_gateway"
   when:
     - nexus_ble_backend == "nexus_ble_gateway"
     - nexus_ble_gateway_serial_port | length == 0
