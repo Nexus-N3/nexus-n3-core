@@ -121,6 +121,7 @@ class SensorController:
         )
 
     async def handle_reset_session_diagnostics(self):
+        """Reset diagnostics for every active adapter before stream start."""
         await self.adapter_pool.reset_session_diagnostics()
 
     async def handle_start_all(self):

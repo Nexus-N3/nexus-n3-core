@@ -36,7 +36,89 @@ Internally, responsibilities are split into services:
 - Adapters
   - `BLEAdapter` (Bleak host BLE backend)
   - `GatewayBLEAdapter` (Nexus BLE gateway backend over USB serial)
+  - `WifiAdapter` (shared Wi-Fi sensor adapter)
   - `USBCameraAdapter` (V4L2 discovery)
+
+## Wi-Fi Sensor Adapter
+
+Sensors declare `adapter: WIFI` and provide vendor-specific Wi-Fi behavior
+through their installed sensor plugin. Core owns the shared host network and
+the plugin owns the sensor protocol. This keeps NetworkManager D-Bus objects,
+host interface management, and recovery permissions out of plugins, while
+keeping vendor discovery, provisioning commands, connections, and sample
+parsing out of Core.
+
+The Linux implementation uses NetworkManager's system D-Bus API through
+`dbus-fast`; it does not parse `nmcli` output. One `WifiAdapter` is pooled for
+all Wi-Fi sensors. Multiple requested sensors are reconciled by stable identity,
+and missing sensors are provisioned sequentially through an exclusive session.
+The multi-sensor path is covered with fake drivers even when only one physical
+sensor of a model is available for live testing.
+
+### Discovery and provisioning lifecycle
+
+1. Initialize the configured interface and validate the saved Nexus sensor AP.
+2. Ask each plugin driver for sensors already announcing on the Nexus subnet.
+3. If a requested identity is missing, stop AP hosting temporarily and perform
+   a fresh scan.
+4. Let plugin drivers classify candidate provisioning APs.
+5. Connect to one candidate with a volatile NetworkManager profile and have the
+   owning plugin identify it before configuration.
+6. Pass the configured Nexus SSID, password, and channel to the plugin's
+   provision method.
+7. Remove volatile state, restore the Nexus AP, and wait for the stable sensor
+   identity to announce on the Nexus subnet.
+8. Cache the discovered device and its plugin driver for normal connection,
+   streaming, and disconnection.
+
+Cleanup is shielded from cancellation and restores the host AP on every exit
+path. Provisioning does not expose AP credentials in errors or diagnostics.
+
+### X-IMU3 plugin lifecycle
+
+The `nexus-n3-sensor-x-imu3` plugin uses the vendor `ximu3` package for network
+announcements, configuration commands, UDP connections, and data callbacks.
+Its lifecycle is:
+
+- discover connected sensors from vendor network announcements
+- identify a sensor while connected to its open provisioning AP
+- configure it as a client of the Nexus sensor AP and apply the settings
+- rediscover and verify the stable serial identity with a UDP ping
+- configure matched inertial and quaternion message rates during setup
+- enable UDP data messages at stream start and disable them at stream stop
+- remove native callbacks and close the vendor connection at disconnect
+
+The sampling rate is selected when a new session is set up; it is not changed
+mid-stream. Inertial and quaternion messages are joined by the vendor's
+microsecond timestamp. The plugin converts vendor acceleration from g to the SDK
+contract's m/s² before emitting `IMUSample`; gyroscope values remain degrees/s.
+Environmental gravity passed to an algorithm remains an algorithm input and is
+not used as the unit-conversion constant.
+
+### Wi-Fi runtime configuration
+
+The main settings in `runtime.env` are:
+
+```text
+NEXUS_SENSOR_NETWORK_ENABLED=1
+NEXUS_WIFI_BACKEND=linux-networkmanager
+NEXUS_SENSOR_INTERFACE=wlx00c0cabaa751
+NEXUS_SENSOR_CONNECTION=nexus-n3-sensor-ap
+NEXUS_SENSOR_AP_SSID=nexus-n3-sensors
+NEXUS_SENSOR_AP_PASSWORD=<secret>
+NEXUS_SENSOR_AP_CHANNEL=36
+NEXUS_SENSOR_AP_EXPECTED_CIDR=10.42.0.1/24
+NEXUS_WIFI_PROVISIONING_CONNECTION=nexus-n3-sensor-provision
+NEXUS_WIFI_DISCOVERY_TIMEOUT_S=20
+NEXUS_WIFI_CONNECT_TIMEOUT_S=30
+NEXUS_WIFI_PROVISIONING_JOIN_TIMEOUT_S=90
+NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1
+NEXUS_NETWORK_STACK_RESTART_TIMEOUT_SECONDS=30
+NEXUS_WIFI_REGULATORY_DOMAIN=EE
+```
+
+`NEXUS_SENSOR_AP_PASSWORD` must be supplied through the protected runtime env;
+it must not be committed to the repository.
 
 ## BLE Backends
 BLE sensors still declare `adapter: BLE`, but Nexus N3 Core now supports two
@@ -118,13 +200,33 @@ Gateway-reported `transport`, `ble_rx`, and notification-drop fields have their
 own gateway-side lifetime/reset semantics and should not be interpreted as the
 same host parser-counter scope.
 
+### Wi-Fi diagnostics
+
+At stream stop, `AdapterPool.collect_diagnostics()` returns a `WIFI` payload
+alongside any `BLE` payload. It contains:
+
+- adapter lifecycle counters, bounded recent errors, capabilities, active
+  subnet, and current discovered/connected identities
+- NetworkManager AP activation, scan, temporary-profile, restoration, and
+  fixed-service recovery state and counters
+- optional per-sensor diagnostics retrieved from the isolated plugin host
+
+The X-IMU3 plugin reports inertial and quaternion callback counts, complete
+timestamp-paired samples, pending and evicted message halves, callback failures,
+timestamp gaps, estimated missing and out-of-order samples, configured and
+observed sampling rates, and current connection/stream state.
+
+Core resets adapter and plugin counters at the beginning of each recording
+session without changing connections. Plugins that do not implement the
+optional diagnostics hooks remain compatible.
+
 ## Message Flow
 - `Core._init_sensor_manager()` resolves installed sensor plugin classes and passes sensor instances and metadata
 - Commands are queued to the manager loop and dispatched by `SensorController`
 - Discovery -> adapter scan -> name matching -> address assignment -> callbacks to `Core`
 - Connect -> adapter connect -> sensor setup hook
 - Streaming -> sensor stream hooks (`start_stream`/`stop_stream`) -> `on_data`
-- New recording session -> reset host parser diagnostics -> stream start hooks
+- New recording session -> reset adapter/plugin diagnostics -> stream start hooks
 - Polling fallback (`request_sample`) remains available but optional
 - Battery check runs as a standalone pre-init BLE flow and returns
   `{"sensors": [...], "errors": {...}}`
@@ -144,5 +246,8 @@ optional `consume_input` behavior live inside the installed sensor plugins.
 - `nexus_n3.sensor_manager/adapters/ble_adapter.py`
 - `nexus_n3.sensor_manager/adapters/gateway_ble_adapter.py`
 - `nexus_n3.sensor_manager/adapters/gateway_ble_client.py`
+- `nexus_n3.sensor_manager/adapters/wifi_adapter.py`
+- `nexus_n3.sensor_manager/adapters/wifi/backends/networkmanager_dbus.py`
+- `nexus_n3.sensor_manager/adapters/wifi/backends/linux_networkmanager.py`
 - `nexus_n3.sensor_manager/ble_runtime_config.py`
 - `nexus_n3.sensor_manager/adapters/usb_camera_adapter.py`

@@ -146,6 +146,11 @@ samples into the compute manager, and coordinates file output.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_supported_sensors()</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">get_supported_algorithms()</span></code></p></li>
 </ul>
+<p>Release identification is centralized in
+<code class="docutils literal notranslate"><span class="pre">nexus_n3.core.version.get_core_version()</span></code>. A source checkout reads its static
+PEP 621 version from <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>; an installed deployment uses the version
+embedded in the installed distribution. Admin, device-info, Azure, and plugin
+compatibility reporting use this same value.</p>
 </section>
 <section id="key-classes-and-apis">
 <h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Permalink to this heading">¶</a></h2>
@@ -214,6 +219,7 @@ runtime behavior to <code class="docutils literal notranslate"><span class="pre"
 <h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.core/core.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.core/version.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.core/subject.py</span></code></p></li>
 </ul>
 </section>

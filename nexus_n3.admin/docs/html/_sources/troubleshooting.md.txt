@@ -14,6 +14,19 @@ Then confirm the runtime was started with:
 - the expected `--admin-host`
 - the expected `--admin-port`
 
+## Admin UI Shows an Old Core Version
+
+Source checkouts read the release from the `[project]` version in
+`pyproject.toml`. Installed deployments read the generated Python distribution
+metadata. Both paths are centralized in `nexus_n3.core.version.get_core_version`
+and are used by the admin UI, device information, gateway messages, Azure
+reported properties, and plugin compatibility checks.
+
+If a source run shows an old version, stop all existing server processes and
+start `python nexus_n3_server.py --admin` from the intended checkout. If an
+installed command shows an old version, rebuild and reinstall the Core package;
+editing a source `pyproject.toml` elsewhere does not update an installed wheel.
+
 ## Plugin Not Detected
 
 Check the plugin root:
@@ -48,6 +61,45 @@ The admin/device-info surfaces should also report gateway readiness.
 
 On Windows development machines, prefer `nexus_ble_gateway` over host BLE when
 the gateway hardware is available.
+
+## Wi-Fi Sensor Is Not Discovered
+
+Check that `NEXUS_SENSOR_NETWORK_ENABLED=1`, the configured
+`NEXUS_SENSOR_INTERFACE` exists, and the saved
+`NEXUS_SENSOR_CONNECTION` profile is active with the expected SSID and CIDR.
+
+An already provisioned X-IMU3 should announce on the Nexus sensor subnet. A
+reset X-IMU3 instead exposes its open provisioning AP and must pass through the
+provisioning lifecycle. `WifiCandidateNotFound` means no unclaimed AP matched
+the requested sensor plugin during the fresh scan; it does not mean that a
+sensor already connected to the Nexus AP failed its UDP ping.
+
+Only one process should use the vendor network-announcement socket. Stop stale
+live-test or Core processes before retrying if the vendor package reports
+`RuntimeError: Address in use`.
+
+## Wi-Fi AP Restoration or Authentication Failure
+
+Direct recovery after provisioning requires the fixed-purpose service and
+sudoers rule:
+
+```bash
+sudo deployment/systemd/install_wifi_recovery.sh "$USER" EE
+```
+
+Replace `EE` with the deployment's regulatory domain. Confirm that the service
+exists and that the runtime identity received the generated sudoers rule. Core
+runs only this non-interactive command:
+
+```text
+sudo -n /usr/bin/systemctl restart nexus-n3-wifi-recovery.service
+```
+
+A desktop authorization dialog is not a supported runtime path. It normally
+indicates stale code, an incomplete recovery installation, or a runtime user
+that does not match the installed sudoers rule. Restart Core after correcting
+the installation. Inspect the `WIFI.backend` and `WIFI.adapter.errors` entries
+in the session diagnostics for the failed recovery stage.
 
 ## Gateway Checksum or Parser Resynchronisation Reported
 

@@ -62,10 +62,12 @@ class _RequestGroup:
 
     @property
     def requested_count(self) -> int:
+        """Return the number of requested sensor instances in this group."""
         return len(self.members)
 
     @property
     def primary_driver(self) -> Any:
+        """Return the driver used for group-level provisioning operations."""
         return self.members[0].driver
 
 
@@ -97,6 +99,7 @@ class WifiAdapter:
 
     @staticmethod
     def _create_backend(config: WifiRuntimeConfig) -> WifiBackend:
+        """Create the configured private platform backend."""
         if config.backend == "fake":
             return FakeWifiBackend()
         if config.backend == "linux-networkmanager":
@@ -111,17 +114,21 @@ class WifiAdapter:
 
     @property
     def capabilities(self) -> WifiCapabilities:
+        """Expose stable backend capabilities to adapter consumers."""
         return self.backend.capabilities
 
     @property
     def network(self) -> IPv4Configuration | None:
+        """Return the active Nexus sensor network configuration."""
         return self._network
 
     @property
     def operation_lock(self) -> asyncio.Lock:
+        """Return the lock serializing disruptive radio operations."""
         return self._operation_lock
 
     def register_driver(self, sensor_name: str, driver: Any) -> None:
+        """Register a direct-development driver by sensor name."""
         name = str(sensor_name).strip()
         if not name:
             raise ValueError("Wi-Fi sensor name must not be empty")
@@ -136,6 +143,7 @@ class WifiAdapter:
         self.diagnostics_callback = callback
 
     async def initialize(self) -> None:
+        """Initialize the backend and validate or activate the Nexus AP."""
         if self._shutting_down:
             raise WifiShuttingDown("Wi-Fi adapter is shutting down")
         if self._initialized:
@@ -221,6 +229,7 @@ class WifiAdapter:
         groups: list[_RequestGroup],
         timeout_s: float,
     ) -> dict[tuple[str, str], list[WifiDevice]]:
+        """Discover connected devices for every requested driver group."""
         return {
             group.key: await self._discover_group(group, timeout_s)
             for group in groups
@@ -231,6 +240,7 @@ class WifiAdapter:
         group: _RequestGroup,
         timeout_s: float,
     ) -> list[WifiDevice]:
+        """Merge stable devices reported by the unique drivers in one group."""
         devices: dict[str, WifiDevice] = {}
         seen_drivers: set[int] = set()
         for member in group.members:
@@ -258,6 +268,7 @@ class WifiAdapter:
         known_identities: set[str],
         attempted_candidates: set[tuple[str, str]],
     ) -> str:
+        """Provision one missing identity through an exclusive client session."""
         self._diagnostic_counts["provisioning_attempts"] += 1
         session = ExclusiveClientSession(self._operation_lock, self.backend)
         try:
@@ -389,6 +400,7 @@ class WifiAdapter:
         expected_count: int,
         timeout_s: float,
     ) -> list[WifiDevice]:
+        """Poll announcements until the provisioned identity rejoins the AP."""
         deadline = (
             asyncio.get_running_loop().time()
             + self.config.provisioning_join_timeout_s
@@ -410,6 +422,7 @@ class WifiAdapter:
         groups: list[_RequestGroup],
         devices_by_group: dict[tuple[str, str], list[WifiDevice]],
     ) -> dict[str, tuple[WifiDevice, WifiAdvertisement]]:
+        """Cache discovered identities and build the legacy discovery shape."""
         records: dict[str, _DiscoveredRecord] = {}
         discovered: dict[str, tuple[WifiDevice, WifiAdvertisement]] = {}
         for group in groups:
@@ -446,6 +459,7 @@ class WifiAdapter:
         address: str,
         assigned_driver_ids: set[int],
     ) -> Any:
+        """Choose or reuse the plugin instance owning a stable identity."""
         for member in group.members:
             if (
                 member.sensor is not None
@@ -464,6 +478,7 @@ class WifiAdapter:
         self,
         requested: list[str] | list[Any],
     ) -> list[_RequestGroup]:
+        """Resolve requested names or sensor instances into plugin groups."""
         groups: dict[tuple[str, str], _RequestGroup] = {}
         for item in requested:
             if isinstance(item, str):
@@ -501,6 +516,7 @@ class WifiAdapter:
 
     @staticmethod
     def _normalize_device(device: Any) -> WifiDevice:
+        """Validate and normalize a driver-provided device value."""
         if isinstance(device, Mapping):
             device = WifiDevice(
                 address=str(device.get("address") or ""),
@@ -515,6 +531,7 @@ class WifiAdapter:
 
     @staticmethod
     def _normalize_candidate(candidate: Any) -> WifiProvisioningCandidate:
+        """Validate and normalize a driver provisioning candidate."""
         if isinstance(candidate, WifiProvisioningCandidate):
             return candidate
         if not isinstance(candidate, Mapping):
@@ -543,6 +560,7 @@ class WifiAdapter:
 
     @staticmethod
     def _candidate_key(access_point: WifiAccessPoint) -> tuple[str, str]:
+        """Build a stable scan-local key for a provisioning access point."""
         return (access_point.ssid, access_point.bssid or access_point.id)
 
     def create_transport_client(
@@ -551,6 +569,7 @@ class WifiAdapter:
         loop=None,
         disconnected_callback=None,
     ) -> WifiTransportHandle:
+        """Create a sensor transport handle from the discovery cache."""
         self._ensure_ready()
         record = self._discovered.get(address)
         if record is None:
@@ -570,6 +589,7 @@ class WifiAdapter:
         adapter=None,
         timeout: float = 10,
     ) -> bool:
+        """Ask the owning plugin driver to establish its vendor connection."""
         self._ensure_ready()
         self._diagnostic_counts["connect_attempts"] += 1
         handle = getattr(sensor, "transport_client", None)
@@ -600,6 +620,7 @@ class WifiAdapter:
         return True
 
     async def connect_all(self, sensors, adapter=None, timeout: float = 10) -> bool:
+        """Connect each supplied Wi-Fi sensor sequentially."""
         results = []
         for sensor in sensors:
             if not getattr(sensor, "address", None) or not getattr(
@@ -613,10 +634,12 @@ class WifiAdapter:
         return all(results)
 
     async def disconnect_sensor(self, sensor) -> bool:
+        """Disconnect one sensor while leaving the shared Nexus AP active."""
         self._ensure_ready()
         return await self._disconnect_sensor(sensor)
 
     async def _disconnect_sensor(self, sensor) -> bool:
+        """Perform plugin disconnect and clear the cached connection state."""
         handle = getattr(sensor, "transport_client", None)
         if not isinstance(handle, WifiTransportHandle):
             return False
@@ -640,6 +663,7 @@ class WifiAdapter:
         return True
 
     async def shutdown(self) -> None:
+        """Disconnect sensors and shut down the shared platform backend."""
         if self._shutting_down:
             return
         self._shutting_down = True
@@ -738,6 +762,7 @@ class WifiAdapter:
         return payload
 
     def _unique_drivers(self) -> list[Any]:
+        """Return each currently known plugin driver exactly once."""
         drivers = [
             *self._drivers.values(),
             *(record.driver for record in self._discovered.values()),
@@ -753,6 +778,7 @@ class WifiAdapter:
         return unique
 
     def _driver_labels(self) -> dict[int, str]:
+        """Map driver identities to stable sensor addresses when available."""
         labels = {
             id(record.driver): address
             for address, record in self._discovered.items()
@@ -763,6 +789,7 @@ class WifiAdapter:
 
     @staticmethod
     async def _call_optional_diagnostic_method(target, method_name: str) -> Any:
+        """Call an optional synchronous or asynchronous diagnostics method."""
         method = getattr(target, method_name, None)
         if not callable(method):
             return None
@@ -773,6 +800,7 @@ class WifiAdapter:
 
     @classmethod
     async def _optional_diagnostics_snapshot(cls, target) -> dict[str, Any]:
+        """Normalize an optional diagnostics result to a dictionary."""
         result = await cls._call_optional_diagnostic_method(
             target,
             "get_diagnostics_snapshot",
@@ -786,6 +814,7 @@ class WifiAdapter:
         *,
         address: str | None = None,
     ) -> None:
+        """Append a sanitized error to the bounded diagnostics history."""
         entry = {
             "operation": operation,
             "type": type(exc).__name__,
@@ -798,12 +827,14 @@ class WifiAdapter:
 
     @staticmethod
     def _driver_for_sensor(sensor) -> Any:
+        """Resolve the Wi-Fi driver exposed by a sensor instance."""
         getter = getattr(sensor, "get_wifi_driver", None)
         if callable(getter):
             return getter()
         return getattr(sensor, "wifi_driver", None)
 
     def _ensure_ready(self) -> None:
+        """Reject operations before initialization or during shutdown."""
         if self._shutting_down:
             raise WifiShuttingDown("Wi-Fi adapter is shutting down")
         if not self._initialized:

@@ -10,6 +10,12 @@ It also exposes runtime capability discovery from installed plugins through:
 - `get_supported_sensors()`
 - `get_supported_algorithms()`
 
+Release identification is centralized in
+`nexus_n3.core.version.get_core_version()`. A source checkout reads its static
+PEP 621 version from `pyproject.toml`; an installed deployment uses the version
+embedded in the installed distribution. Admin, device-info, Azure, and plugin
+compatibility reporting use this same value.
+
 ## Key Classes and APIs
 - `Core(site, system_event_bus=None)`
   - `init_core(subjects_config, init_label=None)`
@@ -57,4 +63,5 @@ Notes:
 
 ## Key Files
 - `nexus_n3.core/core.py`
+- `nexus_n3.core/version.py`
 - `nexus_n3.core/subject.py`

@@ -140,6 +140,7 @@ class SensorHostClient:
         return bool((result or {}).get("ok"))
 
     def wifi_discover_connected(self, network) -> list[dict[str, Any]]:
+        """Request plugin discovery on the active Nexus sensor network."""
         result = self.transport.request(
             "wifi.discover_connected",
             {
@@ -154,6 +155,7 @@ class SensorHostClient:
         return list((result or {}).get("devices") or [])
 
     def wifi_connect_sensor(self, device: WifiDevice) -> bool:
+        """Ask the plugin host to open its vendor sensor connection."""
         self.bind_sensor()
         result = self.transport.request(
             "wifi.connect_sensor",
@@ -168,6 +170,7 @@ class SensorHostClient:
         return bool((result or {}).get("ok"))
 
     def wifi_disconnect_sensor(self) -> bool:
+        """Ask the plugin host to close its vendor sensor connection."""
         self.bind_sensor()
         result = self.transport.request("wifi.disconnect_sensor", {})
         return bool((result or {}).get("ok"))
@@ -176,6 +179,7 @@ class SensorHostClient:
         self,
         access_points: list[WifiAccessPoint],
     ) -> list[dict[str, Any]]:
+        """Ask the plugin to classify fresh host scan results."""
         result = self.transport.request(
             "wifi.classify_access_points",
             {
@@ -185,6 +189,7 @@ class SensorHostClient:
         return list((result or {}).get("candidates") or [])
 
     def wifi_identify_candidate(self, network) -> dict[str, Any] | None:
+        """Ask the plugin to identify a connected provisioning candidate."""
         result = self.transport.request(
             "wifi.identify_candidate",
             {"network": to_jsonable(network)},
@@ -192,6 +197,7 @@ class SensorHostClient:
         return (result or {}).get("device")
 
     def wifi_provision(self, network, target) -> dict[str, Any]:
+        """Ask the plugin to configure a candidate for the Nexus AP."""
         return self.transport.request(
             "wifi.provision",
             {
@@ -201,10 +207,12 @@ class SensorHostClient:
         ) or {}
 
     def get_diagnostics_snapshot(self) -> dict[str, Any]:
+        """Fetch the plugin-owned diagnostics snapshot from the sensor host."""
         result = self.transport.request("get_diagnostics_snapshot", {}) or {}
         return dict(result.get("snapshot") or {})
 
     def reset_session_diagnostics(self) -> None:
+        """Request a session-boundary diagnostics reset in the sensor host."""
         self.transport.request("reset_session_diagnostics", {})
 
     def _handle_adapter_read(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -399,6 +407,7 @@ class _InstalledPluginWifiDriver:
         self.proxy = proxy
 
     async def discover_connected(self, network) -> list[WifiDevice]:
+        """Convert plugin discovery payloads to Core Wi-Fi device models."""
         client = self.proxy._ensure_client()
         payloads = await asyncio.to_thread(client.wifi_discover_connected, network)
         return [
@@ -411,16 +420,19 @@ class _InstalledPluginWifiDriver:
         ]
 
     async def connect_sensor(self, sensor, device: WifiDevice, adapter) -> bool:
+        """Delegate vendor connection establishment to the isolated plugin."""
         _ = sensor, adapter
         client = self.proxy._ensure_client()
         return await asyncio.to_thread(client.wifi_connect_sensor, device)
 
     async def disconnect_sensor(self, sensor) -> bool:
+        """Delegate vendor disconnection to the isolated plugin."""
         _ = sensor
         client = self.proxy._ensure_client()
         return await asyncio.to_thread(client.wifi_disconnect_sensor)
 
     async def classify_access_points(self, access_points):
+        """Delegate provisioning AP classification to the plugin."""
         client = self.proxy._ensure_client()
         return await asyncio.to_thread(
             client.wifi_classify_access_points,
@@ -428,10 +440,12 @@ class _InstalledPluginWifiDriver:
         )
 
     async def identify_candidate(self, network):
+        """Delegate candidate identity lookup to the plugin."""
         client = self.proxy._ensure_client()
         return await asyncio.to_thread(client.wifi_identify_candidate, network)
 
     async def provision(self, network, target, controls):
+        """Provision a candidate and relay its AP-disappearance hint."""
         client = self.proxy._ensure_client()
         result = await asyncio.to_thread(client.wifi_provision, network, target)
         if result.get("remote_access_point_disappeared"):
@@ -439,10 +453,12 @@ class _InstalledPluginWifiDriver:
         return result.get("device")
 
     async def get_diagnostics_snapshot(self) -> dict[str, Any]:
+        """Fetch plugin diagnostics without blocking the manager event loop."""
         client = self.proxy._ensure_client()
         return await asyncio.to_thread(client.get_diagnostics_snapshot)
 
     async def reset_session_diagnostics(self) -> None:
+        """Reset plugin diagnostics without blocking the manager event loop."""
         client = self.proxy._ensure_client()
         await asyncio.to_thread(client.reset_session_diagnostics)
 

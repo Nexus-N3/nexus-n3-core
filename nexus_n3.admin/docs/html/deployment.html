@@ -151,6 +151,7 @@
 <li><p>configuring <code class="docutils literal notranslate"><span class="pre">runtime.env</span></code></p></li>
 <li><p>optional Linux-only USB mount script setup</p></li>
 <li><p>optional systemd setup</p></li>
+<li><p>Linux Wi-Fi sensor AP and fixed-purpose recovery setup</p></li>
 </ul>
 <p>The removable USB hot-disk workflow is a Linux host feature for deployed edge
 systems such as Raspberry Pi and other edge computers. On laptops and Windows
@@ -164,6 +165,19 @@ Linux USB mount/unmount controls.</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/SYSTEMD_DEPLOYMENT.md</span></code></p></li>
 </ul>
+<p>Wi-Fi recovery is deliberately non-interactive. The deployment installs a
+root-owned <code class="docutils literal notranslate"><span class="pre">nexus-n3-wifi-recovery.service</span></code> and a sudoers rule that permits the
+Nexus service identity to run only this fixed command:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>sudo -n /usr/bin/systemctl restart nexus-n3-wifi-recovery.service
+</pre></div>
+</div>
+<p>For a development host, install it with:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>deployment/systemd/install_wifi_recovery.sh<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$USER</span><span class="s2">&quot;</span><span class="w"> </span>EE
+</pre></div>
+</div>
+<p>The second argument is the regulatory domain. Production installations should
+use the <code class="docutils literal notranslate"><span class="pre">nexus_sensor_access_point</span></code> Ansible role. No PolicyKit desktop agent or
+interactive authentication is required at runtime.</p>
 </section>
 <section id="ansible-deployment">
 <h2>Ansible Deployment<a class="headerlink" href="#ansible-deployment" title="Permalink to this heading">¶</a></h2>

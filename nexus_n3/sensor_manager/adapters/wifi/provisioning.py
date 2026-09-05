@@ -27,30 +27,42 @@ class WifiSensorDriver(Protocol):
     async def discover_connected(
         self,
         network: IPv4Configuration,
-    ) -> list[WifiDevice]: ...
+    ) -> list[WifiDevice]:
+        """Discover devices already connected to the Nexus sensor network."""
+        ...
 
     def classify_access_points(
         self,
         access_points: list[WifiAccessPoint],
-    ) -> list[WifiProvisioningCandidate]: ...
+    ) -> list[WifiProvisioningCandidate]:
+        """Claim provisioning APs recognized by this sensor driver."""
+        ...
 
     async def identify_candidate(
         self,
         connection: IPv4Configuration,
-    ) -> WifiDevice: ...
+    ) -> WifiDevice:
+        """Read a stable identity before modifying the candidate sensor."""
+        ...
 
     async def provision(
         self,
         connection: Any,
         target: NexusWifiNetwork,
         controls: ProvisioningControls,
-    ) -> WifiDevice: ...
+    ) -> WifiDevice:
+        """Configure the candidate to join the target Nexus network."""
+        ...
 
     async def connect_sensor(
         self,
         sensor: SensorBase,
         device: WifiDevice,
         adapter: WifiAdapter,
-    ) -> Any: ...
+    ) -> Any:
+        """Open and verify the vendor-specific sensor connection."""
+        ...
 
-    async def disconnect_sensor(self, sensor: SensorBase) -> None: ...
+    async def disconnect_sensor(self, sensor: SensorBase) -> None:
+        """Close the vendor connection without changing the host AP."""
+        ...

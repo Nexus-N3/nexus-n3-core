@@ -19,6 +19,7 @@ Check:
 - the admin UI is reachable
 - the BLE backend is configured correctly
 - the expected plugin inventory was detected at startup
+- the Wi-Fi sensor AP is active when Wi-Fi sensors are configured
 
 ## Service Operation
 
@@ -54,6 +55,20 @@ Install bundles with:
 python -m nexus_n3.plugins install /path/to/plugin.rsnxplugin --plugin-root /opt/nexus-n3-plugins
 ```
 
+Plugin versions are immutable after installation. Build and install a higher
+version whenever plugin code or its bundled SDK changes.
+
+## Wi-Fi Sensor Operation
+
+The configured Wi-Fi interface normally hosts the Nexus sensor AP. Sensors that
+are already provisioned reconnect to it automatically. Reset devices into their
+vendor AP mode only when explicitly testing or performing provisioning.
+
+Network-stack recovery requires the fixed-purpose systemd service and sudoers
+rule described in the deployment guide. Runtime recovery uses `sudo -n`; an
+authentication prompt indicates an incomplete or incorrect deployment and must
+not be accepted as normal operation on a headless system.
+
 ## Storage
 
 Session data is written under the configured output root and finalized into zip
@@ -63,6 +78,12 @@ Each archive contains `diagnostics/session_diagnostics.json` for the final
 session summary and `diagnostics/session_diagnostics.jsonl` for ordered runtime
 events. These structured diagnostics are written for every recording; they do
 not require the optional `--diagnostics` pipeline-debug mode.
+
+For mixed BLE/Wi-Fi sessions, inspect
+`latest_gateway_diagnostics.diagnostics.BLE` and
+`latest_gateway_diagnostics.diagnostics.WIFI` in the summary. The Wi-Fi entry
+includes adapter/backend state and any diagnostics exported by the installed
+sensor plugin.
 
 If using the removable USB disk workflow on a Linux edge host, the manual
 helper scripts are:

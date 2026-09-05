@@ -191,6 +191,7 @@ sudo<span class="w"> </span>cp<span class="w"> </span>/home/mike/Desktop/apps/de
 <ul class="simple">
 <li><p>plugin root and optional dev bootstrap list</p></li>
 <li><p>BLE backend and gateway serial settings</p></li>
+<li><p>Wi-Fi sensor interface, AP, provisioning, and recovery settings</p></li>
 <li><p>local ZeroMQ gateway bindings</p></li>
 <li><p>Azure bridge settings</p></li>
 <li><p>admin/runtime options</p></li>
@@ -357,6 +358,23 @@ GATEWAY_READ_TIMEOUT_S=5.0
 <p>For Windows development, <code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code> is the preferred BLE path because
 it uses the serial gateway rather than host BLE stack integration.</p>
 </section>
+<section id="wi-fi-sensors">
+<h2>Wi-Fi Sensors<a class="headerlink" href="#wi-fi-sensors" title="Permalink to this heading">¶</a></h2>
+<p>Wi-Fi sensors use one shared Core adapter and vendor-specific installed sensor
+plugins. On Linux, the production backend controls NetworkManager through
+<code class="docutils literal notranslate"><span class="pre">dbus-fast</span></code> on the system bus. Configure the saved Nexus AP and runtime settings
+before enabling the sensor network; see
+<code class="docutils literal notranslate"><span class="pre">modules/nexus_n3_sensor_manager.md</span></code> for the complete lifecycle and variable
+list.</p>
+<p>Normal operation keeps the host on the Nexus sensor AP. Discovery first checks
+for already-connected sensors without disrupting that AP. Provisioning occurs
+only for a requested deficit and temporarily switches the configured radio to a
+sensor’s provisioning AP inside an exclusive, cleanup-protected session.</p>
+<p>The X-IMU3 plugin uses stable serial numbers as sensor addresses. Its sample
+rate is applied during setup for a new session. The plugin emits canonical
+<code class="docutils literal notranslate"><span class="pre">IMUSample</span></code> units: acceleration in m/s², angular velocity in degrees/s, and
+timestamps in microseconds.</p>
+</section>
 <section id="file-output">
 <h2>File Output<a class="headerlink" href="#file-output" title="Permalink to this heading">¶</a></h2>
 <p>The core writes data generically through the file manager rather than through
@@ -389,9 +407,18 @@ diagnostics/session_diagnostics.jsonl
 <p>These files are created independently of the optional pipeline-debug switch and
 are included in the finalized session archive. The JSON file is the current
 session summary. The JSONL file is the time-ordered event record and includes
-stream lifecycle events, compute-performance records, gateway diagnostics, and
-errors. The summary field <code class="docutils literal notranslate"><span class="pre">official_stream</span></code> begins as <code class="docutils literal notranslate"><span class="pre">pending</span></code> and is finalized
-as <code class="docutils literal notranslate"><span class="pre">passed</span></code> or <code class="docutils literal notranslate"><span class="pre">failed</span></code>.</p>
+stream lifecycle events, compute-performance records, BLE and Wi-Fi transport
+diagnostics, and errors. The summary field <code class="docutils literal notranslate"><span class="pre">official_stream</span></code> begins as <code class="docutils literal notranslate"><span class="pre">pending</span></code>
+and is finalized as <code class="docutils literal notranslate"><span class="pre">passed</span></code> or <code class="docutils literal notranslate"><span class="pre">failed</span></code>.</p>
+<p>The latest transport snapshot is stored at:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>latest_gateway_diagnostics.diagnostics.BLE
+latest_gateway_diagnostics.diagnostics.WIFI
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">WIFI</span></code> entry combines shared adapter state, NetworkManager backend state,
+and optional per-sensor plugin counters. Despite the historical summary field
+name, it is a transport-diagnostics container and may contain both adapter
+families.</p>
 <p>Core emits one <code class="docutils literal notranslate"><span class="pre">compute_performance</span></code> event for every compute result. Important
 fields include:</p>
 <ul class="simple">
@@ -471,6 +498,7 @@ above.</p>
 </ul>
 </li>
 <li><a class="reference internal" href="#ble-backends">BLE Backends</a></li>
+<li><a class="reference internal" href="#wi-fi-sensors">Wi-Fi Sensors</a></li>
 <li><a class="reference internal" href="#file-output">File Output</a></li>
 <li><a class="reference internal" href="#diagnostics">Diagnostics</a><ul>
 <li><a class="reference internal" href="#optional-pipeline-debugging">Optional pipeline debugging</a></li>

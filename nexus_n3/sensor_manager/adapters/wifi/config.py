@@ -18,6 +18,7 @@ class ApAddressMode(str, Enum):
 
 
 def _env_bool(name: str, default: bool) -> bool:
+    """Parse a strict boolean environment variable."""
     raw = os.environ.get(name)
     if raw is None:
         return default
@@ -51,6 +52,7 @@ class WifiRuntimeConfig:
     regulatory_domain: str = "EE"
 
     def __post_init__(self) -> None:
+        """Normalize and validate all Wi-Fi runtime settings."""
         backend = self.backend.strip().lower()
         if backend not in {"fake", "linux-networkmanager", "windows-native"}:
             raise ValueError(f"Unsupported Wi-Fi backend: {self.backend!r}")

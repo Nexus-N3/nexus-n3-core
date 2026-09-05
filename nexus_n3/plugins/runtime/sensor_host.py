@@ -157,6 +157,7 @@ class SensorHost:
         return {"ok": bool(result)}
 
     def wifi_discover_connected(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run optional plugin discovery and serialize returned devices."""
         discover = getattr(self._sensor, "discover_connected", None)
         if not callable(discover):
             raise RuntimeError("sensor plugin does not implement Wi-Fi discovery")
@@ -164,6 +165,7 @@ class SensorHost:
         return {"devices": to_jsonable(devices or [])}
 
     def wifi_connect_sensor(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run the plugin's vendor-specific Wi-Fi connection method."""
         connect = getattr(self._sensor, "connect_sensor", None)
         if not callable(connect):
             raise RuntimeError("sensor plugin does not implement Wi-Fi connect")
@@ -171,6 +173,7 @@ class SensorHost:
         return {"ok": bool(result)}
 
     def wifi_disconnect_sensor(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run the plugin's vendor-specific Wi-Fi disconnect method."""
         _ = params
         disconnect = getattr(self._sensor, "disconnect_sensor", None)
         if not callable(disconnect):
@@ -179,6 +182,7 @@ class SensorHost:
         return {"ok": bool(result)}
 
     def wifi_classify_access_points(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Let the plugin claim compatible provisioning access points."""
         classify = getattr(self._sensor, "classify_access_points", None)
         if not callable(classify):
             return {"candidates": []}
@@ -190,6 +194,7 @@ class SensorHost:
         return {"candidates": to_jsonable(result or [])}
 
     def wifi_provision(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Provision a sensor and return cleanup hints to Core."""
         provision = getattr(self._sensor, "provision", None)
         if not callable(provision):
             raise RuntimeError("sensor plugin does not implement Wi-Fi provisioning")
@@ -207,6 +212,7 @@ class SensorHost:
         }
 
     def wifi_identify_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Identify a provisioning candidate before it is modified."""
         identify = getattr(self._sensor, "identify_candidate", None)
         if not callable(identify):
             raise RuntimeError(
@@ -218,6 +224,7 @@ class SensorHost:
         return {"device": to_jsonable(result)}
 
     def get_diagnostics_snapshot(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return an optional JSON-safe diagnostics snapshot from the plugin."""
         _ = params
         getter = getattr(self._sensor, "get_diagnostics_snapshot", None)
         if not callable(getter):
@@ -226,6 +233,7 @@ class SensorHost:
         return {"supported": True, "snapshot": to_jsonable(result or {})}
 
     def reset_session_diagnostics(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Reset optional plugin counters at a recording-session boundary."""
         _ = params
         reset = getattr(self._sensor, "reset_session_diagnostics", None)
         if not callable(reset):

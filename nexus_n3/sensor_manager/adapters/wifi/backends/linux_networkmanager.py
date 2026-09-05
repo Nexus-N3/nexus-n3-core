@@ -52,9 +52,11 @@ class LinuxNetworkManagerBackend:
 
     @property
     def capabilities(self) -> WifiCapabilities:
+        """Return the stable capabilities of the Linux reference backend."""
         return self._capabilities
 
     async def initialize(self) -> None:
+        """Connect to NetworkManager and resolve the configured radio/profile."""
         if self._initialized:
             return
         self._diagnostic_counts["initialize_attempts"] += 1
@@ -69,6 +71,7 @@ class LinuxNetworkManagerBackend:
         self._diagnostic_counts["initialize_successes"] += 1
 
     async def _resolve_paths(self) -> None:
+        """Resolve generation-scoped D-Bus paths from stable configuration."""
         self._device_path = await self._client.get_device_path(self._interface)
         self._ap_connection_path = await self._client.find_saved_connection(
             self.config.ap_profile
@@ -79,6 +82,7 @@ class LinuxNetworkManagerBackend:
             )
 
     async def ensure_ap_active(self) -> IPv4Configuration:
+        """Validate, activate if necessary, and return the Nexus AP network."""
         self._ensure_initialized()
         self._diagnostic_counts["ensure_ap_attempts"] += 1
         try:
@@ -264,6 +268,7 @@ class LinuxNetworkManagerBackend:
         return network
 
     async def _cleanup_temporary_connection(self) -> None:
+        """Best-effort deactivate and delete the volatile client profile."""
         if self._temporary_active_path is not None:
             try:
                 await self._client.deactivate(self._temporary_active_path)
@@ -281,6 +286,7 @@ class LinuxNetworkManagerBackend:
         self._access_points.clear()
 
     async def _activate_ap_after_cleanup(self) -> IPv4Configuration:
+        """Quiesce the radio and restore the saved Nexus AP profile."""
         try:
             await self._resolve_paths()
             await self._client.quiesce(
@@ -309,6 +315,7 @@ class LinuxNetworkManagerBackend:
             ) from exc
 
     async def _restart_network_stack(self) -> None:
+        """Run bounded fixed recovery and reconnect the D-Bus client."""
         timeout = self.config.network_stack_restart_timeout_s
         self._diagnostic_counts["network_stack_recovery_attempts"] += 1
         try:
@@ -336,6 +343,7 @@ class LinuxNetworkManagerBackend:
 
     @staticmethod
     async def _run_fixed_recovery_unit(unit_name: str, timeout: float) -> None:
+        """Run only the allow-listed recovery service without prompting."""
         if unit_name != WIFI_RECOVERY_UNIT:
             raise WifiBackendUnavailable("Refusing to run an unknown recovery unit")
         process = await asyncio.create_subprocess_exec(
@@ -368,6 +376,7 @@ class LinuxNetworkManagerBackend:
             )
 
     def _validate_network(self, network: IPv4Configuration) -> None:
+        """Validate the active IPv4 interface against an optional expected CIDR."""
         expected = self.config.expected_ap_cidr
         if expected is not None and (
             ipaddress.ip_interface(network.cidr)
@@ -378,6 +387,7 @@ class LinuxNetworkManagerBackend:
             )
 
     async def shutdown(self) -> None:
+        """Close D-Bus resources and clear generation-scoped state."""
         self._client.close()
         self._initialized = False
         self._device_path = None
@@ -385,10 +395,12 @@ class LinuxNetworkManagerBackend:
         self._provisioning_active = False
 
     def reset_session_diagnostics(self) -> None:
+        """Reset backend counters without changing NetworkManager state."""
         self._diagnostic_counts.clear()
         self._last_recovery_error = None
 
     def get_diagnostics_snapshot(self) -> dict:
+        """Return safe NetworkManager state and session counters."""
         return {
             "implementation": "linux-networkmanager-dbus",
             "initialized": self._initialized,
@@ -408,6 +420,7 @@ class LinuxNetworkManagerBackend:
         }
 
     def _ensure_initialized(self) -> None:
+        """Reject backend operations until initialization completes."""
         if not self._initialized:
             raise WifiBackendUnavailable(
                 "The linux-networkmanager Wi-Fi backend is not initialized"
@@ -415,6 +428,7 @@ class LinuxNetworkManagerBackend:
 
     @property
     def _interface(self) -> str:
+        """Return the required configured NetworkManager interface name."""
         interface = (self.config.interface_name or "").strip()
         if not interface:
             raise WifiBackendUnavailable(

@@ -67,6 +67,7 @@ class IPv4Configuration:
 
     @property
     def cidr(self) -> str:
+        """Return the address and prefix in interface notation."""
         return f"{self.address}/{self.prefix}"
 
 

@@ -52,6 +52,8 @@ class NetworkManagerDBusError(RuntimeError):
 
 @dataclass(frozen=True)
 class NetworkManagerAccessPoint:
+    """NetworkManager access-point properties used by the backend."""
+
     path: str
     ssid: str
     bssid: str
@@ -68,11 +70,13 @@ class NetworkManagerClient:
         self._owns_bus = bus is None
 
     async def connect(self) -> None:
+        """Connect this client to the system bus when not already connected."""
         if self._bus is None:
             self._bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
             self._owns_bus = True
 
     def close(self) -> None:
+        """Disconnect an owned bus and invalidate the client reference."""
         if self._bus is not None and self._owns_bus:
             self._bus.disconnect()
         self._bus = None
@@ -86,6 +90,7 @@ class NetworkManagerClient:
         signature: str = "",
         body: list[Any] | None = None,
     ) -> list[Any]:
+        """Issue one checked NetworkManager method call."""
         if self._bus is None:
             raise NetworkManagerDBusError("NetworkManager D-Bus is not connected")
         reply = await self._bus.call(
@@ -106,6 +111,7 @@ class NetworkManagerClient:
         return reply.body
 
     async def get_property(self, path: str, interface: str, name: str) -> Any:
+        """Read and unwrap one D-Bus property."""
         body = await self.call(
             path=path,
             interface=PROPERTIES_INTERFACE,
@@ -118,6 +124,7 @@ class NetworkManagerClient:
         return body[0].value
 
     async def get_device_path(self, interface_name: str) -> str:
+        """Resolve a stable interface name to its current D-Bus object path."""
         body = await self.call(
             path=NM_PATH,
             interface=NM_INTERFACE,
@@ -132,6 +139,7 @@ class NetworkManagerClient:
         return str(body[0])
 
     async def list_saved_connections(self) -> list[str]:
+        """Return current D-Bus paths for all saved connection profiles."""
         body = await self.call(
             path=NM_SETTINGS_PATH,
             interface=SETTINGS_INTERFACE,
@@ -140,6 +148,7 @@ class NetworkManagerClient:
         return [str(path) for path in (body[0] if body else [])]
 
     async def get_connection_settings(self, path: str) -> dict[str, Any]:
+        """Return settings for one saved connection profile."""
         body = await self.call(
             path=path,
             interface=SETTINGS_CONNECTION_INTERFACE,
@@ -148,6 +157,7 @@ class NetworkManagerClient:
         return body[0] if body else {}
 
     async def find_saved_connection(self, connection_id: str) -> str | None:
+        """Find a saved connection path by its stable profile identifier."""
         for path in await self.list_saved_connections():
             try:
                 settings = await self.get_connection_settings(path)
@@ -159,6 +169,7 @@ class NetworkManagerClient:
         return None
 
     async def find_active_connection(self, connection_id: str) -> str | None:
+        """Find an active connection path by its stable profile identifier."""
         paths = await self.get_property(NM_PATH, NM_INTERFACE, "ActiveConnections")
         for path in paths:
             try:
@@ -172,6 +183,7 @@ class NetworkManagerClient:
         return None
 
     async def active_connections_for_device(self, device_path: str) -> list[str]:
+        """Return active connections currently bound to a device path."""
         paths = await self.get_property(NM_PATH, NM_INTERFACE, "ActiveConnections")
         matching = []
         for path in paths:
@@ -186,6 +198,7 @@ class NetworkManagerClient:
         return matching
 
     async def activate(self, connection_path: str, device_path: str) -> str:
+        """Activate a saved connection on a specific device."""
         body = await self.call(
             path=NM_PATH,
             interface=NM_INTERFACE,
@@ -198,6 +211,7 @@ class NetworkManagerClient:
         return str(body[0])
 
     async def deactivate(self, active_path: str) -> None:
+        """Deactivate one active NetworkManager connection."""
         await self.call(
             path=NM_PATH,
             interface=NM_INTERFACE,
@@ -207,6 +221,7 @@ class NetworkManagerClient:
         )
 
     async def disconnect_device(self, device_path: str) -> None:
+        """Request that NetworkManager disconnect the device."""
         await self.call(
             path=device_path,
             interface=DEVICE_INTERFACE,
@@ -214,6 +229,7 @@ class NetworkManagerClient:
         )
 
     async def delete_connection(self, connection_path: str) -> None:
+        """Delete a saved or volatile NetworkManager connection profile."""
         await self.call(
             path=connection_path,
             interface=SETTINGS_CONNECTION_INTERFACE,
@@ -223,6 +239,7 @@ class NetworkManagerClient:
     async def wait_for_device_state(
         self, device_path: str, expected: int, timeout: float
     ) -> None:
+        """Wait for a device state or fail on timeout/device failure."""
         deadline = asyncio.get_running_loop().time() + timeout
         last_state = None
         while asyncio.get_running_loop().time() < deadline:
@@ -244,6 +261,7 @@ class NetworkManagerClient:
         )
 
     async def wait_for_active(self, active_path: str, timeout: float) -> None:
+        """Wait until a connection becomes active or is deactivated."""
         deadline = asyncio.get_running_loop().time() + timeout
         last_state = None
         while asyncio.get_running_loop().time() < deadline:
@@ -269,6 +287,7 @@ class NetworkManagerClient:
         device_path: str,
         timeout: float,
     ) -> str:
+        """Wait for a named connection and its device to become active."""
         deadline = asyncio.get_running_loop().time() + timeout
         while asyncio.get_running_loop().time() < deadline:
             active_path = await self.find_active_connection(connection_id)
@@ -290,6 +309,7 @@ class NetworkManagerClient:
         raise TimeoutError(f"Connection {connection_id!r} did not activate")
 
     async def quiesce(self, device_path: str, timeout: float) -> None:
+        """Deactivate device connections and wait for a disconnected state."""
         for active_path in await self.active_connections_for_device(device_path):
             try:
                 await self.deactivate(active_path)
@@ -302,6 +322,7 @@ class NetworkManagerClient:
         await self.wait_for_device_state(device_path, DEVICE_DISCONNECTED, timeout)
 
     async def scan(self, device_path: str, timeout: float) -> list[NetworkManagerAccessPoint]:
+        """Request a fresh scan and return access points from that scan."""
         previous = int(
             await self.get_property(device_path, WIRELESS_INTERFACE, "LastScan")
         )
@@ -325,6 +346,7 @@ class NetworkManagerClient:
     async def get_access_points(
         self, device_path: str
     ) -> list[NetworkManagerAccessPoint]:
+        """Read usable access-point properties while tolerating object churn."""
         body = await self.call(
             path=device_path,
             interface=WIRELESS_INTERFACE,
@@ -378,6 +400,7 @@ class NetworkManagerClient:
         interface_name: str,
         connection_id: str,
     ) -> tuple[str, str]:
+        """Create and activate a volatile client profile for an open AP."""
         settings = {
             "connection": {
                 "id": Variant("s", connection_id),
@@ -413,6 +436,7 @@ class NetworkManagerClient:
         return str(body[0]), str(body[1])
 
     async def get_ipv4(self, active_path: str) -> IPv4Configuration | None:
+        """Return the first usable IPv4 address for an active connection."""
         path = str(
             await self.get_property(
                 active_path, ACTIVE_CONNECTION_INTERFACE, "Ip4Config"
@@ -442,6 +466,7 @@ class NetworkManagerClient:
     async def wait_for_ipv4(
         self, active_path: str, timeout: float
     ) -> IPv4Configuration:
+        """Wait for a non-loopback, non-link-local IPv4 configuration."""
         deadline = asyncio.get_running_loop().time() + timeout
         while asyncio.get_running_loop().time() < deadline:
             configuration = await self.get_ipv4(active_path)
@@ -453,6 +478,7 @@ class NetworkManagerClient:
     async def wait_until_available(
         self, interface_name: str, connection_id: str, timeout: float
     ) -> tuple[str, str]:
+        """Wait for NetworkManager paths to become available after recovery."""
         deadline = asyncio.get_running_loop().time() + timeout
         last_error = None
         while asyncio.get_running_loop().time() < deadline:

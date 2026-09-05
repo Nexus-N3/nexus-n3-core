@@ -166,6 +166,9 @@ switching between gateway implementations.</p>
 <ul class="simple">
 <li><p>Gateway options show the transport scope (<code class="docutils literal notranslate"><span class="pre">local</span></code> or <code class="docutils literal notranslate"><span class="pre">remote</span></code>)</p></li>
 <li><p>Actions allow switching gateway and restarting the server</p></li>
+<li><p>The displayed Core release uses <code class="docutils literal notranslate"><span class="pre">nexus_n3.core.version.get_core_version()</span></code>.
+Source runs read <code class="docutils literal notranslate"><span class="pre">[project].version</span></code> from the checkout’s <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>;
+installed deployments fall back to Python distribution metadata.</p></li>
 </ul>
 </section>
 <section id="key-files">

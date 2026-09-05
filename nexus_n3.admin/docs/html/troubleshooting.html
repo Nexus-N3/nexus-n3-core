@@ -149,6 +149,18 @@
 <li><p>the expected <code class="docutils literal notranslate"><span class="pre">--admin-port</span></code></p></li>
 </ul>
 </section>
+<section id="admin-ui-shows-an-old-core-version">
+<h2>Admin UI Shows an Old Core Version<a class="headerlink" href="#admin-ui-shows-an-old-core-version" title="Permalink to this heading">¶</a></h2>
+<p>Source checkouts read the release from the <code class="docutils literal notranslate"><span class="pre">[project]</span></code> version in
+<code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code>. Installed deployments read the generated Python distribution
+metadata. Both paths are centralized in <code class="docutils literal notranslate"><span class="pre">nexus_n3.core.version.get_core_version</span></code>
+and are used by the admin UI, device information, gateway messages, Azure
+reported properties, and plugin compatibility checks.</p>
+<p>If a source run shows an old version, stop all existing server processes and
+start <code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">nexus_n3_server.py</span> <span class="pre">--admin</span></code> from the intended checkout. If an
+installed command shows an old version, rebuild and reinstall the Core package;
+editing a source <code class="docutils literal notranslate"><span class="pre">pyproject.toml</span></code> elsewhere does not update an installed wheel.</p>
+</section>
 <section id="plugin-not-detected">
 <h2>Plugin Not Detected<a class="headerlink" href="#plugin-not-detected" title="Permalink to this heading">¶</a></h2>
 <p>Check the plugin root:</p>
@@ -178,6 +190,39 @@ expected plugin inventory.</p>
 <p>The admin/device-info surfaces should also report gateway readiness.</p>
 <p>On Windows development machines, prefer <code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code> over host BLE when
 the gateway hardware is available.</p>
+</section>
+<section id="wi-fi-sensor-is-not-discovered">
+<h2>Wi-Fi Sensor Is Not Discovered<a class="headerlink" href="#wi-fi-sensor-is-not-discovered" title="Permalink to this heading">¶</a></h2>
+<p>Check that <code class="docutils literal notranslate"><span class="pre">NEXUS_SENSOR_NETWORK_ENABLED=1</span></code>, the configured
+<code class="docutils literal notranslate"><span class="pre">NEXUS_SENSOR_INTERFACE</span></code> exists, and the saved
+<code class="docutils literal notranslate"><span class="pre">NEXUS_SENSOR_CONNECTION</span></code> profile is active with the expected SSID and CIDR.</p>
+<p>An already provisioned X-IMU3 should announce on the Nexus sensor subnet. A
+reset X-IMU3 instead exposes its open provisioning AP and must pass through the
+provisioning lifecycle. <code class="docutils literal notranslate"><span class="pre">WifiCandidateNotFound</span></code> means no unclaimed AP matched
+the requested sensor plugin during the fresh scan; it does not mean that a
+sensor already connected to the Nexus AP failed its UDP ping.</p>
+<p>Only one process should use the vendor network-announcement socket. Stop stale
+live-test or Core processes before retrying if the vendor package reports
+<code class="docutils literal notranslate"><span class="pre">RuntimeError:</span> <span class="pre">Address</span> <span class="pre">in</span> <span class="pre">use</span></code>.</p>
+</section>
+<section id="wi-fi-ap-restoration-or-authentication-failure">
+<h2>Wi-Fi AP Restoration or Authentication Failure<a class="headerlink" href="#wi-fi-ap-restoration-or-authentication-failure" title="Permalink to this heading">¶</a></h2>
+<p>Direct recovery after provisioning requires the fixed-purpose service and
+sudoers rule:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>deployment/systemd/install_wifi_recovery.sh<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$USER</span><span class="s2">&quot;</span><span class="w"> </span>EE
+</pre></div>
+</div>
+<p>Replace <code class="docutils literal notranslate"><span class="pre">EE</span></code> with the deployment’s regulatory domain. Confirm that the service
+exists and that the runtime identity received the generated sudoers rule. Core
+runs only this non-interactive command:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>sudo -n /usr/bin/systemctl restart nexus-n3-wifi-recovery.service
+</pre></div>
+</div>
+<p>A desktop authorization dialog is not a supported runtime path. It normally
+indicates stale code, an incomplete recovery installation, or a runtime user
+that does not match the installed sudoers rule. Restart Core after correcting
+the installation. Inspect the <code class="docutils literal notranslate"><span class="pre">WIFI.backend</span></code> and <code class="docutils literal notranslate"><span class="pre">WIFI.adapter.errors</span></code> entries
+in the session diagnostics for the failed recovery stage.</p>
 </section>
 <section id="gateway-checksum-or-parser-resynchronisation-reported">
 <h2>Gateway Checksum or Parser Resynchronisation Reported<a class="headerlink" href="#gateway-checksum-or-parser-resynchronisation-reported" title="Permalink to this heading">¶</a></h2>
@@ -236,8 +281,11 @@ assume a parser checksum failure identifies a particular sensor plugin.</p>
                             <ul>
 <li><a class="reference internal" href="#">Troubleshooting</a><ul>
 <li><a class="reference internal" href="#admin-ui-not-reachable">Admin UI Not Reachable</a></li>
+<li><a class="reference internal" href="#admin-ui-shows-an-old-core-version">Admin UI Shows an Old Core Version</a></li>
 <li><a class="reference internal" href="#plugin-not-detected">Plugin Not Detected</a></li>
 <li><a class="reference internal" href="#ble-gateway-not-available">BLE Gateway Not Available</a></li>
+<li><a class="reference internal" href="#wi-fi-sensor-is-not-discovered">Wi-Fi Sensor Is Not Discovered</a></li>
+<li><a class="reference internal" href="#wi-fi-ap-restoration-or-authentication-failure">Wi-Fi AP Restoration or Authentication Failure</a></li>
 <li><a class="reference internal" href="#gateway-checksum-or-parser-resynchronisation-reported">Gateway Checksum or Parser Resynchronisation Reported</a></li>
 <li><a class="reference internal" href="#no-session-output">No Session Output</a></li>
 <li><a class="reference internal" href="#deployment-mismatch">Deployment Mismatch</a></li>

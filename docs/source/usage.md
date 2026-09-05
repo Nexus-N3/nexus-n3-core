@@ -64,6 +64,7 @@ This file is the source of truth for:
 
 - plugin root and optional dev bootstrap list
 - BLE backend and gateway serial settings
+- Wi-Fi sensor interface, AP, provisioning, and recovery settings
 - local ZeroMQ gateway bindings
 - Azure bridge settings
 - admin/runtime options
@@ -264,6 +265,25 @@ GATEWAY_SERIAL_PORT=COM3
 For Windows development, `nexus_ble_gateway` is the preferred BLE path because
 it uses the serial gateway rather than host BLE stack integration.
 
+## Wi-Fi Sensors
+
+Wi-Fi sensors use one shared Core adapter and vendor-specific installed sensor
+plugins. On Linux, the production backend controls NetworkManager through
+`dbus-fast` on the system bus. Configure the saved Nexus AP and runtime settings
+before enabling the sensor network; see
+`modules/nexus_n3_sensor_manager.md` for the complete lifecycle and variable
+list.
+
+Normal operation keeps the host on the Nexus sensor AP. Discovery first checks
+for already-connected sensors without disrupting that AP. Provisioning occurs
+only for a requested deficit and temporarily switches the configured radio to a
+sensor's provisioning AP inside an exclusive, cleanup-protected session.
+
+The X-IMU3 plugin uses stable serial numbers as sensor addresses. Its sample
+rate is applied during setup for a new session. The plugin emits canonical
+`IMUSample` units: acceleration in m/s², angular velocity in degrees/s, and
+timestamps in microseconds.
+
 ## File Output
 
 The core writes data generically through the file manager rather than through
@@ -302,9 +322,21 @@ diagnostics/session_diagnostics.jsonl
 These files are created independently of the optional pipeline-debug switch and
 are included in the finalized session archive. The JSON file is the current
 session summary. The JSONL file is the time-ordered event record and includes
-stream lifecycle events, compute-performance records, gateway diagnostics, and
-errors. The summary field `official_stream` begins as `pending` and is finalized
-as `passed` or `failed`.
+stream lifecycle events, compute-performance records, BLE and Wi-Fi transport
+diagnostics, and errors. The summary field `official_stream` begins as `pending`
+and is finalized as `passed` or `failed`.
+
+The latest transport snapshot is stored at:
+
+```text
+latest_gateway_diagnostics.diagnostics.BLE
+latest_gateway_diagnostics.diagnostics.WIFI
+```
+
+The `WIFI` entry combines shared adapter state, NetworkManager backend state,
+and optional per-sensor plugin counters. Despite the historical summary field
+name, it is a transport-diagnostics container and may contain both adapter
+families.
 
 Core emits one `compute_performance` event for every compute result. Important
 fields include:

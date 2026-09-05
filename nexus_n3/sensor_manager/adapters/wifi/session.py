@@ -22,6 +22,7 @@ class ProvisioningControls:
 
     @property
     def did_remote_access_point_disappear(self) -> bool:
+        """Return whether provisioning intentionally removed the remote AP."""
         return self._remote_access_point_disappeared
 
 
@@ -36,6 +37,7 @@ class ExclusiveClientSession:
         self.restored_network: IPv4Configuration | None = None
 
     async def __aenter__(self) -> "ExclusiveClientSession":
+        """Lock the radio, release AP hosting, and collect a fresh scan."""
         await self._lock.acquire()
         try:
             self.access_points = await self._backend.begin_provisioning()
@@ -51,9 +53,11 @@ class ExclusiveClientSession:
         self,
         access_point: WifiAccessPoint,
     ) -> IPv4Configuration:
+        """Connect the shared radio to one selected provisioning AP."""
         return await self._backend.connect_temporary(access_point)
 
     async def __aexit__(self, exc_type, exc, traceback) -> None:
+        """Restore the Nexus AP before releasing the shared radio lock."""
         cleanup_error = None
         cancelled = False
         try:
@@ -73,6 +77,7 @@ class ExclusiveClientSession:
             raise asyncio.CancelledError
 
     async def _restore_shielded(self) -> None:
+        """Finish AP restoration even when the owning task is cancelled."""
         restore_task = asyncio.create_task(
             self._backend.restore_ap(
                 remote_access_point_disappeared=(

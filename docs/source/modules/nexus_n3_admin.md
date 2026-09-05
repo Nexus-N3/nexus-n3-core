@@ -18,6 +18,9 @@ switching between gateway implementations.
 ## UI Notes
 - Gateway options show the transport scope (`local` or `remote`)
 - Actions allow switching gateway and restarting the server
+- The displayed Core release uses `nexus_n3.core.version.get_core_version()`.
+  Source runs read `[project].version` from the checkout's `pyproject.toml`;
+  installed deployments fall back to Python distribution metadata.
 
 ## Key Files
 - `nexus_n3.admin/app.py`
