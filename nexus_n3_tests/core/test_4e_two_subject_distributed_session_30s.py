@@ -14,6 +14,9 @@ For this test the subjects are prepared sequentially:
     3. Discover sensors for the worker subject.
     4. Connect sensors for the worker subject.
     5. Start streaming for all subjects.
+    6. Wait for both subjects to enter official streaming.
+    7. Run the official stream for the requested duration.
+    8. Stop, drain and disconnect all subjects.
 
 This verifies the subject-specific distributed discovery/connection lifecycle
 before testing the higher-level discover-all/connect-all orchestration.
@@ -91,7 +94,14 @@ class DistributedClient(Client):
         }
 
         self.initialized_subject_ids = set()
+
+        # Physical stream-start events.
         self.started_subject_ids = set()
+
+        # Subjects that have passed the startup/readiness gate and entered
+        # official streaming.
+        self.official_subject_ids = set()
+
         self.stopped_subject_ids = set()
         self.drained_node_ids = set()
         self.compute_subject_ids = set()
@@ -469,6 +479,11 @@ class DistributedClient(Client):
             if self.failed:
                 return
 
+            print(
+                "INITIALIZED SUBJECTS:",
+                sorted(self.initialized_subject_ids),
+            )
+
             if (
                 self.initialized_subject_ids >= self.expected_subject_ids
                 and not self.discovery_sent_for
@@ -620,7 +635,7 @@ class DistributedClient(Client):
             return
 
         # --------------------------------------------------------------
-        # STREAM STARTED
+        # PHYSICAL STREAM STARTED
         # --------------------------------------------------------------
 
         if evt_type == mt.EVT_STREAM_STARTED:
@@ -629,15 +644,44 @@ class DistributedClient(Client):
             )
 
             print(
-                "STREAM STARTED:",
+                "PHYSICAL STREAM STARTED:",
                 sorted(self.started_subject_ids),
             )
 
+            # Do not start the requested-duration timer here. Physical
+            # streaming begins before the startup/readiness gate has
+            # completed.
+            return
+
+        # --------------------------------------------------------------
+        # OFFICIAL STREAM STARTED
+        # --------------------------------------------------------------
+
+        if evt_type == mt.EVT_STREAM_OFFICIAL_STARTED:
+            self.official_subject_ids.update(
+                self._subject_ids(payload)
+            )
+
+            print(
+                "OFFICIAL STREAM STARTED:",
+                sorted(self.official_subject_ids),
+                f"({len(self.official_subject_ids)}/"
+                f"{len(self.expected_subject_ids)})",
+            )
+
+            # Each node completes its startup gate independently. The
+            # requested session duration begins only when every expected
+            # subject has entered official streaming.
             if (
-                self.started_subject_ids >= self.expected_subject_ids
+                self.official_subject_ids >= self.expected_subject_ids
                 and not self.stop_timer_started
             ):
                 self.stop_timer_started = True
+
+                print(
+                    "ALL SUBJECTS OFFICIAL: "
+                    f"starting {self.stream_seconds}s session timer"
+                )
 
                 threading.Thread(
                     target=self._stop_stream_after_delay,
@@ -790,8 +834,8 @@ class DistributedClient(Client):
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Run two two-Movella-DOT subjects for 30 seconds, "
-            "assigning one subject to the master and one to a worker."
+            "Run two two-Movella-DOT subjects for 30 seconds of official "
+            "streaming, assigning one subject to the master and one to a worker."
         )
     )
 
