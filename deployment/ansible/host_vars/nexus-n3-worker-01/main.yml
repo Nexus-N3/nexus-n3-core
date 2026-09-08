@@ -1,0 +1,28 @@
+---
+nexus_role: worker
+nexus_node_id: nexus-n3-worker-01
+
+# These should match the existing master deployment.
+nexus_site: lunar
+nexus_site_id: lunar_facility_cologne
+nexus_site_name: "Lunar Cologne"
+nexus_customer_id: "customer-dlr"
+
+nexus_plugin_bundle_target: rpi
+
+# For an attached Nexus serial BLE gateway:
+nexus_ble_backend: nexus_ble_gateway
+nexus_ble_gateway_serial_port: auto
+
+# Workers normally have no local admin UI or Azure connection.
+nexus_admin_enabled: false
+nexus_azure_bridge_enabled: false
+nexus_azure_bridge_remote_control: false
+
+# Required by runtime_env.j2; presently missing from release defaults.
+nexus_azure_bridge_upload_retry_interval: 5
+
+# Master shared storage:
+nexus_worker_smb_server: nexus-n3-master.local
+nexus_worker_smb_share: nexus_n3_data
+nexus_worker_mount_point: /exports/nexus_n3_data
