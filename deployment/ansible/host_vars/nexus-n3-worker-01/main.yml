@@ -1,9 +1,9 @@
 ---
 # Runtime identity
-nexus_site: worker_test
-nexus_site_id: worker_test
-nexus_site_name: "Worker Test"
-nexus_customer_id: test
+nexus_site: lunar
+nexus_site_id: lunar_facility_cologne
+nexus_site_name: "Lunar Cologne"
+nexus_customer_id: customer-dlr
 
 # BLE hardware
 nexus_ble_backend: nexus_ble_gateway

@@ -12,6 +12,21 @@
   when: not nexus_release_local_stat.stat.exists
   tags: [release_artifact, core_release]
 
+- name: Validate worker runtime identity
+  ansible.builtin.assert:
+    that:
+      - nexus_node_id | string | trim | length > 0
+      - nexus_customer_id | string | trim | length > 0
+      - nexus_site | string | trim | length > 0
+      - nexus_site_id | string | trim | length > 0
+      - nexus_site_name | string | trim | length > 0
+    fail_msg: >-
+      Worker deployments require nexus_node_id, nexus_customer_id, nexus_site,
+      nexus_site_id, and nexus_site_name so WorkerNode receives the complete
+      deployment identity on ExecStart.
+  when: nexus_role == "worker"
+  tags: [runtime_env, service, core_release]
+
 
 
 - name: Ensure install root exists
@@ -148,6 +163,35 @@
     name: "{{ nexus_service_name }}"
     enabled: true
     state: started
+  tags: [service, core_release]
+
+- name: Read deployed worker ExecStart
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - show
+      - "{{ nexus_service_name }}.service"
+      - --property=ExecStart
+      - --value
+  register: nexus_worker_exec_start
+  changed_when: false
+  when: nexus_role == "worker"
+  tags: [service, core_release]
+
+- name: Verify deployed worker ExecStart identity
+  ansible.builtin.assert:
+    that:
+      - "'--role worker' in nexus_worker_exec_start.stdout"
+      - "('--node-id ' ~ nexus_node_id) in nexus_worker_exec_start.stdout"
+      - "('--customer-id ' ~ nexus_customer_id) in nexus_worker_exec_start.stdout"
+      - "('--site ' ~ nexus_site) in nexus_worker_exec_start.stdout"
+      - "('--site-id ' ~ nexus_site_id) in nexus_worker_exec_start.stdout"
+      - "'--site-name' in nexus_worker_exec_start.stdout"
+      - "nexus_site_name in nexus_worker_exec_start.stdout"
+    fail_msg: >-
+      The installed worker service ExecStart does not contain the complete
+      worker node and deployment identity.
+  when: nexus_role == "worker"
   tags: [service, core_release]
 
 - name: Check ufw status for worker router
