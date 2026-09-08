@@ -351,6 +351,7 @@ async def run_async_server(
             },
             robot_service=robot_service,
             ble_runtime_config=ble_runtime_config,
+            node_id="master",
         )
         server.handler.set_archive_service({
             "available": bool(admin_enabled),
@@ -369,9 +370,27 @@ async def run_async_server(
             usb_disk_manager=usb_disk_manager,
             mdns_hostname=mdns_hostname,
         )
-        master_node.system_event_bus = server.system_event_bus
-        if usb_disk_manager.supports_hotdisk:
-            master_node.set_after_all_streams_drained(server.finalize_usb_after_stream)
+        master_node.set_system_event_bus(server.system_event_bus)
+
+        def _finalize_distributed_session(drain_result: dict):
+            """Finalize the shared session after every distributed node has drained."""
+            session_timestamp = drain_result.get("session_timestamp")
+            if not session_timestamp:
+                raise RuntimeError(
+                    "Distributed drain acknowledgements did not identify one shared session"
+                )
+            if server.handler.si:
+                server.handler.si.finalize_distributed_session(
+                    session_timestamp=session_timestamp,
+                    status=drain_result.get("status", "ok"),
+                    reason=drain_result.get("reason"),
+                )
+
+            if usb_disk_manager.supports_hotdisk:
+                server.finalize_usb_after_stream()
+
+        master_node.set_after_all_streams_drained(_finalize_distributed_session)
+
         master_node.start()
         await asyncio.sleep(0.1)
         server.start()
@@ -422,6 +441,7 @@ async def run_async_server(
             },
             robot_service=robot_service,
             ble_runtime_config=ble_runtime_config,
+            node_id="standalone",
         )
         server.handler.set_archive_service({
             "available": bool(admin_enabled),
@@ -732,6 +752,8 @@ def main():
 
     if args.site:
         os.environ["AZURE_IOT_SITE"] = args.site
+    if args.customer_id:
+        os.environ["AZURE_IOT_CUSTOMER_ID"] = args.customer_id
     if args.site_id:
         os.environ["AZURE_IOT_SITE_ID"] = args.site_id
     if args.site_name:

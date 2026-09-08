@@ -175,6 +175,28 @@ def test_single_subject_stop_archives_session_once(monkeypatch) -> None:
     assert event_bus.events[-1]["payload"]["all_local_streams_stopped"] is True
 
 
+def test_distributed_stop_closes_local_diagnostics_without_archiving(monkeypatch) -> None:
+    monkeypatch.setattr(core_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(core_module.pipeline_diagnostics, "record_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(core_module.pipeline_diagnostics, "flush", lambda: None)
+    monkeypatch.setattr(core_module.pipeline_diagnostics, "finish_session", lambda: None)
+
+    subject = _make_subject("subject1", "A1")
+    core, file_manager, event_bus = _make_core([subject])
+
+    core._stop_stream_impl(
+        [subject],
+        stop_specific=True,
+        stop_context={"stop_session_id": "distributed-stop-1"},
+    )
+
+    assert file_manager.archive_calls == 0
+    assert file_manager.finished_diagnostics == [core.session_timestamp]
+    assert file_manager.finalized_summaries[-1]["drain_summary"]["status"] == "ok"
+    assert event_bus.events[-1]["type"] == mt.EVT_STREAM_DRAINED
+    assert event_bus.events[-1]["payload"]["stop_session_id"] == "distributed-stop-1"
+
+
 def test_disconnect_is_blocked_while_stream_finalization_is_pending() -> None:
     subject = _make_subject("subject1", "A1")
     core, _, _ = _make_core([subject])

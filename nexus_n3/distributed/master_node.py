@@ -6,6 +6,7 @@ import json
 import socket
 import time
 import uuid
+from copy import deepcopy
 from datetime import datetime
 from zeroconf import Zeroconf, ServiceInfo
 from nexus_n3.distributed.capabilities import build_node_capabilities, supports_algorithm, supports_sensor
@@ -95,6 +96,23 @@ class MasterNode:
         """Register a callback to run after the final active stream has drained."""
         self._after_all_streams_drained = callback
 
+    def set_system_event_bus(self, system_event_bus):
+        """Attach the master event bus and track local distributed lifecycle events."""
+        self.system_event_bus = system_event_bus
+        self.system_event_bus.subscribe(self._handle_local_system_event)
+
+    def _handle_local_system_event(self, event: dict):
+        """Handle master-local lifecycle events relevant to distributed coordination."""
+        if (
+            event.get("type") == mt.EVT_STREAM_DRAINED
+            and not event.get("node_id")
+        ):
+            self.record_local_stream_drained(event.get("payload"))
+
+    def record_local_stream_drained(self, payload: dict | None):
+        """Record the master's local stream-drained acknowledgement."""
+        self._record_drain_ack(self.node_id, payload)
+
     def _create_drain_record(self, stop_session_id: str, *, scope: str, subject_ids: list[str], expected_nodes: list[str]):
         with self._drain_lock:
             self._drain_tracking[stop_session_id] = {
@@ -102,6 +120,7 @@ class MasterNode:
                 "subject_ids": list(subject_ids),
                 "expected_nodes": set(expected_nodes),
                 "acks": {},
+                "finalizing": False,
                 "finalized": False,
             }
 
@@ -119,24 +138,81 @@ class MasterNode:
                 "status": payload.get("status", "ok"),
                 "reason": payload.get("reason"),
                 "subject_ids": list(payload.get("subject_ids") or []),
+                "session_timestamp": payload.get("session_timestamp"),
+                "drained": payload.get("drained", True),
             }
 
             expected_nodes = record["expected_nodes"]
             acked_nodes = set(record["acks"].keys())
             all_expected_acked = expected_nodes.issubset(acked_nodes)
-            has_error = any(ack.get("status") != "ok" for ack in record["acks"].values())
-            should_finalize = all_expected_acked and not has_error and not record["finalized"]
+            all_expected_drained = all(
+                record["acks"][expected_node].get("drained", True)
+                for expected_node in expected_nodes
+                if expected_node in record["acks"]
+            )
+            should_finalize = (
+                all_expected_acked
+                and all_expected_drained
+                and not record["finalizing"]
+                and not record["finalized"]
+            )
             if should_finalize:
                 drained_subjects = set()
                 for ack in record["acks"].values():
                     drained_subjects.update(ack.get("subject_ids", []))
                 self._active_stream_subjects.difference_update(drained_subjects)
-                record["finalized"] = True
                 all_streams_drained = not self._active_stream_subjects
+                record["finalizing"] = all_streams_drained
+
+                statuses = [ack.get("status", "ok") for ack in record["acks"].values()]
+                reasons = [ack.get("reason") for ack in record["acks"].values() if ack.get("reason")]
+                session_timestamps = {
+                    ack.get("session_timestamp")
+                    for ack in record["acks"].values()
+                    if ack.get("session_timestamp")
+                }
+                drain_result = {
+                    "stop_session_id": stop_session_id,
+                    "status": "error" if any(status != "ok" for status in statuses) else "ok",
+                    "reason": "; ".join(reasons) or None,
+                    "session_timestamp": (
+                        next(iter(session_timestamps))
+                        if len(session_timestamps) == 1
+                        else None
+                    ),
+                    "acks": deepcopy(record["acks"]),
+                }
+
+                if not all_streams_drained:
+                    record["finalized"] = True
+
+        if should_finalize and all_streams_drained and not self._after_all_streams_drained:
+            with self._drain_lock:
+                record = self._drain_tracking.get(stop_session_id)
+                if record:
+                    record["finalizing"] = False
+                    record["finalized"] = True
+            return
 
         if should_finalize and all_streams_drained and self._after_all_streams_drained:
-            self._after_all_streams_drained()
+            try:
+                self._after_all_streams_drained(drain_result)
+            except Exception:
+                with self._drain_lock:
+                    record = self._drain_tracking.get(stop_session_id)
+                    if record:
+                        record["finalizing"] = False
+                logger.exception(
+                    "Distributed session finalization failed for stop_session_id=%s",
+                    stop_session_id,
+                )
+                return
 
+            with self._drain_lock:
+                record = self._drain_tracking.get(stop_session_id)
+                if record:
+                    record["finalizing"] = False
+                    record["finalized"] = True
 
     def start(self):
         """Start the master node: ROUTER loop + mDNS advertisement."""
@@ -511,12 +587,6 @@ class MasterNode:
                 if node_id == "master":
                     if message_handler:
                         message_handler._handle_local(msg_type, node_payload)
-                        if stop_session_id:
-                            self._record_drain_ack(self.node_id, {
-                                "stop_session_id": stop_session_id,
-                                "status": "ok",
-                                "subject_ids": ids,
-                            })
                 else:
                     self.send_command({"type": msg_type, "payload": node_payload}, target_node_id=node_id)
             return
@@ -548,17 +618,6 @@ class MasterNode:
                 if node_id == "master":
                     if message_handler:
                         message_handler._handle_local(msg_type, node_payload)
-                        if stop_session_id:
-                            local_subject_ids = [
-                                subject_id
-                                for subject_id, sub_data in self.registry.get_subjects().items()
-                                if sub_data["assigned_node"] == self.node_id
-                            ]
-                            self._record_drain_ack(self.node_id, {
-                                "stop_session_id": stop_session_id,
-                                "status": "ok",
-                                "subject_ids": local_subject_ids,
-                            })
                 else:
                     self.send_command({"type": msg_type, "payload": node_payload}, target_node_id=node_id)
 

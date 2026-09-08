@@ -21,7 +21,11 @@ def test_canonical_session_paths_and_archive(tmp_path: Path, monkeypatch):
         pipeline_diagnostics, "register_sensor", lambda *args, **kwargs: None
     )
 
-    manager = FileManager("DLR Cologne Campus", base_dir=tmp_path)
+    manager = FileManager(
+        "DLR Cologne Campus",
+        base_dir=tmp_path,
+        node_id="nexus-n3-worker-01",
+    )
     manager.set_session_label("sample session")
     entry = _sensor_entry()
     subject = SimpleNamespace(subject_id="subject/1", sensors=[entry])
@@ -74,7 +78,11 @@ def test_canonical_session_paths_and_archive(tmp_path: Path, monkeypatch):
     assert real_time_path.is_file()
     assert intermediate_path.is_file()
     assert consolidated_path.is_file()
-    assert (session_dir / "diagnostics" / "session_diagnostics.json").is_file()
+    assert (
+        session_dir
+        / "nexus-n3-worker-01-diagnostics"
+        / "session_diagnostics.json"
+    ).is_file()
 
     description = manager.describe_session(timestamp)
     assert description["session_id"] == "sample_session_20260727_120626"

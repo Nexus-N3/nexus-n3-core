@@ -29,6 +29,7 @@ class Server:
         deployment_context=None,  # includes customer id and site id and site name 
         robot_service=None,
         ble_runtime_config: BLERuntimeConfig | None = None,
+        node_id: str = "standalone",
     ):
         """
         Initialize the server wrapper.
@@ -53,6 +54,7 @@ class Server:
             self.gateway.site,
             self.system_event_bus,
             ble_runtime_config=self.ble_runtime_config,
+            node_id=node_id,
         )
 
         # if a disk manager is provided then we are in standalone or master mode

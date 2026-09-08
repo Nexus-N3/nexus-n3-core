@@ -41,7 +41,13 @@ class Core:
         compute_orch (ComputeOrchestrator): Algorithm registration and compute coordination.
     """
 
-    def __init__(self, site, system_event_bus=None, ble_runtime_config: BLERuntimeConfig | None = None):
+    def __init__(
+        self,
+        site,
+        system_event_bus=None,
+        ble_runtime_config: BLERuntimeConfig | None = None,
+        node_id: str = "standalone",
+    ):
         """
         Initialize the SystemInterface.
 
@@ -53,15 +59,17 @@ class Core:
                     - 'sensors': list of sensor configs (with 'local_name', 'number_of').
                     - 'locations': list of body locations for each sensor.
             system_event_bus (SystemEventBus, optional): Event bus to emit system events.
+            node_id: Runtime node identity used for node-local diagnostics.
         """
         self.site = site
+        self.node_id = node_id
         self.system_event_bus = system_event_bus
         self.ble_runtime_config = ble_runtime_config or BLERuntimeConfig.from_env()
         self.subject_graph = SubjectGraph(
             system_event_bus=self.system_event_bus,
             max_total_sensors=8,
         )
-        self.storage = StorageOrchestrator(self.site)
+        self.storage = StorageOrchestrator(self.site, node_id=self.node_id)
         self.sensor_orch = SensorOrchestrator(
             self.system_event_bus,
             self._on_error,
@@ -772,6 +780,13 @@ class Core:
         """Shared stop logic for full and subject-scoped stop operations."""
         subject_ids = [sub.subject_id for sub in subjects]
         scope = "subjects" if stop_specific else "all"
+
+        # A stop_session_id is injected by MasterNode for distributed stop
+        # operations. In that case this Core instance must only complete its
+        # local stop/drain; the master will finalize the shared session after
+        # all participating nodes have drained.
+        distributed_stop = bool((stop_context or {}).get("stop_session_id"))
+
         self._set_stream_stop_finalization_pending(True)
         with self._startup_lock:
             self._startup_manual_stop = True
@@ -884,7 +899,16 @@ class Core:
             pipeline_diagnostics.flush()
             archive_info = None
             if all_streams_stopped:
-                archive_info = self._finalize_session_archive()
+                if distributed_stop:
+                    # Each node owns and closes its diagnostics before reporting
+                    # that it has drained. The master alone archives the shared
+                    # session once every participating node has acknowledged.
+                    pipeline_diagnostics.finish_session()
+                    self.storage.file_manager.finish_session_diagnostics(
+                        self.session_timestamp
+                    )
+                else:
+                    archive_info = self._finalize_session_archive()
             if raw_write_failures:
                 archive_info = archive_info or self.storage.file_manager.describe_session(self.session_timestamp)
                 archive_info["partial"] = True
@@ -903,6 +927,7 @@ class Core:
                 subject_ids=subject_ids,
                 status="error",
                 reason=str(exc),
+                drained=False,
                 session_info=self.storage.file_manager.describe_session(self.session_timestamp),
             )
             self.storage.file_manager.update_session_diagnostics_summary(
@@ -914,6 +939,32 @@ class Core:
         finally:
             self._set_stream_stop_finalization_pending(False)
             self._clear_startup_gate_state(phase="idle")
+
+    def finalize_distributed_session(
+        self,
+        *,
+        session_timestamp: str | None = None,
+        status: str = "ok",
+        reason: str | None = None,
+    ) -> dict:
+        """
+        Finalize the shared session after all distributed nodes have drained.
+
+        This must only be called by the master after the distributed drain
+        barrier has completed.
+        """
+        if session_timestamp and str(session_timestamp) != str(self.session_timestamp):
+            raise RuntimeError(
+                "Refusing to finalize distributed session "
+                f"{session_timestamp!r}; active session is {self.session_timestamp!r}"
+            )
+
+        self.storage.file_manager.finalize_session_diagnostics(
+            self.session_timestamp,
+            status=status,
+            reason=reason,
+        )
+        return self._finalize_session_archive()
 
     def _finalize_session_archive(self) -> dict:
         """
@@ -941,6 +992,7 @@ class Core:
         subject_ids: list[str],
         status: str,
         reason: str | None = None,
+        drained: bool = True,
         session_info: dict | None = None,
     ) -> dict:
         """Build the drain record before diagnostics and session finalization."""
@@ -949,6 +1001,7 @@ class Core:
             "scope": scope,
             "subject_ids": list(subject_ids),
             "status": status,
+            "drained": drained,
             "all_local_streams_stopped": not self.has_active_streams(),
         }
         payload.update(self._event_context(subject_ids=subject_ids))

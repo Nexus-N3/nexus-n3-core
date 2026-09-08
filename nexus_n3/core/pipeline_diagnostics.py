@@ -50,11 +50,12 @@ class PipelineDiagnostics:
         site: str | None,
         session_label: str | None,
         session_timestamp: str | None,
+        node_id: str = "standalone",
     ) -> None:
         if not self.is_enabled():
             return
         session_path = Path(session_dir).resolve()
-        output_path = session_path / "diagnostics" / "pipeline_debug.ndjson"
+        output_path = session_path / f"{node_id}-diagnostics" / "pipeline_debug.ndjson"
         session_key = str(output_path)
         with self._lock:
             if self._session_key == session_key:
@@ -63,6 +64,7 @@ class PipelineDiagnostics:
             self._session_key = session_key
             self._session_meta = {
                 "site": site,
+                "node_id": node_id,
                 "session_label": session_label,
                 "session_timestamp": session_timestamp,
                 "session_dir": str(session_path),

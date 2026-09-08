@@ -12,13 +12,20 @@ from datetime import datetime, timezone
 logger = get_module_logger("Message Handler")
 
 class MessageHandler:
-    def __init__(self, site, _system_event_bus, ble_runtime_config: BLERuntimeConfig | None = None):
+    def __init__(
+        self,
+        site,
+        _system_event_bus,
+        ble_runtime_config: BLERuntimeConfig | None = None,
+        node_id: str = "standalone",
+    ):
         """
         Args:
             site: Site name for this deployment.
             _system_event_bus: Event bus for system events.
         """
         self.site = site
+        self.node_id = node_id
         self._system_event_bus = _system_event_bus
         self.ble_runtime_config = ble_runtime_config or BLERuntimeConfig.from_env()
         self.si = None
@@ -308,6 +315,7 @@ class MessageHandler:
                 self.site,
                 system_event_bus=self._system_event_bus,
                 ble_runtime_config=self.ble_runtime_config,
+                node_id=self.node_id,
             )
             if self.registry and hasattr(self.si, "compute_orch"):
                 self.si.compute_orch.set_registry(self.registry)

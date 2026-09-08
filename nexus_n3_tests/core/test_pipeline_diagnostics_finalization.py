@@ -21,6 +21,7 @@ def test_finished_pipeline_diagnostics_cannot_recreate_archived_session(tmp_path
         site="lunar",
         session_label="session",
         session_timestamp="1",
+        node_id="master",
     )
     diagnostics.record_event("stream_stop_summary", status="ok")
 
@@ -41,14 +42,14 @@ def test_finished_pipeline_diagnostics_cannot_recreate_archived_session(tmp_path
         assert "data.csv" in archive.namelist()
         pipeline_records = [
             json.loads(line)
-            for line in archive.read("diagnostics/pipeline_debug.ndjson").decode().splitlines()
+            for line in archive.read("master-diagnostics/pipeline_debug.ndjson").decode().splitlines()
         ]
     assert any(record["type"] == "stream_stop_summary" for record in pipeline_records)
     assert all(record["type"] != "late_event" for record in pipeline_records)
 
 
 def test_finished_structured_diagnostics_ignore_late_events(tmp_path: Path):
-    manager = FileManager("lunar", base_dir=tmp_path)
+    manager = FileManager("lunar", base_dir=tmp_path, node_id="master")
     manager.set_session_label("session")
     timestamp = "20260803_120000"
     manager.start_session_diagnostics(timestamp)
@@ -79,10 +80,10 @@ def test_finished_structured_diagnostics_ignore_late_events(tmp_path: Path):
     assert archive_path.is_file()
     assert not session_dir.exists()
     with zipfile.ZipFile(archive_path) as archive:
-        summary = json.loads(archive.read("diagnostics/session_diagnostics.json"))
+        summary = json.loads(archive.read("master-diagnostics/session_diagnostics.json"))
         events = [
             json.loads(line)
-            for line in archive.read("diagnostics/session_diagnostics.jsonl").decode().splitlines()
+            for line in archive.read("master-diagnostics/session_diagnostics.jsonl").decode().splitlines()
         ]
     assert summary["drain_summary"] == drain_summary
     assert "late" not in summary
