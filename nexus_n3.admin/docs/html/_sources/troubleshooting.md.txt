@@ -103,8 +103,11 @@ in the session diagnostics for the failed recovery stage.
 
 ## Gateway Checksum or Parser Resynchronisation Reported
 
-Inspect `diagnostics/session_diagnostics.json` or the `sensor_diagnostics`
-records in `diagnostics/session_diagnostics.jsonl` inside the session archive.
+Inspect `<node-id>-diagnostics/session_diagnostics.json` or the
+`sensor_diagnostics` records in
+`<node-id>-diagnostics/session_diagnostics.jsonl` inside the session archive.
+Use `master-diagnostics` for the master and `standalone-diagnostics` for a
+standalone runtime.
 
 The host parser counters are reset at the beginning of every recording session,
 including when a new session is started without reinitializing core. A non-zero

@@ -135,8 +135,17 @@ python nexus_n3_server.py --role standalone --bridge azure_bridge --azure-bridge
 Worker node:
 
 ```bash
-python nexus_n3_server.py --role worker --node-id worker_A
+python nexus_n3_server.py \
+  --role worker \
+  --node-id worker_A \
+  --customer-id <customer-id> \
+  --site <site> \
+  --site-id <site-id> \
+  --site-name "<site name>"
 ```
+
+Master and workers in one distributed deployment must use matching customer and
+site identity. Ansible supplies these flags from the worker host variables.
 
 AI node:
 
@@ -149,6 +158,12 @@ Master node:
 ```bash
 python nexus_n3_server.py --role master --mdns-hostname nexus-n3-master --admin --admin-host 0.0.0.0 --admin-port 9000
 ```
+
+In distributed mode the master participates in subject execution. Subjects are
+assigned to capable master/worker nodes by current sensor load, with the master
+preferred when loads are equal. A shared stop is archived by the master only
+after every participating node emits `stream_drained` for the same stop and
+session.
 
 The runtime uses the internal `zeromq_gateway`. `--gateway` remains accepted,
 but `zeromq_gateway` is the only supported value.
@@ -312,12 +327,16 @@ hosts, file output remains local-only.
 
 ## Diagnostics
 
-Every recording session contains structured diagnostics under:
+Every recording session contains structured diagnostics under a directory
+owned by the runtime node:
 
 ```text
-diagnostics/session_diagnostics.json
-diagnostics/session_diagnostics.jsonl
+<node-id>-diagnostics/session_diagnostics.json
+<node-id>-diagnostics/session_diagnostics.jsonl
 ```
+
+The master uses `master-diagnostics`, workers use their configured node ID, and
+standalone mode uses `standalone-diagnostics`.
 
 These files are created independently of the optional pipeline-debug switch and
 are included in the finalized session archive. The JSON file is the current
@@ -373,7 +392,7 @@ python nexus_n3_server.py --diagnostics
 This writes:
 
 ```text
-nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/diagnostics/pipeline_debug.ndjson
+nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/<node-id>-diagnostics/pipeline_debug.ndjson
 ```
 
 `pipeline_debug.ndjson` is an additional debugging artifact. It is not required

@@ -74,10 +74,13 @@ not be accepted as normal operation on a headless system.
 Session data is written under the configured output root and finalized into zip
 archives when a session is fully drained.
 
-Each archive contains `diagnostics/session_diagnostics.json` for the final
-session summary and `diagnostics/session_diagnostics.jsonl` for ordered runtime
-events. These structured diagnostics are written for every recording; they do
-not require the optional `--diagnostics` pipeline-debug mode.
+Each archive contains node-specific diagnostics. The master writes under
+`master-diagnostics/`, each worker writes under `<worker-node-id>-diagnostics/`,
+and standalone mode writes under `standalone-diagnostics/`. Each directory
+contains `session_diagnostics.json` for the final summary and
+`session_diagnostics.jsonl` for ordered runtime events. These structured
+diagnostics are written for every recording; they do not require the optional
+`--diagnostics` pipeline-debug mode.
 
 For mixed BLE/Wi-Fi sessions, inspect
 `latest_gateway_diagnostics.diagnostics.BLE` and
@@ -104,4 +107,5 @@ See also:
 - `deployment/guides/MANUAL_DEPLOYMENT.md`
 - `deployment/guides/SYSTEMD_DEPLOYMENT.md`
 - `deployment/guides/ANSIBLE_DEPLOYMENT.md`
+- `deployment/guides/DISTRIBUTED_DEPLOYMENT.md`
 - `deployment/guides/DOCKER_DEPLOYMENT.md`

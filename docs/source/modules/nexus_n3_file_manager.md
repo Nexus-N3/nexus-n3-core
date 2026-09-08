@@ -10,7 +10,7 @@ implement their own storage layout in the core; they emit samples/results and
 the file manager persists them through the common session structure.
 
 ## Key Classes and APIs
-- `FileManager(site, base_dir="nexus_n3_outputs")`
+- `FileManager(site, base_dir="nexus_n3_outputs", node_id="standalone")`
   - `set_base_path(path)`
   - `set_session_label(label)`
   - `start_stream(subject, session_index)`
@@ -62,7 +62,8 @@ the file manager persists them through the common session structure.
 ## Session Diagnostics
 
 Structured diagnostics are created for every recording under the session's
-`diagnostics/` directory:
+`<node-id>-diagnostics/` directory. Master and standalone modes use the stable
+IDs `master` and `standalone` respectively:
 
 - `session_diagnostics.json`: merged summary containing lifecycle state,
   `official_stream` (`pending`, then `passed` or `failed`), the latest gateway

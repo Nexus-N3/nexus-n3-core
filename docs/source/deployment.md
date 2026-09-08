@@ -62,7 +62,8 @@ For containerized standalone deployment, see:
 
 ## Distributed Deployment
 
-For role expectations and plugin distribution rules across master, worker, and
-AI nodes, see:
+For deployment identity, capability-based subject assignment, shared session
+storage, per-node diagnostics, the distributed drain barrier, and plugin rules
+across master, worker, and AI nodes, see:
 
 - `deployment/guides/DISTRIBUTED_DEPLOYMENT.md`

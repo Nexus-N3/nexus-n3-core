@@ -202,10 +202,13 @@ not be accepted as normal operation on a headless system.</p>
 <h2>Storage<a class="headerlink" href="#storage" title="Permalink to this heading">¶</a></h2>
 <p>Session data is written under the configured output root and finalized into zip
 archives when a session is fully drained.</p>
-<p>Each archive contains <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.json</span></code> for the final
-session summary and <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.jsonl</span></code> for ordered runtime
-events. These structured diagnostics are written for every recording; they do
-not require the optional <code class="docutils literal notranslate"><span class="pre">--diagnostics</span></code> pipeline-debug mode.</p>
+<p>Each archive contains node-specific diagnostics. The master writes under
+<code class="docutils literal notranslate"><span class="pre">master-diagnostics/</span></code>, each worker writes under <code class="docutils literal notranslate"><span class="pre">&lt;worker-node-id&gt;-diagnostics/</span></code>,
+and standalone mode writes under <code class="docutils literal notranslate"><span class="pre">standalone-diagnostics/</span></code>. Each directory
+contains <code class="docutils literal notranslate"><span class="pre">session_diagnostics.json</span></code> for the final summary and
+<code class="docutils literal notranslate"><span class="pre">session_diagnostics.jsonl</span></code> for ordered runtime events. These structured
+diagnostics are written for every recording; they do not require the optional
+<code class="docutils literal notranslate"><span class="pre">--diagnostics</span></code> pipeline-debug mode.</p>
 <p>For mixed BLE/Wi-Fi sessions, inspect
 <code class="docutils literal notranslate"><span class="pre">latest_gateway_diagnostics.diagnostics.BLE</span></code> and
 <code class="docutils literal notranslate"><span class="pre">latest_gateway_diagnostics.diagnostics.WIFI</span></code> in the summary. The Wi-Fi entry
@@ -228,6 +231,7 @@ USB management actions.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/MANUAL_DEPLOYMENT.md</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/SYSTEMD_DEPLOYMENT.md</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/ANSIBLE_DEPLOYMENT.md</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/DISTRIBUTED_DEPLOYMENT.md</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/DOCKER_DEPLOYMENT.md</span></code></p></li>
 </ul>
 </section>

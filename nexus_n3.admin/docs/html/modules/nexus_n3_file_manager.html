@@ -148,7 +148,7 @@ the file manager persists them through the common session structure.</p>
 <section id="key-classes-and-apis">
 <h2>Key Classes and APIs<a class="headerlink" href="#key-classes-and-apis" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">FileManager(site,</span> <span class="pre">base_dir=&quot;nexus_n3_outputs&quot;)</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">FileManager(site,</span> <span class="pre">base_dir=&quot;nexus_n3_outputs&quot;,</span> <span class="pre">node_id=&quot;standalone&quot;)</span></code></p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">set_base_path(path)</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">set_session_label(label)</span></code></p></li>
@@ -221,7 +221,8 @@ directory is removed.</p></li>
 <section id="session-diagnostics">
 <h2>Session Diagnostics<a class="headerlink" href="#session-diagnostics" title="Permalink to this heading">¶</a></h2>
 <p>Structured diagnostics are created for every recording under the session’s
-<code class="docutils literal notranslate"><span class="pre">diagnostics/</span></code> directory:</p>
+<code class="docutils literal notranslate"><span class="pre">&lt;node-id&gt;-diagnostics/</span></code> directory. Master and standalone modes use the stable
+IDs <code class="docutils literal notranslate"><span class="pre">master</span></code> and <code class="docutils literal notranslate"><span class="pre">standalone</span></code> respectively:</p>
 <ul class="simple">
 <li><p><code class="docutils literal notranslate"><span class="pre">session_diagnostics.json</span></code>: merged summary containing lifecycle state,
 <code class="docutils literal notranslate"><span class="pre">official_stream</span></code> (<code class="docutils literal notranslate"><span class="pre">pending</span></code>, then <code class="docutils literal notranslate"><span class="pre">passed</span></code> or <code class="docutils literal notranslate"><span class="pre">failed</span></code>), the latest gateway

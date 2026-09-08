@@ -165,6 +165,9 @@ detection or control.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">USBDiskManager</span></code> detects mount availability and write access</p></li>
 <li><p>On insert/remove -&gt; callbacks -&gt; <code class="docutils literal notranslate"><span class="pre">Server</span></code> emits <code class="docutils literal notranslate"><span class="pre">CMD_UPDATE_FILE_PATH</span></code></p></li>
 <li><p>Master forwards <code class="docutils literal notranslate"><span class="pre">network_path</span></code> to workers</p></li>
+<li><p>Workers write assigned subject data into the shared session tree</p></li>
+<li><p>Only the master archives after every participating execution node reports
+<code class="docutils literal notranslate"><span class="pre">stream_drained</span></code></p></li>
 </ul>
 </section>
 <section id="key-files">

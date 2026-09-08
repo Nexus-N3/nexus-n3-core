@@ -243,9 +243,17 @@ deployment concerns and are not part of the Windows development/runtime path.</p
 </pre></div>
 </div>
 <p>Worker node:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--role<span class="w"> </span>worker<span class="w"> </span>--node-id<span class="w"> </span>worker_A
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--role<span class="w"> </span>worker<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--node-id<span class="w"> </span>worker_A<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--customer-id<span class="w"> </span>&lt;customer-id&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--site<span class="w"> </span>&lt;site&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--site-id<span class="w"> </span>&lt;site-id&gt;<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--site-name<span class="w"> </span><span class="s2">&quot;&lt;site name&gt;&quot;</span>
 </pre></div>
 </div>
+<p>Master and workers in one distributed deployment must use matching customer and
+site identity. Ansible supplies these flags from the worker host variables.</p>
 <p>AI node:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--role<span class="w"> </span>ai<span class="w"> </span>--node-id<span class="w"> </span>ai_A
 </pre></div>
@@ -254,6 +262,11 @@ deployment concerns and are not part of the Windows development/runtime path.</p
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>nexus_n3_server.py<span class="w"> </span>--role<span class="w"> </span>master<span class="w"> </span>--mdns-hostname<span class="w"> </span>nexus-n3-master<span class="w"> </span>--admin<span class="w"> </span>--admin-host<span class="w"> </span><span class="m">0</span>.0.0.0<span class="w"> </span>--admin-port<span class="w"> </span><span class="m">9000</span>
 </pre></div>
 </div>
+<p>In distributed mode the master participates in subject execution. Subjects are
+assigned to capable master/worker nodes by current sensor load, with the master
+preferred when loads are equal. A shared stop is archived by the master only
+after every participating node emits <code class="docutils literal notranslate"><span class="pre">stream_drained</span></code> for the same stop and
+session.</p>
 <p>The runtime uses the internal <code class="docutils literal notranslate"><span class="pre">zeromq_gateway</span></code>. <code class="docutils literal notranslate"><span class="pre">--gateway</span></code> remains accepted,
 but <code class="docutils literal notranslate"><span class="pre">zeromq_gateway</span></code> is the only supported value.</p>
 </section>
@@ -399,11 +412,14 @@ hosts, file output remains local-only.</p>
 </section>
 <section id="diagnostics">
 <h2>Diagnostics<a class="headerlink" href="#diagnostics" title="Permalink to this heading">¶</a></h2>
-<p>Every recording session contains structured diagnostics under:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>diagnostics/session_diagnostics.json
-diagnostics/session_diagnostics.jsonl
+<p>Every recording session contains structured diagnostics under a directory
+owned by the runtime node:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>&lt;node-id&gt;-diagnostics/session_diagnostics.json
+&lt;node-id&gt;-diagnostics/session_diagnostics.jsonl
 </pre></div>
 </div>
+<p>The master uses <code class="docutils literal notranslate"><span class="pre">master-diagnostics</span></code>, workers use their configured node ID, and
+standalone mode uses <code class="docutils literal notranslate"><span class="pre">standalone-diagnostics</span></code>.</p>
 <p>These files are created independently of the optional pipeline-debug switch and
 are included in the finalized session archive. The JSON file is the current
 session summary. The JSONL file is the time-ordered event record and includes
@@ -449,7 +465,7 @@ result schemas do not need to change.</p>
 </pre></div>
 </div>
 <p>This writes:</p>
-<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nexus_n3_outputs/&lt;site&gt;/sessions/&lt;session_name&gt;_&lt;timestamp&gt;/diagnostics/pipeline_debug.ndjson
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>nexus_n3_outputs/&lt;site&gt;/sessions/&lt;session_name&gt;_&lt;timestamp&gt;/&lt;node-id&gt;-diagnostics/pipeline_debug.ndjson
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">pipeline_debug.ndjson</span></code> is an additional debugging artifact. It is not required

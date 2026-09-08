@@ -201,7 +201,7 @@ to execute optional algorithm-level consolidation executors</p></li>
 it does not stop the background worker thread.</p></li>
 <li><p>Performance logging can be enabled with <code class="docutils literal notranslate"><span class="pre">NEXUS_PERF_LOG=1</span></code>.</p></li>
 <li><p>Core emits one <code class="docutils literal notranslate"><span class="pre">compute_performance</span></code> event per compute result and appends the
-same payload to <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.jsonl</span></code>.</p></li>
+same payload to <code class="docutils literal notranslate"><span class="pre">&lt;node-id&gt;-diagnostics/session_diagnostics.jsonl</span></code>.</p></li>
 <li><p>The algorithm host wraps <code class="docutils literal notranslate"><span class="pre">execute_real_time()</span></code> at runtime when that method is
 available. Those records use <code class="docutils literal notranslate"><span class="pre">execution_measurement=wrapped_execute_real_time</span></code>
 and are exact for that method boundary. Plugins without that conventional

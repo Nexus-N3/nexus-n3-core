@@ -226,8 +226,11 @@ in the session diagnostics for the failed recovery stage.</p>
 </section>
 <section id="gateway-checksum-or-parser-resynchronisation-reported">
 <h2>Gateway Checksum or Parser Resynchronisation Reported<a class="headerlink" href="#gateway-checksum-or-parser-resynchronisation-reported" title="Permalink to this heading">¶</a></h2>
-<p>Inspect <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.json</span></code> or the <code class="docutils literal notranslate"><span class="pre">sensor_diagnostics</span></code>
-records in <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.jsonl</span></code> inside the session archive.</p>
+<p>Inspect <code class="docutils literal notranslate"><span class="pre">&lt;node-id&gt;-diagnostics/session_diagnostics.json</span></code> or the
+<code class="docutils literal notranslate"><span class="pre">sensor_diagnostics</span></code> records in
+<code class="docutils literal notranslate"><span class="pre">&lt;node-id&gt;-diagnostics/session_diagnostics.jsonl</span></code> inside the session archive.
+Use <code class="docutils literal notranslate"><span class="pre">master-diagnostics</span></code> for the master and <code class="docutils literal notranslate"><span class="pre">standalone-diagnostics</span></code> for a
+standalone runtime.</p>
 <p>The host parser counters are reset at the beginning of every recording session,
 including when a new session is started without reinitializing core. A non-zero
 <code class="docutils literal notranslate"><span class="pre">stream_checksum_failures</span></code> value therefore belongs to the current recording in

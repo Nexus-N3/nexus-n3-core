@@ -133,6 +133,23 @@ Core deployment variables:
 - `nexus_plugin_root`
 - `nexus_plugin_bundle_staging_root`
 
+Distributed identity variables:
+
+- `nexus_customer_id`
+- `nexus_site`
+- `nexus_site_id`
+- `nexus_site_name`
+- `nexus_node_id` (unique per worker)
+
+The customer and site values must match the master. WorkerNode receives them
+from the rendered command line rather than loading them independently. For a
+worker, the service command includes:
+
+```text
+--customer-id <customer-id> --site <site> --site-id <site-id> \
+--site-name "<site name>" --role worker --node-id <worker-node-id>
+```
+
 Bundle variables:
 
 - `nexus_plugin_bundle_target`
@@ -441,6 +458,17 @@ ansible-playbook -i inventory.ini playbooks/deploy_workers.yml -e nexus_deploy_h
 
 That is the standard path for cases like adding a new worker to an existing
 system where the master is already deployed.
+
+After deployment, inspect the complete unit and command with:
+
+```bash
+ansible <worker-node-id> -b -m command -a 'systemctl cat nexus-n3'
+ansible <worker-node-id> -b -m command \
+  -a 'systemctl show nexus-n3.service --property=ExecStart --value'
+```
+
+The worker service does not enable the admin server. It still installs the
+shared release payload used by the generic deployment role.
 
 ## What The Role Does
 
