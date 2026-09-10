@@ -258,12 +258,21 @@ class SensorHost:
             sample_type = getattr(payload, "sample_type", None)
             if sample_type:
                 serialized["sample_type"] = sample_type
+        timing = None
+        if event_name == "on_data":
+            timing = {}
+            payload_timing = getattr(payload, "_nexus_timing", None)
+            if payload_timing:
+                timing.update(dict(payload_timing))
+            # Adapter-owned transports such as BLE remain authoritative when
+            # both the transport callback and payload provide the same field.
+            timing.update(self._adapter.current_notification_timing())
         self._adapter._connection.request(
             "sensor.emit_event",
             {
                 "event": event_name,
                 "payload": serialized,
-                "timing": self._adapter.current_notification_timing() if event_name == "on_data" else None,
+                "timing": timing or None,
             },
         )
 
