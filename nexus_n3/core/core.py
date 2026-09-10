@@ -114,6 +114,8 @@ class Core:
         self._stream_stop_finalization_lock = threading.RLock()
         self._stream_stop_finalization_pending = False
         self._official_stream_origin_monotonic_ns = None
+        self._official_start_mode = "local"
+        self._start_session_id: str | None = None
 
     def get_ble_runtime_config(self) -> dict:
         """Return the active BLE runtime backend configuration."""
@@ -189,6 +191,8 @@ class Core:
             self._startup_stats_by_address = {}
             self._startup_attempt = 0
             self._pending_stream_tags = {}
+            self._official_start_mode = "local"
+            self._start_session_id = None
 
     def _iter_sensor_entries(self):
         for subject in self.subjects:
@@ -229,6 +233,8 @@ class Core:
                     stable_count += 1
             payload = {
                 "phase": phase,
+                "start_session_id": self._start_session_id,
+                "official_start_mode": self._official_start_mode,
                 "attempt": self._startup_attempt,
                 "max_attempts": self._startup_max_attempts,
                 "required_sensor_count": len(self._startup_addresses),
@@ -309,10 +315,15 @@ class Core:
                 if address in self._startup_stats_by_address
             )
             if stable:
-                self.stream_phase = "official_streaming"
-                self._activate_official_streaming()
-                payload = self._startup_status_payload(phase=self.stream_phase)
-                self._emit_startup_event(mt.EVT_STREAM_OFFICIAL_STARTED, payload)
+                if self._official_start_mode == "coordinated":
+                    self.stream_phase = "ready_for_official"
+                    payload = self._startup_status_payload(phase=self.stream_phase)
+                    self._emit_startup_event(mt.EVT_STREAM_READY_FOR_OFFICIAL, payload)
+                else:
+                    self.stream_phase = "official_streaming"
+                    self._activate_official_streaming()
+                    payload = self._startup_status_payload(phase=self.stream_phase)
+                    self._emit_startup_event(mt.EVT_STREAM_OFFICIAL_STARTED, payload)
                 return
             reason = "startup gate stability window elapsed before all sensors became stable"
             if self._startup_attempt < self._startup_max_attempts:
@@ -403,6 +414,42 @@ class Core:
                 "official_stream_started_at": datetime.now().isoformat(timespec="seconds"),
             },
         )
+
+    def start_official_stream(self, payload: dict) -> None:
+        """Commit a locally-ready distributed stream to official acquisition."""
+        requested_start_id = payload.get("start_session_id")
+        requested_timestamp = payload.get("session_timestamp")
+        with self._startup_lock:
+            if self._official_start_mode != "coordinated":
+                raise RuntimeError("Official-start commands are only valid for coordinated streams")
+            if not requested_start_id or requested_start_id != self._start_session_id:
+                raise RuntimeError("Official-start command does not match the active start session")
+            if requested_timestamp and str(requested_timestamp) != str(self.session_timestamp):
+                raise RuntimeError("Official-start command has a stale session timestamp")
+            if self.stream_phase == "official_streaming":
+                payload = self._startup_status_payload(phase=self.stream_phase)
+                self._emit_startup_event(mt.EVT_STREAM_OFFICIAL_STARTED, payload)
+                return
+            if self.stream_phase == "activating_official":
+                return
+            if self.stream_phase != "ready_for_official":
+                raise RuntimeError(
+                    f"Local stream is not ready for official acquisition (phase={self.stream_phase})"
+                )
+            self.stream_phase = "activating_official"
+
+        try:
+            self._activate_official_streaming()
+        except Exception:
+            with self._startup_lock:
+                self.stream_phase = "startup_failed"
+                self._startup_last_failure_reason = "official persistence activation failed"
+            raise
+
+        with self._startup_lock:
+            self.stream_phase = "official_streaming"
+            event_payload = self._startup_status_payload(phase=self.stream_phase)
+        self._emit_startup_event(mt.EVT_STREAM_OFFICIAL_STARTED, event_payload)
 
     # -------------------------
     # Private Initialization
@@ -690,6 +737,8 @@ class Core:
     def start_stream(self, payload):
         """Start streaming data for all subjects."""
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self._official_start_mode = payload.get("official_start_mode", "local")
+        self._start_session_id = payload.get("start_session_id")
         self.archived_session_timestamp = None
         self._official_stream_origin_monotonic_ns = None
         tag_all = payload.get("tag")
@@ -718,6 +767,8 @@ class Core:
                 "requested_sensor_addresses": list(stream_addresses),
                 "startup_policy": self._startup_policy_payload(),
                 "official_stream": "pending",
+                "official_start_mode": self._official_start_mode,
+                "start_session_id": self._start_session_id,
             },
         )
         self.sensor_orch.reset_session_diagnostics()
@@ -727,6 +778,8 @@ class Core:
         """Start streaming sensors for specific subjects."""
         subject_ids = payload["subject_ids"]
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self._official_start_mode = payload.get("official_start_mode", "local")
+        self._start_session_id = payload.get("start_session_id")
         self.archived_session_timestamp = None
         self._official_stream_origin_monotonic_ns = None
         tag_all = payload.get("tag")
@@ -757,6 +810,8 @@ class Core:
                 "requested_sensor_addresses": list(addresses),
                 "startup_policy": self._startup_policy_payload(),
                 "official_stream": "pending",
+                "official_start_mode": self._official_start_mode,
+                "start_session_id": self._start_session_id,
             },
         )
         self.sensor_orch.reset_session_diagnostics()

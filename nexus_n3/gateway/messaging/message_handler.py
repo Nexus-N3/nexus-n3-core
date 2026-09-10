@@ -462,6 +462,12 @@ class MessageHandler:
                 logger.exception("Failed to start stream for all")
                 self.si.pending_correlation_id = None
                 emit_error(f"Start stream for all failed: {exc}")
+        elif msg_type == mt.CMD_START_OFFICIAL_STREAM:
+            try:
+                self.si.start_official_stream(payload)
+            except Exception as exc:
+                logger.exception("Failed to start official distributed stream")
+                emit_error(f"Official stream start failed: {exc}")
         elif msg_type == mt.CMD_STOP_STREAM_FOR_SUBJECTS:
             self.si.pending_correlation_id = correlation_id
             try:

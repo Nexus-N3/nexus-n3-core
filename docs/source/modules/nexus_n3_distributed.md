@@ -30,6 +30,32 @@ results back.
 - Stop commands carry a shared `stop_session_id`; each node reports its real
   `stream_drained` event after local file and diagnostics queues are closed
 - Master archives only after every expected execution node has drained
+- Distributed start commands carry a shared `start_session_id`. Physical
+  streaming and readiness checks remain node-local, but a ready node does not
+  open official persistence until the coordinating client sends
+  `start_official_stream`.
+- The master forwards `start_official_stream` only after every execution node
+  assigned to that start has emitted `stream_ready_for_official`.
+- Standalone nodes do not use this barrier and transition directly from local
+  readiness to `stream_official_started`.
+
+## Official-Start Barrier
+
+1. The master snapshots the execution nodes participating in a distributed
+   start and injects `official_start_mode=coordinated` plus one shared
+   `start_session_id` into their start commands.
+2. Each node starts its physical sensors and runs its local startup gate.
+3. A successful local gate enters `ready_for_official`; samples continue to be
+   observed for the physical stream but are not persisted or computed.
+4. After observing readiness from every required node, the coordinating client
+   sends `start_official_stream` with the shared start ID.
+5. The master validates the barrier and broadcasts the commit only to the
+   snapshotted participants.
+6. Each node activates persistence, establishes its node-local Timeline origin,
+   and acknowledges with `stream_official_started`.
+
+The commit is idempotent for its active start ID. Stale IDs and commits issued
+before all participants are ready are rejected.
 
 ## Subject Assignment
 - Master and workers are both execution-capable assignment candidates

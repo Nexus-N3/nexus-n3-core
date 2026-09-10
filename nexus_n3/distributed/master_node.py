@@ -73,6 +73,8 @@ class MasterNode:
         self._last_ai_registry_broadcast = 0.0
         self._drain_lock = threading.RLock()
         self._drain_tracking = {}
+        self._official_start_lock = threading.RLock()
+        self._official_start_tracking = {}
         self._active_stream_subjects = set()
         self._after_all_streams_drained = None
         self._local_capabilities = local_capabilities or build_node_capabilities(
@@ -99,19 +101,79 @@ class MasterNode:
     def set_system_event_bus(self, system_event_bus):
         """Attach the master event bus and track local distributed lifecycle events."""
         self.system_event_bus = system_event_bus
-        self.system_event_bus.subscribe(self._handle_local_system_event)
+        # Track master-local acknowledgements before the gateway publishes them.
+        # A coordinating client may respond immediately to the final READY event.
+        self.system_event_bus.subscribe(self._handle_local_system_event, prepend=True)
 
     def _handle_local_system_event(self, event: dict):
         """Handle master-local lifecycle events relevant to distributed coordination."""
+        event_type = event.get("type")
         if (
-            event.get("type") == mt.EVT_STREAM_DRAINED
+            event_type == mt.EVT_STREAM_DRAINED
             and not event.get("node_id")
         ):
             self.record_local_stream_drained(event.get("payload"))
+        elif event_type in {
+            mt.EVT_STREAM_READY_FOR_OFFICIAL,
+            mt.EVT_STREAM_OFFICIAL_STARTED,
+        } and not event.get("node_id"):
+            self._record_official_start_event(self.node_id, event_type, event.get("payload"))
 
     def record_local_stream_drained(self, payload: dict | None):
         """Record the master's local stream-drained acknowledgement."""
         self._record_drain_ack(self.node_id, payload)
+
+    def _create_official_start_record(
+        self,
+        start_session_id: str,
+        *,
+        session_timestamp: str,
+        subject_ids: list[str],
+        expected_nodes: list[str],
+    ) -> None:
+        """Snapshot the participants in one distributed official-start barrier."""
+        with self._official_start_lock:
+            self._official_start_tracking = {
+                start_session_id: {
+                    "session_timestamp": session_timestamp,
+                    "subject_ids": list(subject_ids),
+                    "expected_nodes": set(expected_nodes),
+                    "ready_nodes": set(),
+                    "official_nodes": set(),
+                    "commit_dispatched": False,
+                }
+            }
+
+    def _record_official_start_event(
+        self,
+        node_id: str | None,
+        event_type: str,
+        payload: dict | None,
+    ) -> None:
+        """Record node-local readiness and official-start acknowledgements."""
+        payload = payload or {}
+        start_session_id = payload.get("start_session_id")
+        if not node_id or not start_session_id:
+            return
+        with self._official_start_lock:
+            record = self._official_start_tracking.get(start_session_id)
+            if not record or node_id not in record["expected_nodes"]:
+                return
+            if str(payload.get("session_timestamp")) != str(record["session_timestamp"]):
+                return
+            if event_type == mt.EVT_STREAM_READY_FOR_OFFICIAL:
+                record["ready_nodes"].add(node_id)
+            elif event_type == mt.EVT_STREAM_OFFICIAL_STARTED:
+                record["official_nodes"].add(node_id)
+
+    def _emit_dispatch_error(self, message: str, payload: dict | None = None) -> None:
+        if not self.system_event_bus:
+            return
+        error_payload = {"message": message}
+        correlation_id = (payload or {}).get("correlation_id")
+        if correlation_id:
+            error_payload["correlation_id"] = correlation_id
+        self.system_event_bus.emit({"type": mt.EVT_ERROR, "payload": error_payload})
 
     def _create_drain_record(self, stop_session_id: str, *, scope: str, subject_ids: list[str], expected_nodes: list[str]):
         with self._drain_lock:
@@ -319,6 +381,11 @@ class MasterNode:
                     continue
                 if msg_type == mt.EVT_STREAM_DRAINED:
                     self._record_drain_ack(node_id, msg.get("payload"))
+                elif msg_type in {
+                    mt.EVT_STREAM_READY_FOR_OFFICIAL,
+                    mt.EVT_STREAM_OFFICIAL_STARTED,
+                }:
+                    self._record_official_start_event(node_id, msg_type, msg.get("payload"))
                 # emit worker events after any internal tracking updates
                 self.system_event_bus.emit(msg)
 
@@ -553,11 +620,43 @@ class MasterNode:
         # ------------------- General dispatch -------------------
         subject_ids = payload.get("subject_ids")
         session_timestamp = None
+        start_session_id = None
         if msg_type in (mt.CMD_START_STREAM_FOR_ALL, mt.CMD_START_STREAM_FOR_SUBJECTS):
             session_timestamp = payload.get("session_timestamp") or datetime.now().strftime("%Y%m%d_%H%M%S")
+            start_session_id = payload.get("start_session_id") or uuid.uuid4().hex
         stop_session_id = None
         if msg_type in (mt.CMD_STOP_STREAM_FOR_ALL, mt.CMD_STOP_STREAM_FOR_SUBJECTS):
             stop_session_id = payload.get("stop_session_id") or uuid.uuid4().hex
+
+        if msg_type == mt.CMD_START_OFFICIAL_STREAM:
+            requested_start_id = payload.get("start_session_id")
+            with self._official_start_lock:
+                record = self._official_start_tracking.get(requested_start_id)
+                if not record:
+                    self._emit_dispatch_error("Unknown or stale distributed start session", payload)
+                    return
+                if record["ready_nodes"] != record["expected_nodes"]:
+                    missing = sorted(record["expected_nodes"] - record["ready_nodes"])
+                    self._emit_dispatch_error(
+                        f"Distributed stream is not ready for official acquisition; waiting for {missing}",
+                        payload,
+                    )
+                    return
+                record["commit_dispatched"] = True
+                expected_nodes = sorted(record["expected_nodes"])
+                commit_payload = dict(payload)
+                commit_payload["session_timestamp"] = record["session_timestamp"]
+
+            for node_id in expected_nodes:
+                if node_id == self.node_id:
+                    if message_handler:
+                        message_handler._handle_local(msg_type, commit_payload)
+                else:
+                    self.send_command(
+                        {"type": msg_type, "payload": commit_payload},
+                        target_node_id=node_id,
+                    )
+            return
 
         if subject_ids:
             if msg_type in (mt.CMD_START_STREAM_FOR_ALL, mt.CMD_START_STREAM_FOR_SUBJECTS):
@@ -567,6 +666,14 @@ class MasterNode:
             for subject_id in subject_ids:
                 assigned_node = self.registry.get_subjects().get(subject_id, {}).get("assigned_node", "master")
                 nodes_to_subjects.setdefault(assigned_node, []).append(subject_id)
+
+            if start_session_id:
+                self._create_official_start_record(
+                    start_session_id,
+                    session_timestamp=session_timestamp,
+                    subject_ids=list(subject_ids),
+                    expected_nodes=list(nodes_to_subjects.keys()),
+                )
 
             if stop_session_id:
                 self._create_drain_record(
@@ -581,6 +688,9 @@ class MasterNode:
                 node_payload["subject_ids"] = ids
                 if session_timestamp:
                     node_payload["session_timestamp"] = session_timestamp
+                if start_session_id:
+                    node_payload["start_session_id"] = start_session_id
+                    node_payload["official_start_mode"] = "coordinated"
                 if stop_session_id:
                     node_payload["stop_session_id"] = stop_session_id
 
@@ -601,6 +711,14 @@ class MasterNode:
                 with self._drain_lock:
                     self._active_stream_subjects.update(all_subject_ids)
 
+            if start_session_id:
+                self._create_official_start_record(
+                    start_session_id,
+                    session_timestamp=session_timestamp,
+                    subject_ids=all_subject_ids,
+                    expected_nodes=list(nodes_with_subjects),
+                )
+
             if stop_session_id:
                 self._create_drain_record(
                     stop_session_id,
@@ -613,6 +731,9 @@ class MasterNode:
                 node_payload = dict(payload)
                 if session_timestamp:
                     node_payload["session_timestamp"] = session_timestamp
+                if start_session_id:
+                    node_payload["start_session_id"] = start_session_id
+                    node_payload["official_start_mode"] = "coordinated"
                 if stop_session_id:
                     node_payload["stop_session_id"] = stop_session_id
                 if node_id == "master":
