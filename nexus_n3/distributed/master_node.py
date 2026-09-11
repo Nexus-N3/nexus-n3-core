@@ -116,7 +116,7 @@ class MasterNode:
         elif event_type in {
             mt.EVT_STREAM_READY_FOR_OFFICIAL,
             mt.EVT_STREAM_OFFICIAL_STARTED,
-        } and not event.get("node_id"):
+        } and event.get("node_id", self.node_id) == self.node_id:
             self._record_official_start_event(self.node_id, event_type, event.get("payload"))
 
     def record_local_stream_drained(self, payload: dict | None):
@@ -140,6 +140,7 @@ class MasterNode:
                     "expected_nodes": set(expected_nodes),
                     "ready_nodes": set(),
                     "official_nodes": set(),
+                    "ready_announced": False,
                     "commit_dispatched": False,
                 }
             }
@@ -155,6 +156,7 @@ class MasterNode:
         start_session_id = payload.get("start_session_id")
         if not node_id or not start_session_id:
             return
+        ready_payload = None
         with self._official_start_lock:
             record = self._official_start_tracking.get(start_session_id)
             if not record or node_id not in record["expected_nodes"]:
@@ -163,8 +165,29 @@ class MasterNode:
                 return
             if event_type == mt.EVT_STREAM_READY_FOR_OFFICIAL:
                 record["ready_nodes"].add(node_id)
+                if (
+                    record["ready_nodes"] == record["expected_nodes"]
+                    and not record["ready_announced"]
+                ):
+                    record["ready_announced"] = True
+                    ready_payload = {
+                        "start_session_id": start_session_id,
+                        "session_timestamp": record["session_timestamp"],
+                        "subject_ids": list(record["subject_ids"]),
+                        "expected_nodes": sorted(record["expected_nodes"]),
+                        "ready_nodes": sorted(record["ready_nodes"]),
+                    }
             elif event_type == mt.EVT_STREAM_OFFICIAL_STARTED:
                 record["official_nodes"].add(node_id)
+
+        if ready_payload and self.system_event_bus:
+            self.system_event_bus.emit(
+                {
+                    "type": mt.EVT_DISTRIBUTED_READY_FOR_OFFICIAL,
+                    "node_id": self.node_id,
+                    "payload": ready_payload,
+                }
+            )
 
     def _emit_dispatch_error(self, message: str, payload: dict | None = None) -> None:
         if not self.system_event_bus:
@@ -628,7 +651,17 @@ class MasterNode:
         if msg_type in (mt.CMD_STOP_STREAM_FOR_ALL, mt.CMD_STOP_STREAM_FOR_SUBJECTS):
             stop_session_id = payload.get("stop_session_id") or uuid.uuid4().hex
 
+        # Distributed commands bypass MessageHandler.handle_message() and are
+        # routed directly from here. Prepare coordinator-owned storage once,
+        # before sending physical-start commands to any participant. This is
+        # required even when the master has no locally assigned subjects.
+        if msg_type in (mt.CMD_START_STREAM_FOR_ALL, mt.CMD_START_STREAM_FOR_SUBJECTS):
+            if message_handler:
+                message_handler.prepare_stream_start()
+
         if msg_type == mt.CMD_START_OFFICIAL_STREAM:
+            coordinator_received_monotonic_ns = time.monotonic_ns()
+            coordinator_received_utc_ns = time.time_ns()
             requested_start_id = payload.get("start_session_id")
             with self._official_start_lock:
                 record = self._official_start_tracking.get(requested_start_id)
@@ -647,13 +680,46 @@ class MasterNode:
                 commit_payload = dict(payload)
                 commit_payload["session_timestamp"] = record["session_timestamp"]
 
-            for node_id in expected_nodes:
+            # Fan the commit out to remote participants before doing the
+            # master's synchronous local persistence setup. ZeroMQ sends are
+            # non-blocking at this level, so workers can begin activation while
+            # the master activates locally instead of waiting behind it.
+            dispatch_nodes = [
+                node_id for node_id in expected_nodes if node_id != self.node_id
+            ]
+            if self.node_id in expected_nodes:
+                dispatch_nodes.append(self.node_id)
+
+            for dispatch_sequence, node_id in enumerate(dispatch_nodes, start=1):
+                dispatch_monotonic_ns = time.monotonic_ns()
+                dispatch_utc_ns = time.time_ns()
+                node_payload = dict(commit_payload)
+                node_payload["official_start_timing"] = {
+                    "coordinator_node_id": self.node_id,
+                    "coordinator_command_received_utc_ns": coordinator_received_utc_ns,
+                    "coordinator_command_received_monotonic_ns": coordinator_received_monotonic_ns,
+                    "coordinator_dispatch_utc_ns": dispatch_utc_ns,
+                    "coordinator_dispatch_monotonic_ns": dispatch_monotonic_ns,
+                    "coordinator_dispatch_offset_ms": round(
+                        (dispatch_monotonic_ns - coordinator_received_monotonic_ns) / 1_000_000.0,
+                        3,
+                    ),
+                    "dispatch_sequence": dispatch_sequence,
+                    "target_node_id": node_id,
+                }
+                logger.info(
+                    "Official-start dispatch start_session_id=%s target=%s sequence=%d offset_ms=%.3f",
+                    requested_start_id,
+                    node_id,
+                    dispatch_sequence,
+                    node_payload["official_start_timing"]["coordinator_dispatch_offset_ms"],
+                )
                 if node_id == self.node_id:
                     if message_handler:
-                        message_handler._handle_local(msg_type, commit_payload)
+                        message_handler._handle_local(msg_type, node_payload)
                 else:
                     self.send_command(
-                        {"type": msg_type, "payload": commit_payload},
+                        {"type": msg_type, "payload": node_payload},
                         target_node_id=node_id,
                     )
             return
@@ -683,22 +749,67 @@ class MasterNode:
                     expected_nodes=list(nodes_to_subjects.keys()),
                 )
 
+            node_payloads = {}
+
             for node_id, ids in nodes_to_subjects.items():
                 node_payload = dict(payload)
                 node_payload["subject_ids"] = ids
+
                 if session_timestamp:
                     node_payload["session_timestamp"] = session_timestamp
+
                 if start_session_id:
                     node_payload["start_session_id"] = start_session_id
                     node_payload["official_start_mode"] = "coordinated"
+
                 if stop_session_id:
                     node_payload["stop_session_id"] = stop_session_id
 
-                if node_id == "master":
+                node_payloads[node_id] = node_payload
+
+            if stop_session_id:
+                # Fan STOP out to remote participants before entering the
+                # master's synchronous local stop path.
+                for node_id, node_payload in node_payloads.items():
+                    if node_id == self.node_id:
+                        continue
+
+                    self.send_command(
+                        {
+                            "type": msg_type,
+                            "payload": node_payload,
+                        },
+                        target_node_id=node_id,
+                    )
+
+                master_payload = node_payloads.get(self.node_id)
+
+                if master_payload and message_handler:
+                    message_handler._handle_local(
+                        msg_type,
+                        master_payload,
+                        stream_start_prepared=True,
+                    )
+
+                return
+
+            for node_id, node_payload in node_payloads.items():
+                if node_id == self.node_id:
                     if message_handler:
-                        message_handler._handle_local(msg_type, node_payload)
+                        message_handler._handle_local(
+                            msg_type,
+                            node_payload,
+                            stream_start_prepared=True,
+                        )
                 else:
-                    self.send_command({"type": msg_type, "payload": node_payload}, target_node_id=node_id)
+                    self.send_command(
+                        {
+                            "type": msg_type,
+                            "payload": node_payload,
+                        },
+                        target_node_id=node_id,
+                    )
+
             return
         else:
             nodes_with_subjects = set()
@@ -727,20 +838,65 @@ class MasterNode:
                     expected_nodes=list(nodes_with_subjects),
                 )
 
+            node_payloads = {}
+
             for node_id in nodes_with_subjects:
                 node_payload = dict(payload)
+
                 if session_timestamp:
                     node_payload["session_timestamp"] = session_timestamp
+
                 if start_session_id:
                     node_payload["start_session_id"] = start_session_id
                     node_payload["official_start_mode"] = "coordinated"
+
                 if stop_session_id:
                     node_payload["stop_session_id"] = stop_session_id
-                if node_id == "master":
+
+                node_payloads[node_id] = node_payload
+
+            if stop_session_id:
+                # Fan STOP out to remote participants before entering the
+                # master's synchronous local stop path.
+                for node_id, node_payload in node_payloads.items():
+                    if node_id == self.node_id:
+                        continue
+
+                    self.send_command(
+                        {
+                            "type": msg_type,
+                            "payload": node_payload,
+                        },
+                        target_node_id=node_id,
+                    )
+
+                master_payload = node_payloads.get(self.node_id)
+
+                if master_payload and message_handler:
+                    message_handler._handle_local(
+                        msg_type,
+                        master_payload,
+                        stream_start_prepared=True,
+                    )
+
+                return
+
+            for node_id, node_payload in node_payloads.items():
+                if node_id == self.node_id:
                     if message_handler:
-                        message_handler._handle_local(msg_type, node_payload)
+                        message_handler._handle_local(
+                            msg_type,
+                            node_payload,
+                            stream_start_prepared=True,
+                        )
                 else:
-                    self.send_command({"type": msg_type, "payload": node_payload}, target_node_id=node_id)
+                    self.send_command(
+                        {
+                            "type": msg_type,
+                            "payload": node_payload,
+                        },
+                        target_node_id=node_id,
+                    )
 
 
     def send_command(self, msg: dict, target_node_id: str = None):

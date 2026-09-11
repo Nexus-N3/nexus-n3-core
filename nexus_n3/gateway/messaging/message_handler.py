@@ -63,6 +63,11 @@ class MessageHandler:
         self._before_stream_start = before_stream_start
         self._after_stream_stop = after_stream_stop
 
+    def prepare_stream_start(self):
+        """Run the host-level preparation required before stream dispatch."""
+        if self._before_stream_start:
+            self._before_stream_start()
+
     def set_usb_handlers(self, mount_handler=None, unmount_handler=None, status_provider=None):
         """Register optional USB control handlers for standalone/master nodes."""
         self._usb_mount_handler = mount_handler
@@ -233,7 +238,7 @@ class MessageHandler:
         # Otherwise execute locally (standalone mode and worker mode)
         self._handle_local(msg_type, payload)
 
-    def _handle_local(self, msg_type, payload):
+    def _handle_local(self, msg_type, payload, *, stream_start_prepared=False):
         """
         Execute commands locally for standalone/worker modes.
 
@@ -443,8 +448,8 @@ class MessageHandler:
 
         # must broadcast the session timestamp
         elif msg_type == mt.CMD_START_STREAM_FOR_SUBJECTS:
-            if self._before_stream_start:
-                self._before_stream_start()
+            if not stream_start_prepared:
+                self.prepare_stream_start()
             self.si.pending_correlation_id = correlation_id
             try:
                 self.si.start_stream_for_subjects(payload)
@@ -453,8 +458,8 @@ class MessageHandler:
                 self.si.pending_correlation_id = None
                 emit_error(f"Start stream for subjects failed: {exc}")
         elif msg_type == mt.CMD_START_STREAM_FOR_ALL:
-            if self._before_stream_start:
-                self._before_stream_start()
+            if not stream_start_prepared:
+                self.prepare_stream_start()
             self.si.pending_correlation_id = correlation_id
             try:
                 self.si.start_stream(payload)

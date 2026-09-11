@@ -79,7 +79,6 @@ class DistributedClient(Client):
             MASTER_SUBJECT_ID,
             WORKER_SUBJECT_ID,
         }
-        self.expected_node_ids = {"master", self.worker_node_id}
 
         # Deliberately process subjects one at a time.
         self.subject_sequence = [
@@ -104,11 +103,9 @@ class DistributedClient(Client):
 
         # Subjects and nodes whose local startup/readiness gate has passed.
         self.ready_subject_ids = set()
-        self.ready_node_ids = set()
 
         # Subjects and nodes that acknowledged the coordinated official start.
         self.official_subject_ids = set()
-        self.official_node_ids = set()
 
         self.stopped_subject_ids = set()
         self.drained_node_ids = set()
@@ -673,21 +670,30 @@ class DistributedClient(Client):
                 return
 
             self.ready_subject_ids.update(self._subject_ids(payload))
-            self.ready_node_ids.add(node_id)
 
             print(
                 "READY FOR OFFICIAL:",
-                sorted(self.ready_node_ids),
-                f"({len(self.ready_node_ids)}/"
-                f"{len(self.expected_node_ids)})",
+                f"node={node_id}",
+                sorted(self.ready_subject_ids),
             )
 
-            if (
-                self.ready_node_ids >= self.expected_node_ids
-                and not self.official_start_sent
-            ):
+            return
+
+        # --------------------------------------------------------------
+        # DISTRIBUTED BARRIER PASSED
+        # --------------------------------------------------------------
+
+        if evt_type == mt.EVT_DISTRIBUTED_READY_FOR_OFFICIAL:
+            if payload.get("start_session_id") != self.start_session_id:
+                return
+
+            if not self.official_start_sent:
                 self.official_start_sent = True
-                print("ALL NODES READY: issuing global official-start command")
+                print(
+                    "ALL NODES READY:",
+                    payload.get("ready_nodes"),
+                    "issuing global official-start command",
+                )
                 self.send_command(
                     {
                         "type": mt.CMD_START_OFFICIAL_STREAM,
@@ -710,19 +716,21 @@ class DistributedClient(Client):
             self.official_subject_ids.update(
                 self._subject_ids(payload)
             )
-            self.official_node_ids.add(node_id)
+            official_start_timing = payload.get("official_start_timing") or {}
 
             print(
                 "OFFICIAL STREAM STARTED:",
-                sorted(self.official_node_ids),
-                f"({len(self.official_node_ids)}/"
-                f"{len(self.expected_node_ids)})",
+                sorted(self.official_subject_ids),
+                f"({len(self.official_subject_ids)}/"
+                f"{len(self.expected_subject_ids)})",
+                "timing=",
+                official_start_timing,
             )
 
             # The requested duration begins only after every participant has
             # acknowledged the coordinated official-start command.
             if (
-                self.official_node_ids >= self.expected_node_ids
+                self.official_subject_ids >= self.expected_subject_ids
                 and not self.stop_timer_started
             ):
                 self.stop_timer_started = True

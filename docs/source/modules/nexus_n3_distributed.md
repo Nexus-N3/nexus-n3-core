@@ -36,6 +36,9 @@ results back.
   `start_official_stream`.
 - The master forwards `start_official_stream` only after every execution node
   assigned to that start has emitted `stream_ready_for_official`.
+- Once that barrier is complete, the master emits
+  `distributed_ready_for_official`; the coordinating client responds with the
+  global `start_official_stream` command.
 - Standalone nodes do not use this barrier and transition directly from local
   readiness to `stream_official_started`.
 
@@ -43,16 +46,29 @@ results back.
 
 1. The master snapshots the execution nodes participating in a distributed
    start and injects `official_start_mode=coordinated` plus one shared
-   `start_session_id` into their start commands.
-2. Each node starts its physical sensors and runs its local startup gate.
-3. A successful local gate enters `ready_for_official`; samples continue to be
-   observed for the physical stream but are not persisted or computed.
-4. After observing readiness from every required node, the coordinating client
-   sends `start_official_stream` with the shared start ID.
+   `start_session_id` into their start commands. Before dispatching any of
+   those commands, the master runs its host-level stream preparation once;
+   on USB hot-disk deployments this remounts and selects the shared output
+   disk even when the master has no locally assigned subject.
+2. Each node starts its physical sensors, runs its local startup gate, and
+   pre-creates its empty persistence containers. This absorbs local/NFS
+   metadata latency before the node declares readiness.
+3. A successful local gate and persistence preflight enters
+   `ready_for_official`; samples continue to be observed for the physical
+   stream but are not persisted or computed.
+4. The master emits `distributed_ready_for_official` after observing readiness
+   from every required node. The coordinating client then sends
+   `start_official_stream` with the shared start ID.
 5. The master validates the barrier and broadcasts the commit only to the
    snapshotted participants.
-6. Each node activates persistence, establishes its node-local Timeline origin,
-   and acknowledges with `stream_official_started`.
+6. Each node enables persistence and compute routing, establishes its
+   node-local Timeline origin, and acknowledges with
+   `stream_official_started`. The pre-created files contain no acquisition
+   samples before this commit.
+
+The master sends the commit to every remote participant before activating
+locally. Because all blocking persistence setup is part of readiness, the
+commit path no longer waits on node-specific filesystem or NFS metadata work.
 
 The commit is idempotent for its active start ID. Stale IDs and commits issued
 before all participants are ready are rejected.

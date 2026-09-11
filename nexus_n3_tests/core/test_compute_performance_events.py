@@ -49,6 +49,7 @@ def test_compute_performance_is_enriched_emitted_and_archived():
     core.app_id = None
     core.app_name = None
     core.pending_correlation_id = None
+    core._official_outputs_active = True
 
     core._on_compute_performance(
         {

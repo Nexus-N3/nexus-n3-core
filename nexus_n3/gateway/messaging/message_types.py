@@ -130,6 +130,9 @@ EVT_STREAM_OFFICIAL_STARTED = "stream_official_started"
 #: Event: A distributed node passed local readiness and awaits the global commit
 EVT_STREAM_READY_FOR_OFFICIAL = "stream_ready_for_official"
 
+#: Event: Every node in a distributed start has passed its local readiness gate
+EVT_DISTRIBUTED_READY_FOR_OFFICIAL = "distributed_ready_for_official"
+
 #: Event: Startup gate failed and no further retries remain
 EVT_STREAM_STARTUP_FAILED = "stream_startup_failed"
 

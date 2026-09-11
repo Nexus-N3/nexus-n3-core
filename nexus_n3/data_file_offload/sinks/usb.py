@@ -48,12 +48,23 @@ class USBDiskManager:
     @property
     def local_path(self) -> Path:
         """Return the local output path (USB if present, else fallback)."""
-        return self._usb_output_path or self.fallback_dir
+        return self.usb_path or self.fallback_dir
 
     @property
     def usb_path(self) -> Path | None:
-        """Return the detected USB output path, if present."""
-        return self._usb_output_path
+        """Return the cached output path only while its USB mount is active."""
+        cached_path = self._usb_output_path
+        if cached_path is None or not self.supports_hotdisk:
+            return None
+
+        mount = self._detect_usb_mount()
+        expected_path = (mount / self.USB_OUTPUT_DIRNAME).resolve() if mount else None
+        if expected_path != cached_path or not self._path_accessible(cached_path):
+            # The monitor updates state asynchronously. Invalidate a stale path
+            # synchronously so status/UI callers never report an unmounted disk.
+            self._usb_output_path = None
+            return None
+        return cached_path
     
     @property
     def network_path(self) -> Path | None:
@@ -62,7 +73,7 @@ class USBDiskManager:
         Does NOT mount anything; just returns the standard export path.
         """
         # Only report the export path if a USB is detected
-        if self._usb_output_path:
+        if self.usb_path:
             return Path("/exports/nexus_n3_data/nexus_n3_outputs")
         return None
 

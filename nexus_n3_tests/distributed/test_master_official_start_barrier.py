@@ -27,9 +27,25 @@ class _Registry:
 class _Handler:
     def __init__(self):
         self.calls = []
+        self.events = []
 
-    def _handle_local(self, msg_type, payload):
+    def prepare_stream_start(self):
+        self.events.append(("prepare", None))
+
+    def _handle_local(self, msg_type, payload, *, stream_start_prepared=False):
+        self.events.append(("local", msg_type))
         self.calls.append((msg_type, payload))
+        assert stream_start_prepared is (
+            msg_type in (mt.CMD_START_STREAM_FOR_ALL, mt.CMD_START_STREAM_FOR_SUBJECTS)
+        )
+
+
+class _EventBus:
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event):
+        self.events.append(event)
 
 
 def _master():
@@ -82,10 +98,21 @@ def test_official_commit_waits_for_every_expected_node():
         message_handler=handler,
     )
 
-    assert handler.calls == [(mt.CMD_START_OFFICIAL_STREAM, ready)]
-    assert master.sent == [
-        ("worker-1", {"type": mt.CMD_START_OFFICIAL_STREAM, "payload": ready})
-    ]
+    assert handler.calls[0][0] == mt.CMD_START_OFFICIAL_STREAM
+    assert handler.calls[0][1]["start_session_id"] == "start-1"
+    assert handler.calls[0][1]["official_start_timing"]["target_node_id"] == "master"
+    assert handler.calls[0][1]["official_start_timing"]["dispatch_sequence"] == 2
+    assert master.sent[0][0] == "worker-1"
+    assert master.sent[0][1]["type"] == mt.CMD_START_OFFICIAL_STREAM
+    assert master.sent[0][1]["payload"]["start_session_id"] == "start-1"
+    assert (
+        master.sent[0][1]["payload"]["official_start_timing"]["target_node_id"]
+        == "worker-1"
+    )
+    assert (
+        master.sent[0][1]["payload"]["official_start_timing"]["dispatch_sequence"]
+        == 1
+    )
 
 
 def test_distributed_start_injects_coordinated_mode_for_every_participant():
@@ -113,6 +140,47 @@ def test_distributed_start_injects_coordinated_mode_for_every_participant():
         "master",
         "worker-1",
     }
+    assert handler.events == [
+        ("prepare", None),
+        ("local", mt.CMD_START_STREAM_FOR_ALL),
+    ]
+
+
+def test_distributed_start_prepares_master_storage_without_a_local_subject():
+    master = _master()
+    master.registry.subjects = {
+        "subject-b": {"assigned_node": "worker-1"},
+    }
+    handler = _Handler()
+    dispatch_events = []
+    master.send_command = lambda msg, target_node_id=None: dispatch_events.append(
+        ("send", target_node_id, msg["type"])
+    )
+
+    original_prepare = handler.prepare_stream_start
+
+    def record_prepare():
+        dispatch_events.append(("prepare", None, None))
+        original_prepare()
+
+    handler.prepare_stream_start = record_prepare
+
+    master.dispatch_command(
+        {
+            "type": mt.CMD_START_STREAM_FOR_ALL,
+            "payload": {"start_session_id": "start-worker-only", "tag": "session"},
+        },
+        message_handler=handler,
+    )
+
+    assert handler.calls == []
+    assert handler.events == [("prepare", None)]
+    assert dispatch_events[0] == ("prepare", None, None)
+    assert dispatch_events[1] == (
+        "send",
+        "worker-1",
+        mt.CMD_START_STREAM_FOR_ALL,
+    )
 
 
 def test_stale_readiness_does_not_release_barrier():
@@ -135,3 +203,44 @@ def test_stale_readiness_does_not_release_barrier():
 
     record = master._official_start_tracking["start-current"]
     assert record["ready_nodes"] == set()
+
+
+def test_master_announces_the_completed_readiness_barrier_once():
+    master = _master()
+    master.system_event_bus = _EventBus()
+    master._create_official_start_record(
+        "start-1",
+        session_timestamp="20260910_120000",
+        subject_ids=["subject-a", "subject-b"],
+        expected_nodes=["master", "worker-1"],
+    )
+    ready = {
+        "start_session_id": "start-1",
+        "session_timestamp": "20260910_120000",
+    }
+
+    master._record_official_start_event(
+        "master", mt.EVT_STREAM_READY_FOR_OFFICIAL, ready
+    )
+    assert master.system_event_bus.events == []
+
+    master._record_official_start_event(
+        "worker-1", mt.EVT_STREAM_READY_FOR_OFFICIAL, ready
+    )
+    master._record_official_start_event(
+        "worker-1", mt.EVT_STREAM_READY_FOR_OFFICIAL, ready
+    )
+
+    assert master.system_event_bus.events == [
+        {
+            "type": mt.EVT_DISTRIBUTED_READY_FOR_OFFICIAL,
+            "node_id": "master",
+            "payload": {
+                "start_session_id": "start-1",
+                "session_timestamp": "20260910_120000",
+                "subject_ids": ["subject-a", "subject-b"],
+                "expected_nodes": ["master", "worker-1"],
+                "ready_nodes": ["master", "worker-1"],
+            },
+        }
+    ]
