@@ -1432,10 +1432,12 @@ class Core:
             )
         if not official_streaming:
             return
+        # resolve the subject
         subject = self.subject_graph.find_subject_by_address(payload.address)
         if subject:
+            # a timeline module would need to compute the session coordinate for the sample before persiting it.
             subject.ingest_sample(payload, self.storage.file_manager)
-            # push to compute manager also
+            # timing evidence is derived after the sample is persisted.
             transport_timing = dict(getattr(payload, "_nexus_timing", {}) or {})
             host_receive_ns = transport_timing.get("host_receive_monotonic_ns", core_receive_ns)
             timing_metadata = {
