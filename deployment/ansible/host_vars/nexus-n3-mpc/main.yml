@@ -24,8 +24,7 @@ nexus_plugin_use_system_site_packages: false
 nexus_plugin_bootstrap_enabled: false
 nexus_plugin_bootstrap_plugin_list: ""
 nexus_plugin_catalog_root: ""
-# "" for linux x86 targets, rpi
-nexus_plugin_bundle_target: rpi
+nexus_plugin_bundle_target: ""
 
 # BLE backend
 nexus_ble_backend: nexus_ble_gateway

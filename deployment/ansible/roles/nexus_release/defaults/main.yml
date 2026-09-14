@@ -33,6 +33,7 @@ nexus_azure_bridge_local_evt_addr: "tcp://127.0.0.1:5556"
 nexus_azure_bridge_use_websockets: true
 nexus_azure_bridge_keep_alive: 120
 nexus_azure_bridge_connection_retry_interval: 15
+nexus_azure_bridge_upload_retry_interval: 5
 nexus_azure_bridge_state_file: /tmp/nexus_n3.azure_bridge_state.json
 nexus_azure_iot_upload_container: nexusn3-session-uploads
 nexus_admin_enabled: true
