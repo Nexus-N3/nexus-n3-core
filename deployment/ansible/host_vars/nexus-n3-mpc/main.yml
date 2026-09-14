@@ -53,3 +53,14 @@ nexus_azure_bridge_state_file: /tmp/nexus_n3.azure_bridge_state.json
 
 # Robot runtime
 nexus_robot_config_path: /etc/nexus-n3/robot.yaml
+
+
+nexus_sensor_plugin_bundles:
+  - nexus-n3-sensor-movella-dot-0.1.0-local.rsnxplugin
+  - nexus-n3-sensor-movesense-0.1.3-local.rsnxplugin
+
+nexus_algorithm_plugin_bundles:
+  - nexus-n3-algorithm-ecg-rhythm-0.1.1-local.rsnxplugin
+  - nexus-n3-algorithm-generic-data-summary-0.1.0-local.rsnxplugin
+  - nexus-n3-algorithm-pass-through-0.1.0-local.rsnxplugin
+  - nexus-n3-algorithm-standard-loading-intensity-0.1.2-local.rsnxplugin
