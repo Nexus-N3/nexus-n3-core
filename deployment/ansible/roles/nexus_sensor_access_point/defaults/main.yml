@@ -1,6 +1,5 @@
 ---
-# Used by provision_master.yml to decide whether to include the role.
-# The role itself does not check this variable.
+# Used by provisioning playbooks to decide whether to include the role.
 nexus_sensor_ap_enabled: false
 
 # Leave empty to automatically find the interface using the mt76x2u driver.
@@ -20,10 +19,9 @@ nexus_sensor_ap_channel: 36
 nexus_sensor_ap_isolation: true
 nexus_sensor_ap_service_user: "{{ ansible_user }}"
 nexus_sensor_ap_recovery_timeout_seconds: 30
+nexus_sensor_ap_autoconnect: true
 
-# Separate subnet from nexus-n3-edge-access.
-nexus_sensor_ap_address: 192.168.60.1/24
-nexus_sensor_ap_dhcp_range_start: 192.168.60.10
-nexus_sensor_ap_dhcp_range_end: 192.168.60.100
-nexus_sensor_ap_dhcp_netmask: 255.255.255.0
-nexus_sensor_ap_dhcp_lease: 12h
+# The Wi-Fi AP is a Layer-2 member of the common sensor bridge. The bridge owns
+# the sensor-network IP and DHCP configuration.
+nexus_sensor_bridge_interface: br-sensor
+nexus_sensor_bridge_connection_name: nexus-n3-sensor-bridge

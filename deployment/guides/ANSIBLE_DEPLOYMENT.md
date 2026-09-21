@@ -235,6 +235,132 @@ Role switches:
 - `nexus_install_sensor_plugins`
 - `nexus_install_algorithm_plugins`
 
+### Common sensor network
+
+The sensor network is one Layer-2 network shared by the node's USB Wi-Fi sensor
+AP and the tagged wired sensor VLAN. NetworkManager creates `br-sensor`, which
+owns the node's static sensor-network address. The Wi-Fi AP and `eth0.20` are
+bridge ports and do not own Layer-3 addresses themselves.
+
+The shipped host variables use VLAN 20 and the `10.42.20.0/24` sensor subnet:
+
+- `nexus-n3-master`: `10.42.20.11/24`
+- `nexus-n3-worker-01`: `10.42.20.12/24`
+- `nexus-n3-worker-02`: `10.42.20.13/24`
+- `nexus-n3-worker-03`: `10.42.20.14/24`
+
+The common network and VLAN roles are controlled by these variables:
+
+```yaml
+nexus_sensor_network_enabled: true
+nexus_sensor_bridge_interface: br-sensor
+nexus_sensor_bridge_connection_name: nexus-n3-sensor-bridge
+nexus_sensor_network_address: 10.42.20.11/24
+nexus_sensor_network_ipv4_never_default: true
+nexus_sensor_network_ipv6_method: disabled
+
+nexus_sensor_vlan_enabled: true
+nexus_sensor_vlan_id: 20
+nexus_sensor_vlan_parent_interface: eth0
+nexus_sensor_vlan_interface: eth0.20
+nexus_sensor_vlan_connection_name: nexus-n3-sensor-vlan
+nexus_sensor_vlan_autoconnect: true
+```
+
+Use a unique `nexus_sensor_network_address` in each host's `host_vars`. The
+bridge has no gateway or DNS configuration and cannot install a default route.
+This design does not enable IP routing, forwarding, NAT, or firewall changes.
+The switch port connected to each node must carry VLAN 20 tagged while retaining
+the normal LAN as its native untagged VLAN.
+
+#### DHCP ownership invariant
+
+Exactly one standalone node may be connected to a given physical sensor VLAN.
+Running multiple nodes in `standalone` mode on the same VLAN is a configuration
+and deployment error and is not a supported topology.
+
+The default DHCP ownership follows the runtime role:
+
+```yaml
+nexus_sensor_dhcp_enabled: "{{ nexus_role in ['standalone', 'master'] }}"
+```
+
+Therefore:
+
+- a standalone deployment has one standalone node and one DHCP server
+- a distributed deployment has one master DHCP server
+- distributed workers bridge their local AP to VLAN 20 and never run DHCP
+
+Only one host on a physical sensor VLAN may have
+`nexus_sensor_dhcp_enabled: true`. DHCP serves `10.42.20.100-199` without
+advertising a default gateway or DNS server.
+
+Provision only the VLAN role with:
+
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini playbooks/provision_distributed.yml \
+  --tags nexus_sensor_vlan
+```
+
+The `nexus_sensor_vlan` tag also runs the common sensor-network role because the
+bridge must exist before its VLAN port is configured. Worker inventory entries
+are commented out by default. Enable only the workers that are currently
+deployed before running the distributed provisioning playbook.
+
+#### Staged architecture verification
+
+Validate the architecture in this order:
+
+1. Run one standalone instance on the main Linux engineering workstation.
+2. Separately run one standalone instance on `nexus-n3-master`.
+3. Validate distributed master/worker operation when the worker nodes are
+   available.
+
+Do not run the workstation and Raspberry Pi as simultaneous standalone DHCP
+owners on the same physical VLAN. Stop the first standalone DHCP service before
+starting the second test, or isolate the tests onto different physical VLANs.
+
+For the workstation test, the persistent NetworkManager topology is:
+
+```bash
+br-sensor             10.42.20.250/24
+|- enp0s31f6.20       VLAN 20 bridge port
+`- wlx00c0cabaa751    nexus-n3-sensors AP bridge port
+```
+
+Its existing `enp0s31f6` LAN profile and `enp0s31f6.99` management VLAN must
+remain active and unchanged.
+
+Verify bridge membership, VLAN tagging, addresses, routes, DHCP ownership, and
+connectivity:
+
+```bash
+# Workstation standalone test; substitute eth0.20 on a Nexus node.
+ip -details address show br-sensor
+bridge link show master br-sensor
+ip -details link show enp0s31f6.20
+ip route show default
+nmcli connection show nexus-n3-sensor-vlan
+nmcli connection show nexus-n3-sensor-bridge
+ss -lunp | grep ':67 '
+
+# Workstation to a separately configured standalone node.
+ping -c 3 10.42.20.11
+
+# Node to workstation.
+ping -c 3 10.42.20.250
+
+# Confirm the existing management paths still work.
+ssh nexus-n3-master.local true
+ping -c 3 1.1.1.1
+```
+
+Distributed verification is intentionally deferred until the worker nodes are
+available. At that point verify that only the master listens on UDP port 67 and
+that a sensor associated with any node's AP is reachable from every node over
+VLAN 20.
+
 If the explicit bundle lists are empty, Ansible reads the manifests in the
 corresponding bundle root and selects only the newest version of each plugin
 ID. Historical bundles may remain in `plugin-builds/` without being installed.

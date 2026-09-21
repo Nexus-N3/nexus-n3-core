@@ -3,18 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from enum import Enum
 import ipaddress
 import os
 
 from nexus_n3.core.runtime_env import load_runtime_env
-
-
-class ApAddressMode(str, Enum):
-    """Supported ownership models for the Nexus AP address and DHCP."""
-
-    NETWORKMANAGER_SHARED = "networkmanager-shared"
-    STATIC_EXTERNAL_DHCP = "static-external-dhcp"
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -36,14 +28,18 @@ class WifiRuntimeConfig:
 
     enabled: bool = False
     backend: str = "fake"
-    interface_name: str | None = None
-    ap_profile: str = "nexus-n3-sensor-ap"
+    wifi_interface: str | None = None
+    wifi_profile: str = "nexus-n3-sensor-ap"
+    bridge_interface: str = "br-sensor"
+    bridge_profile: str = "nexus-n3-sensor-bridge"
+    vlan_interface: str | None = None
+    vlan_profile: str = "nexus-n3-sensor-vlan"
+    vlan_id: int = 20
     ap_ssid: str = "nexus-n3-sensors"
     ap_password: str | None = field(default=None, repr=False)
     ap_channel: int | None = None
     provisioning_profile: str = "nexus-n3-sensor-provision"
-    ap_address_mode: ApAddressMode = ApAddressMode.NETWORKMANAGER_SHARED
-    expected_ap_cidr: str | None = None
+    expected_sensor_cidr: str | None = None
     discovery_timeout_s: float = 20.0
     connect_timeout_s: float = 30.0
     provisioning_join_timeout_s: float = 90.0
@@ -58,25 +54,25 @@ class WifiRuntimeConfig:
             raise ValueError(f"Unsupported Wi-Fi backend: {self.backend!r}")
         object.__setattr__(self, "backend", backend)
 
-        if not isinstance(self.ap_address_mode, ApAddressMode):
-            try:
-                address_mode = ApAddressMode(
-                    str(self.ap_address_mode).strip().lower()
-                )
-            except ValueError as exc:
-                raise ValueError(
-                    f"Unsupported Wi-Fi AP address mode: {self.ap_address_mode!r}"
-                ) from exc
-            object.__setattr__(self, "ap_address_mode", address_mode)
-
-        if not self.ap_profile.strip():
+        if not self.wifi_profile.strip():
             raise ValueError("Wi-Fi AP profile must not be empty")
         if not self.ap_ssid:
             raise ValueError("Wi-Fi AP SSID must not be empty")
-        if backend != "fake" and not (self.interface_name or "").strip():
-            raise ValueError(
-                "A Wi-Fi interface name is required for a platform backend"
-            )
+        if backend != "fake":
+            required = {
+                "Wi-Fi interface": self.wifi_interface,
+                "sensor bridge interface": self.bridge_interface,
+                "sensor bridge profile": self.bridge_profile,
+                "sensor VLAN interface": self.vlan_interface,
+                "sensor VLAN profile": self.vlan_profile,
+            }
+            for label, value in required.items():
+                if not (value or "").strip():
+                    raise ValueError(
+                        f"A {label} is required for a platform backend"
+                    )
+        if not 1 <= self.vlan_id <= 4094:
+            raise ValueError("Sensor VLAN ID must be between 1 and 4094")
         if self.ap_channel is not None and self.ap_channel <= 0:
             raise ValueError("Wi-Fi AP channel must be positive")
         if not self.provisioning_profile.strip():
@@ -92,15 +88,18 @@ class WifiRuntimeConfig:
         if len(regulatory_domain) != 2 or not regulatory_domain.isalpha():
             raise ValueError("Wi-Fi regulatory domain must be a two-letter code")
         object.__setattr__(self, "regulatory_domain", regulatory_domain)
-        if self.expected_ap_cidr is not None:
+        if self.expected_sensor_cidr is not None:
             try:
-                expected_interface = ipaddress.ip_interface(self.expected_ap_cidr)
+                expected_interface = ipaddress.ip_interface(
+                    self.expected_sensor_cidr
+                )
             except ValueError as exc:
                 raise ValueError(
-                    f"Invalid expected Wi-Fi AP CIDR: {self.expected_ap_cidr!r}"
+                    "Invalid expected sensor-network CIDR: "
+                    f"{self.expected_sensor_cidr!r}"
                 ) from exc
             if not isinstance(expected_interface, ipaddress.IPv4Interface):
-                raise ValueError("Expected Wi-Fi AP CIDR must be IPv4")
+                raise ValueError("Expected sensor-network CIDR must be IPv4")
 
     @classmethod
     def from_env(cls) -> "WifiRuntimeConfig":
@@ -108,18 +107,32 @@ class WifiRuntimeConfig:
 
         load_runtime_env()
         raw_channel = os.environ.get("NEXUS_SENSOR_AP_CHANNEL")
-        raw_mode = os.environ.get(
-            "NEXUS_SENSOR_AP_ADDRESS_MODE",
-            ApAddressMode.NETWORKMANAGER_SHARED.value,
-        )
         return cls(
             enabled=_env_bool("NEXUS_SENSOR_NETWORK_ENABLED", False),
             backend=os.environ.get("NEXUS_WIFI_BACKEND", "fake"),
-            interface_name=os.environ.get("NEXUS_SENSOR_INTERFACE") or None,
-            ap_profile=os.environ.get(
-                "NEXUS_SENSOR_CONNECTION",
+            wifi_interface=(
+                os.environ.get("NEXUS_SENSOR_WIFI_INTERFACE") or None
+            ),
+            wifi_profile=os.environ.get(
+                "NEXUS_SENSOR_WIFI_PROFILE",
                 "nexus-n3-sensor-ap",
             ),
+            bridge_interface=os.environ.get(
+                "NEXUS_SENSOR_BRIDGE_INTERFACE",
+                "br-sensor",
+            ),
+            bridge_profile=os.environ.get(
+                "NEXUS_SENSOR_BRIDGE_PROFILE",
+                "nexus-n3-sensor-bridge",
+            ),
+            vlan_interface=(
+                os.environ.get("NEXUS_SENSOR_VLAN_INTERFACE") or None
+            ),
+            vlan_profile=os.environ.get(
+                "NEXUS_SENSOR_VLAN_PROFILE",
+                "nexus-n3-sensor-vlan",
+            ),
+            vlan_id=int(os.environ.get("NEXUS_SENSOR_VLAN_ID", "20")),
             ap_ssid=os.environ.get(
                 "NEXUS_SENSOR_AP_SSID",
                 "nexus-n3-sensors",
@@ -130,9 +143,8 @@ class WifiRuntimeConfig:
                 "NEXUS_WIFI_PROVISIONING_CONNECTION",
                 "nexus-n3-sensor-provision",
             ),
-            ap_address_mode=ApAddressMode(raw_mode.strip().lower()),
-            expected_ap_cidr=(
-                os.environ.get("NEXUS_SENSOR_AP_EXPECTED_CIDR") or None
+            expected_sensor_cidr=(
+                os.environ.get("NEXUS_SENSOR_EXPECTED_CIDR") or None
             ),
             discovery_timeout_s=float(
                 os.environ.get("NEXUS_WIFI_DISCOVERY_TIMEOUT_S", "20")

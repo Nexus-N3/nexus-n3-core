@@ -15,10 +15,7 @@ from nexus_n3.sensor_manager.adapter_pool import AdapterPool
 from nexus_n3.sensor_manager.adapters.ble_adapter import BLEAdapter
 from nexus_n3.sensor_manager.adapters.gateway_ble_adapter import GatewayBLEAdapter
 from nexus_n3.sensor_manager.adapters.usb_camera_adapter import USBCameraAdapter
-from nexus_n3.sensor_manager.adapters.wifi.config import (
-    ApAddressMode,
-    WifiRuntimeConfig,
-)
+from nexus_n3.sensor_manager.adapters.wifi.config import WifiRuntimeConfig
 from nexus_n3.sensor_manager.adapters.wifi.models import WifiDevice
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 from nexus_n3.sensor_manager.connection_service import ConnectionService
@@ -34,8 +31,7 @@ def _wifi_config() -> WifiRuntimeConfig:
     return WifiRuntimeConfig(
         enabled=True,
         backend="fake",
-        ap_address_mode=ApAddressMode.NETWORKMANAGER_SHARED,
-        expected_ap_cidr="10.42.0.1/24",
+        expected_sensor_cidr="10.42.20.250/24",
     )
 
 

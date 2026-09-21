@@ -1,0 +1,13 @@
+---
+# Tagged wired extension of the sensor bridge. The VLAN interface is Layer 2
+# only; the sensor-network IP belongs to br-sensor.
+nexus_sensor_vlan_enabled: false
+
+nexus_sensor_vlan_id: 20
+nexus_sensor_vlan_parent_interface: eth0
+nexus_sensor_vlan_interface: "{{ nexus_sensor_vlan_parent_interface }}.{{ nexus_sensor_vlan_id }}"
+nexus_sensor_vlan_connection_name: nexus-n3-sensor-vlan
+nexus_sensor_vlan_autoconnect: true
+
+nexus_sensor_bridge_interface: br-sensor
+nexus_sensor_bridge_connection_name: nexus-n3-sensor-bridge

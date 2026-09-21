@@ -1,0 +1,10 @@
+interface={{ nexus_sensor_bridge_interface }}
+bind-dynamic
+port=0
+
+dhcp-authoritative
+dhcp-range={{ nexus_sensor_dhcp_range_start }},{{ nexus_sensor_dhcp_range_end }},{{ nexus_sensor_dhcp_netmask }},{{ nexus_sensor_dhcp_lease }}
+
+# The sensor LAN is local-only. Do not advertise a default gateway or DNS.
+dhcp-option=option:router
+dhcp-option=option:dns-server

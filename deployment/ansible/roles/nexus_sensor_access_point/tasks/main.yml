@@ -4,7 +4,6 @@
     name:
       - iw
       - ethtool
-      - dnsmasq
       - network-manager
       - sudo
     state: present
@@ -47,9 +46,10 @@
     that:
       - nexus_sensor_ap_resolved_interface | length > 0
       - nexus_sensor_ap_resolved_interface != "wlan0"
+      - nexus_sensor_ap_passphrase | length >= 8
     fail_msg: >-
-      No USB Wi-Fi interface using driver {{ nexus_sensor_ap_driver }} was found.
-      Connect the AWUS036ACM or set nexus_sensor_ap_interface explicitly.
+      A supported USB Wi-Fi adapter and an 8+ character sensor AP passphrase
+      are required. Connect the adapter or set the AP variables explicitly.
 
 - name: Check sensor Wi-Fi driver
   ansible.builtin.command:
@@ -67,6 +67,26 @@
     fail_msg: >-
       Interface {{ nexus_sensor_ap_resolved_interface }} is not using
       {{ nexus_sensor_ap_driver }}.
+
+- name: Check sensor bridge interface
+  ansible.builtin.command:
+    argv:
+      - ip
+      - link
+      - show
+      - dev
+      - "{{ nexus_sensor_bridge_interface }}"
+  register: nexus_sensor_ap_bridge_link
+  changed_when: false
+  failed_when: false
+
+- name: Require sensor bridge interface
+  ansible.builtin.assert:
+    that:
+      - nexus_sensor_ap_bridge_link.rc == 0
+    fail_msg: >-
+      Sensor bridge {{ nexus_sensor_bridge_interface }} does not exist.
+      Run the nexus_sensor_network role before nexus_sensor_access_point.
 
 - name: Install Wi-Fi regulatory-domain service
   ansible.builtin.template:
@@ -126,7 +146,7 @@
     argv:
       - nmcli
       - -g
-      - NAME
+      - connection.id
       - connection
       - show
       - "{{ nexus_sensor_ap_connection_name }}"
@@ -150,7 +170,56 @@
       - "{{ nexus_sensor_ap_ssid }}"
   when: nexus_sensor_ap_connection_exists.rc != 0
 
-- name: Configure sensor AP radio
+# NetworkManager 1.36 requires Layer-3 settings to be removed before an
+# existing routed/shared Wi-Fi profile is converted to a bridge port. This is
+# also the migration path from the legacy ipv4.method=shared sensor AP.
+- name: Read current sensor AP bridge-port state
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - -g
+      - connection.slave-type
+      - connection
+      - show
+      - "{{ nexus_sensor_ap_connection_name }}"
+  register: nexus_sensor_ap_slave_type
+  changed_when: false
+
+- name: Deactivate sensor AP before bridge-port migration
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - down
+      - "{{ nexus_sensor_ap_connection_name }}"
+  register: nexus_sensor_ap_down
+  changed_when: nexus_sensor_ap_down.rc == 0
+  failed_when: false
+  when: nexus_sensor_ap_slave_type.stdout | trim != 'bridge'
+
+- name: Remove IPv4 settings before sensor AP bridge-port migration
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_ap_connection_name }}"
+      - remove
+      - ipv4
+  when: nexus_sensor_ap_slave_type.stdout | trim != 'bridge'
+
+- name: Remove IPv6 settings before sensor AP bridge-port migration
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_ap_connection_name }}"
+      - remove
+      - ipv6
+  when: nexus_sensor_ap_slave_type.stdout | trim != 'bridge'
+
+- name: Configure sensor AP radio and bridge membership
   ansible.builtin.command:
     argv:
       - nmcli
@@ -160,7 +229,11 @@
       - connection.interface-name
       - "{{ nexus_sensor_ap_resolved_interface }}"
       - connection.autoconnect
-      - "yes"
+      - "{{ 'yes' if nexus_sensor_ap_autoconnect | bool else 'no' }}"
+      - connection.master
+      - "{{ nexus_sensor_bridge_interface }}"
+      - connection.slave-type
+      - bridge
       - 802-11-wireless.mode
       - ap
       - 802-11-wireless.band
@@ -189,48 +262,6 @@
   no_log: true
   changed_when: false
 
-- name: Configure sensor AP address
-  ansible.builtin.command:
-    argv:
-      - nmcli
-      - connection
-      - modify
-      - "{{ nexus_sensor_ap_connection_name }}"
-      - ipv4.method
-      - manual
-      - ipv4.addresses
-      - "{{ nexus_sensor_ap_address }}"
-      - ipv4.never-default
-      - "yes"
-      - ipv6.method
-      - disabled
-  changed_when: false
-
-- name: Install sensor AP DHCP configuration
-  ansible.builtin.template:
-    src: dnsmasq.conf.j2
-    dest: /etc/dnsmasq.d/nexus-n3-sensor-ap.conf
-    owner: root
-    group: root
-    mode: "0644"
-  notify: Restart dnsmasq
-
-- name: Validate dnsmasq configuration
-  ansible.builtin.command:
-    argv:
-      - dnsmasq
-      - --test
-  changed_when: false
-
-- name: Ensure dnsmasq is enabled
-  ansible.builtin.service:
-    name: dnsmasq
-    enabled: true
-    state: started
-
-- name: Flush DHCP configuration handler
-  ansible.builtin.meta: flush_handlers
-
 - name: Activate sensor AP
   ansible.builtin.command:
     argv:
@@ -241,6 +272,26 @@
       - ifname
       - "{{ nexus_sensor_ap_resolved_interface }}"
   changed_when: false
+
+- name: Read active sensor AP bridge membership
+  ansible.builtin.command:
+    argv:
+      - bridge
+      - link
+      - show
+      - dev
+      - "{{ nexus_sensor_ap_resolved_interface }}"
+  register: nexus_sensor_ap_bridge_membership
+  changed_when: false
+
+- name: Verify active sensor AP is forwarding through sensor bridge
+  ansible.builtin.assert:
+    that:
+      - "('master ' ~ nexus_sensor_bridge_interface) in nexus_sensor_ap_bridge_membership.stdout"
+      - "'state forwarding' in nexus_sensor_ap_bridge_membership.stdout"
+    fail_msg: >-
+      {{ nexus_sensor_ap_resolved_interface }} is not forwarding as a port of
+      {{ nexus_sensor_bridge_interface }}.
 
 - name: Read active sensor AP details
   ansible.builtin.command:

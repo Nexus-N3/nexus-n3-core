@@ -64,9 +64,11 @@ the gateway hardware is available.
 
 ## Wi-Fi Sensor Is Not Discovered
 
-Check that `NEXUS_SENSOR_NETWORK_ENABLED=1`, the configured
-`NEXUS_SENSOR_INTERFACE` exists, and the saved
-`NEXUS_SENSOR_CONNECTION` profile is active with the expected SSID and CIDR.
+Check that `NEXUS_SENSOR_NETWORK_ENABLED=1`, the configured Wi-Fi, bridge, and
+VLAN interfaces exist, and that their saved profiles are active. The AP and
+VLAN profiles must be bridge ports of `NEXUS_SENSOR_BRIDGE_INTERFACE`; the
+bridge must own `NEXUS_SENSOR_EXPECTED_CIDR`. The AP profile owns no IPv4
+address.
 
 An already provisioned X-IMU3 should announce on the Nexus sensor subnet. A
 reset X-IMU3 instead exposes its open provisioning AP and must pass through the

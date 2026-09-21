@@ -11,10 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from nexus_n3.sensor_manager.adapter_pool import AdapterPool
-from nexus_n3.sensor_manager.adapters.wifi.config import (
-    ApAddressMode,
-    WifiRuntimeConfig,
-)
+from nexus_n3.sensor_manager.adapters.wifi.config import WifiRuntimeConfig
 from nexus_n3.sensor_manager.SensorManager import SensorManager
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 
@@ -23,8 +20,7 @@ def _wifi_config() -> WifiRuntimeConfig:
     return WifiRuntimeConfig(
         enabled=True,
         backend="fake",
-        ap_address_mode=ApAddressMode.NETWORKMANAGER_SHARED,
-        expected_ap_cidr="10.42.0.1/24",
+        expected_sensor_cidr="10.42.20.250/24",
     )
 
 

@@ -1,6 +1,6 @@
 """Platform-neutral support for the SensorManager Wi-Fi adapter."""
 
-from .config import ApAddressMode, WifiRuntimeConfig
+from .config import WifiRuntimeConfig
 from .errors import WifiError
 from .models import (
     IPv4Configuration,
@@ -15,7 +15,6 @@ from .models import (
 )
 
 __all__ = [
-    "ApAddressMode",
     "IPv4Configuration",
     "NexusWifiNetwork",
     "WifiAccessPoint",

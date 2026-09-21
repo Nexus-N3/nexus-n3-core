@@ -65,6 +65,7 @@ nexus_n3_outputs/
 # -------------------------------
 
 deployment/ansible/host_vars/*/secrets.yml
+deployment/ansible_before_vlan/
 
 # -------------------------------
 # OS files

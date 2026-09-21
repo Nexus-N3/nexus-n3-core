@@ -39,7 +39,7 @@ async def exercise_stream(seconds: float) -> int:
         print("Initializing the production Wi-Fi adapter")
         await adapter.initialize()
         initialized = True
-        print(f"Nexus AP active: {adapter.network.cidr}")
+        print(f"Nexus sensor bridge active: {adapter.network.cidr}")
 
         print("Discovering or provisioning the X-IMU3")
         devices = await adapter.discover_devices([sensor])
@@ -63,22 +63,68 @@ async def exercise_stream(seconds: float) -> int:
 
         await sensor.setup(adapter)
         rate = int(sensor.attributes["SAMPLING_RATE"])
-        print(f"Starting {rate} Hz IMU stream for {seconds:g} seconds")
+
+        print(f"Starting {rate} Hz IMU stream")
         await sensor.start_stream(adapter)
         streaming = True
 
-        started = time.monotonic()
-        received = 0
-        last_timestamp = None
-        while time.monotonic() - started < seconds:
-            await asyncio.sleep(0.05)
+        # The requested capture duration begins with the first received sample,
+        # not when the vendor start-stream command returns.
+        waiting_for_first_sample_at = time.monotonic()
+        first_sample = None
+
+        while first_sample is None:
+            if (
+                time.monotonic() - waiting_for_first_sample_at
+                >= config.connect_timeout_s
+            ):
+                raise RuntimeError(
+                    "The X-IMU3 stream did not produce its first sample "
+                    f"within {config.connect_timeout_s:g} seconds"
+                )
+
+            await asyncio.sleep(0.01)
+
+            try:
+                first_sample = samples.get_nowait()
+            except Empty:
+                continue
+
+        first_received_at = time.monotonic()
+        startup_latency = first_received_at - waiting_for_first_sample_at
+        first_timestamp = first_sample.timestamp
+        last_timestamp = first_sample.timestamp
+        received = 1
+
+        print(
+            f"First IMU sample received after {startup_latency:.3f}s; "
+            f"capturing for {seconds:g} seconds"
+        )
+        print(
+            f"  sample=1 timestamp_us={first_sample.timestamp} "
+            f"quat={first_sample.quat} accel_m_s2={first_sample.accel} "
+            f"gyro_deg_s={first_sample.gyro}"
+        )
+
+        started = first_received_at
+        deadline = started + seconds
+
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+
+            await asyncio.sleep(min(0.05, remaining))
+
             while True:
                 try:
                     sample = samples.get_nowait()
                 except Empty:
                     break
+
                 received += 1
                 last_timestamp = sample.timestamp
+
                 if received <= 5:
                     print(
                         f"  sample={received} timestamp_us={sample.timestamp} "
@@ -88,26 +134,49 @@ async def exercise_stream(seconds: float) -> int:
 
         await sensor.stop_stream(adapter)
         streaming = False
+
         elapsed = time.monotonic() - started
-        observed_rate = received / elapsed if elapsed else 0.0
-        print(
-            f"Received {received} complete IMU samples in {elapsed:.2f}s "
-            f"({observed_rate:.1f} Hz); last timestamp={last_timestamp} us"
+        wall_rate = received / elapsed if elapsed else 0.0
+
+        sample_span = (
+            (last_timestamp - first_timestamp) / 1_000_000
+            if last_timestamp >= first_timestamp
+            else None
         )
+
+        sensor_rate = (
+            (received - 1) / sample_span
+            if sample_span is not None and sample_span > 0 and received > 1
+            else 0.0
+        )
+
+        print(
+            f"Received {received} complete IMU samples in {elapsed:.2f}s; "
+            f"startup latency={startup_latency:.3f}s; "
+            f"sample span={sample_span:.3f}s; "
+            f"sensor rate={sensor_rate:.2f} Hz; "
+            f"wall rate={wall_rate:.1f} Hz; "
+            f"last timestamp={last_timestamp} us"
+        )
+
         if received == 0:
             raise RuntimeError("The X-IMU3 stream produced no complete IMU samples")
+
         return 0
+
     finally:
         if streaming:
             try:
                 await sensor.stop_stream(adapter)
             except Exception as exc:
                 print(f"Warning: stream cleanup failed: {exc}", file=sys.stderr)
+
         if connected:
             try:
                 await adapter.disconnect_sensor(sensor)
             except Exception as exc:
                 print(f"Warning: disconnect cleanup failed: {exc}", file=sys.stderr)
+
         if initialized:
             await adapter.shutdown()
 
@@ -118,11 +187,13 @@ def parse_args() -> argparse.Namespace:
         "--seconds",
         type=float,
         default=10.0,
-        help="stream duration in seconds (default: 10)",
+        help="capture duration after the first IMU sample (default: 10)",
     )
     args = parser.parse_args()
+
     if args.seconds <= 0:
         parser.error("--seconds must be greater than zero")
+
     return args
 
 

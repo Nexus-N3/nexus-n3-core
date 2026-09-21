@@ -283,16 +283,18 @@ it uses the serial gateway rather than host BLE stack integration.
 ## Wi-Fi Sensors
 
 Wi-Fi sensors use one shared Core adapter and vendor-specific installed sensor
-plugins. On Linux, the production backend controls NetworkManager through
-`dbus-fast` on the system bus. Configure the saved Nexus AP and runtime settings
-before enabling the sensor network; see
+plugins. On Linux, the production backend inspects NetworkManager through
+`dbus-fast` on the system bus. Provision the sensor bridge, its VLAN port, its
+Wi-Fi AP port, and the runtime settings before enabling the sensor network; see
 `modules/nexus_n3_sensor_manager.md` for the complete lifecycle and variable
 list.
 
-Normal operation keeps the host on the Nexus sensor AP. Discovery first checks
-for already-connected sensors without disrupting that AP. Provisioning occurs
-only for a requested deficit and temporarily switches the configured radio to a
-sensor's provisioning AP inside an exclusive, cleanup-protected session.
+Normal operation keeps the Wi-Fi AP and tagged VLAN attached to `br-sensor`,
+which owns the sensor-network IPv4 address. Discovery first checks for
+already-connected sensors without disrupting that AP. Provisioning occurs only
+for a requested deficit and temporarily switches the configured radio to a
+sensor's provisioning AP inside an exclusive, cleanup-protected session; the
+saved AP is then restored as a bridge port.
 
 The X-IMU3 plugin uses stable serial numbers as sensor addresses. Its sample
 rate is applied during setup for a new session. The plugin emits canonical

@@ -10,7 +10,10 @@ There are known issues with macos that require manual intervention.
 
 ## Tests
 
-Use an external wifi adapter as an access point.
+These diagnostics expect the production topology to be provisioned already:
+`br-sensor` owns the sensor-network IPv4 address, while the external Wi-Fi AP
+and tagged VLAN 20 interfaces are bridge ports. Core validates this topology;
+it does not create it or provide DHCP.
 
 scan for -imu3 device and restore the ap
 ```bash
@@ -47,7 +50,8 @@ python -u nexus_n3/sensor_manager/tests/wifi_adapter/stream.py --seconds 10
 
 The recovery opt-in is harmless when normal AP restoration succeeds. It is
 needed on the mt76x2u adapter only when the production backend must invoke the
-installed fixed-purpose recovery service.
+installed fixed-purpose recovery service. Recovery restores the AP as a
+`br-sensor` member and returns the bridge IPv4 configuration.
 
 The mt76x2u adapter may require the previously proven network-stack recovery
 after the x-IMU3 provisioning AP disappears. Install the fixed-purpose root
@@ -67,27 +71,6 @@ NEXUS_N3_ENV_FILE=config/runtime.env \
 NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1 \
 python -u nexus_n3/sensor_manager/tests/wifi_adapter/lifecycle.py
 ```
-discover the x-imu3 and connect to it, disconnect and restore the ap
-```bash
-test_ap_connect.py
-```
-connect and send a hamless command over udp - this uses the ximu3 api (requies pip install)
-```bash
-test_sensor_udp.py
-```
-
-Provision a x-imu3 device to connect to the ap
-```bash
-export NEXUS_SENSOR_AP_PASSWORD='your-password'
-
-export NEXUS_TEST_ALLOW_NETWORK_STACK_RESTART=1
-export NEXUS_AP_NORMAL_RESTORE_GRACE_SECONDS=5
-
-pytest tests/wifi_adapter/test_ap_provision.py -s
-```
-
-
-
 ## resources
 
 - [Vendor Python examples](https://github.com/xioTechnologies/x-IMU3-Software/tree/main/Examples/Python)

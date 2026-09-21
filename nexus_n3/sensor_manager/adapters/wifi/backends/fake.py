@@ -20,7 +20,7 @@ class FakeWifiBackend:
     ) -> None:
         self.operations: list[str] = []
         self.ipv4 = ipv4 or IPv4Configuration(
-            address="10.42.0.1",
+            address="10.42.20.250",
             prefix=24,
         )
         self._capabilities = capabilities or WifiCapabilities(

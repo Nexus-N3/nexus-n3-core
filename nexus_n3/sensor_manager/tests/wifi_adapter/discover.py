@@ -36,7 +36,7 @@ async def discover() -> int:
 
     await backend.initialize()
     network = await backend.ensure_ap_active()
-    print(f"Nexus AP active: {network.cidr}")
+    print(f"Nexus sensor bridge active: {network.cidr}")
 
     try:
         # From this point onward, attempt restoration even if scanning or
@@ -68,7 +68,7 @@ async def discover() -> int:
     finally:
         if restore_required:
             restored = await backend.restore_ap()
-            print(f"Nexus AP restored: {restored.cidr}")
+            print(f"Nexus AP restored to bridge: {restored.cidr}")
         await backend.shutdown()
 
 

@@ -1,0 +1,9 @@
+---
+- name: Reload sensor dnsmasq if running
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - try-restart
+      - dnsmasq.service
+  changed_when: false
+  failed_when: false

@@ -16,6 +16,18 @@
   roles:
     - nexus_dependencies
 
+    - role: nexus_sensor_network
+      when: nexus_sensor_network_enabled | default(false) | bool
+      tags:
+        - nexus_sensor_network
+        - nexus_sensor_vlan
+        - nexus_sensor_access_point
+
+    - role: nexus_sensor_vlan
+      when: nexus_sensor_vlan_enabled | default(false) | bool
+      tags:
+        - nexus_sensor_vlan
+
     - role: nexus_sensor_access_point
       when: nexus_sensor_ap_enabled | default(false) | bool
       tags:

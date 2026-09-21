@@ -36,7 +36,7 @@ async def exercise_lifecycle() -> int:
         print("Initializing the production Wi-Fi adapter")
         await adapter.initialize()
         initialized = True
-        print(f"Nexus AP active: {adapter.network.cidr}")
+        print(f"Nexus sensor bridge active: {adapter.network.cidr}")
 
         print("Discovering or provisioning the X-IMU3")
         devices = await adapter.discover_devices([sensor])

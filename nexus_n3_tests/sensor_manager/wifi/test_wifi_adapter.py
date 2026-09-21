@@ -12,10 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from nexus_n3.sensor_manager.adapters.wifi.backends.fake import FakeWifiBackend
-from nexus_n3.sensor_manager.adapters.wifi.config import (
-    ApAddressMode,
-    WifiRuntimeConfig,
-)
+from nexus_n3.sensor_manager.adapters.wifi.config import WifiRuntimeConfig
 from nexus_n3.sensor_manager.adapters.wifi.errors import (
     WifiCandidateAmbiguous,
     WifiDeviceNotDiscovered,
@@ -80,7 +77,7 @@ class MappingWifiSensorDriver(FakeWifiSensorDriver):
         return [
             {
                 "address": "serial-001",
-                "endpoint": "10.42.0.48",
+                "endpoint": "10.42.20.48",
                 "metadata": {"udp_send_port": 8048},
             }
         ]
@@ -140,8 +137,7 @@ def _config(**overrides) -> WifiRuntimeConfig:
     values = {
         "enabled": True,
         "backend": "fake",
-        "ap_address_mode": ApAddressMode.NETWORKMANAGER_SHARED,
-        "expected_ap_cidr": "10.42.0.1/24",
+        "expected_sensor_cidr": "10.42.20.250/24",
     }
     values.update(overrides)
     return WifiRuntimeConfig(**values)
@@ -160,7 +156,8 @@ def test_linux_backend_is_selected_from_runtime_config():
     adapter = WifiAdapter(
         config=_config(
             backend="linux-networkmanager",
-            interface_name="wlan-test",
+            wifi_interface="wlan-test",
+            vlan_interface="eth0.20",
         )
     )
 
@@ -186,7 +183,7 @@ def test_initialize_and_shutdown_order():
         await adapter.initialize()
         await adapter.initialize()
         assert backend.operations == ["initialize", "ensure_ap_active"]
-        assert adapter.network == IPv4Configuration("10.42.0.1", 24)
+        assert adapter.network == IPv4Configuration("10.42.20.250", 24)
 
         await adapter.shutdown()
         await adapter.shutdown()
@@ -207,7 +204,7 @@ def test_wifi_diagnostics_include_backend_adapter_and_sensor_driver():
         backend = FakeWifiBackend()
         driver = FakeWifiSensorDriver(
             "Test WiFi Sensor",
-            [WifiDevice(address="sensor-001", endpoint="10.42.0.48")],
+            [WifiDevice(address="sensor-001", endpoint="10.42.20.48")],
         )
         adapter = WifiAdapter(config=_config(), backend=backend)
         await adapter.initialize()
@@ -216,7 +213,7 @@ def test_wifi_diagnostics_include_backend_adapter_and_sensor_driver():
         snapshot = await adapter.get_diagnostics_snapshot()
 
         assert snapshot["event"] == "wifi_status_snapshot"
-        assert snapshot["adapter"]["network"]["cidr"] == "10.42.0.1/24"
+        assert snapshot["adapter"]["network"]["cidr"] == "10.42.20.250/24"
         assert snapshot["adapter"]["discovered_addresses"] == ["sensor-001"]
         assert snapshot["backend"]["implementation"] == "fake"
         assert snapshot["sensors"]["sensor-001"]["transport"] == (
@@ -332,7 +329,7 @@ def test_json_safe_plugin_device_mapping_is_normalized():
         devices = await adapter.discover_devices([sensor])
 
         device = devices["serial-001"][0]
-        assert device.endpoint == "10.42.0.48"
+        assert device.endpoint == "10.42.20.48"
         assert device.metadata == {"udp_send_port": 8048}
 
     asyncio.run(scenario())
@@ -342,7 +339,7 @@ def test_two_requested_with_one_connected_provisions_exactly_one():
     async def scenario():
         driver = ProvisioningWifiSensorDriver(
             "Test WiFi Sensor",
-            [WifiDevice(address="sensor-001", endpoint="10.42.0.10")],
+            [WifiDevice(address="sensor-001", endpoint="10.42.20.10")],
             ["sensor-002"],
         )
         sensors = [
@@ -529,14 +526,14 @@ def test_shutdown_disconnects_connected_sensor_before_backend():
 def test_config_validation_and_secret_redaction():
     with pytest.raises(ValueError, match="Unsupported Wi-Fi backend"):
         WifiRuntimeConfig(backend="unknown")
-    with pytest.raises(ValueError, match="interface name"):
+    with pytest.raises(ValueError, match="Wi-Fi interface"):
         WifiRuntimeConfig(enabled=True, backend="linux-networkmanager")
-    with pytest.raises(ValueError, match="Invalid expected Wi-Fi AP CIDR"):
-        WifiRuntimeConfig(expected_ap_cidr="not-a-cidr")
-    with pytest.raises(ValueError, match="address mode"):
-        WifiRuntimeConfig(ap_address_mode="unknown")
+    with pytest.raises(ValueError, match="Invalid expected sensor-network CIDR"):
+        WifiRuntimeConfig(expected_sensor_cidr="not-a-cidr")
     with pytest.raises(ValueError, match="must be IPv4"):
-        WifiRuntimeConfig(expected_ap_cidr="fd00::1/64")
+        WifiRuntimeConfig(expected_sensor_cidr="fd00::1/64")
+    with pytest.raises(ValueError, match="between 1 and 4094"):
+        WifiRuntimeConfig(vlan_id=4095)
 
     config = _config(ap_password="top-secret")
     credentials = WifiCredentials(password="top-secret")

@@ -20,6 +20,27 @@ GATEWAY_SUBSCRIBE_TIMEOUT_S={{ nexus_ble_gateway_subscribe_timeout_s }}
 GATEWAY_WRITE_TIMEOUT_S={{ nexus_ble_gateway_write_timeout_s }}
 GATEWAY_READ_TIMEOUT_S={{ nexus_ble_gateway_read_timeout_s }}
 
+NEXUS_SENSOR_NETWORK_ENABLED={{ 1 if nexus_sensor_network_enabled | bool else 0 }}
+NEXUS_WIFI_BACKEND={{ nexus_wifi_backend }}
+NEXUS_SENSOR_WIFI_INTERFACE={{ nexus_sensor_ap_interface }}
+NEXUS_SENSOR_WIFI_PROFILE={{ nexus_sensor_ap_connection_name }}
+NEXUS_SENSOR_BRIDGE_INTERFACE={{ nexus_sensor_bridge_interface }}
+NEXUS_SENSOR_BRIDGE_PROFILE={{ nexus_sensor_bridge_connection_name }}
+NEXUS_SENSOR_VLAN_INTERFACE={{ nexus_sensor_vlan_interface }}
+NEXUS_SENSOR_VLAN_PROFILE={{ nexus_sensor_vlan_connection_name }}
+NEXUS_SENSOR_VLAN_ID={{ nexus_sensor_vlan_id }}
+NEXUS_SENSOR_EXPECTED_CIDR={{ nexus_sensor_network_address }}
+NEXUS_SENSOR_AP_SSID={{ nexus_sensor_ap_ssid }}
+NEXUS_SENSOR_AP_PASSWORD={{ nexus_sensor_ap_passphrase }}
+NEXUS_SENSOR_AP_CHANNEL={{ nexus_sensor_ap_channel }}
+NEXUS_WIFI_PROVISIONING_CONNECTION={{ nexus_wifi_provisioning_connection_name }}
+NEXUS_WIFI_DISCOVERY_TIMEOUT_S={{ nexus_wifi_discovery_timeout_s }}
+NEXUS_WIFI_CONNECT_TIMEOUT_S={{ nexus_wifi_connect_timeout_s }}
+NEXUS_WIFI_PROVISIONING_JOIN_TIMEOUT_S={{ nexus_wifi_provisioning_join_timeout_s }}
+NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART={{ 1 if nexus_wifi_allow_network_stack_restart | bool else 0 }}
+NEXUS_NETWORK_STACK_RESTART_TIMEOUT_SECONDS={{ nexus_sensor_ap_recovery_timeout_seconds }}
+NEXUS_WIFI_REGULATORY_DOMAIN={{ nexus_sensor_ap_country_code }}
+
 ZEROMQ_CMD_BIND={{ nexus_zeromq_cmd_bind }}
 ZEROMQ_EVENT_BIND={{ nexus_zeromq_event_bind }}
 

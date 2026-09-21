@@ -17,11 +17,11 @@ class FakeSensorHostClient:
         self.diagnostics_reset = False
 
     def wifi_discover_connected(self, network):
-        assert network.cidr == "10.42.0.1/24"
+        assert network.cidr == "10.42.20.250/24"
         return [
             {
                 "address": "6A33CA84",
-                "endpoint": "10.42.0.48",
+                "endpoint": "10.42.20.48",
                 "metadata": {
                     "udp_send_port": 8048,
                     "udp_receive_port": 9000,
@@ -68,13 +68,13 @@ def test_installed_plugin_wifi_driver_bridges_lifecycle():
         driver = _InstalledPluginWifiDriver(proxy)
 
         devices = await driver.discover_connected(
-            IPv4Configuration(address="10.42.0.1", prefix=24)
+            IPv4Configuration(address="10.42.20.250", prefix=24)
         )
 
         assert devices == [
             WifiDevice(
                 address="6A33CA84",
-                endpoint="10.42.0.48",
+                endpoint="10.42.20.48",
                 metadata={
                     "udp_send_port": 8048,
                     "udp_receive_port": 9000,

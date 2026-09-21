@@ -2,6 +2,16 @@ nexus_ap_set_nm_unmanaged: true
 nexus_usb_uid: 1000
 nexus_usb_gid: 1000
 
+# Common sensor network. br-sensor owns the node IP; eth0.20 and the
+# USB Wi-Fi AP are Layer-2 members of this bridge.
+nexus_sensor_network_enabled: true
+nexus_sensor_network_address: 10.42.20.11/24
+
+nexus_sensor_vlan_enabled: true
+nexus_sensor_vlan_id: 20
+nexus_sensor_vlan_parent_interface: eth0
+nexus_sensor_vlan_interface: eth0.20
+
 # Runtime identity and node role
 nexus_role: standalone # standalone or master
 nexus_gateway: zeromq_gateway

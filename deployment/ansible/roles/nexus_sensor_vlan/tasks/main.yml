@@ -1,0 +1,212 @@
+---
+- name: Validate sensor VLAN configuration
+  ansible.builtin.assert:
+    that:
+      - nexus_sensor_vlan_id | int >= 1
+      - nexus_sensor_vlan_id | int <= 4094
+      - nexus_sensor_vlan_parent_interface | length > 0
+      - nexus_sensor_vlan_interface | length > 0
+      - nexus_sensor_vlan_connection_name | length > 0
+      - nexus_sensor_bridge_interface | length > 0
+      - nexus_sensor_bridge_connection_name | length > 0
+    fail_msg: >-
+      The sensor VLAN requires a valid VLAN ID, parent/interface names, and an
+      existing sensor bridge configuration.
+
+- name: Ensure NetworkManager is installed
+  ansible.builtin.apt:
+    name: network-manager
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Check sensor VLAN parent interface
+  ansible.builtin.command:
+    argv:
+      - ip
+      - link
+      - show
+      - dev
+      - "{{ nexus_sensor_vlan_parent_interface }}"
+  register: nexus_sensor_vlan_parent_link
+  changed_when: false
+  failed_when: false
+
+- name: Require sensor VLAN parent interface
+  ansible.builtin.assert:
+    that:
+      - nexus_sensor_vlan_parent_link.rc == 0
+    fail_msg: >-
+      Sensor VLAN parent interface {{ nexus_sensor_vlan_parent_interface }}
+      does not exist. Override nexus_sensor_vlan_parent_interface for this host.
+
+- name: Check sensor bridge connection
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - -g
+      - connection.id
+      - connection
+      - show
+      - "{{ nexus_sensor_bridge_connection_name }}"
+  register: nexus_sensor_vlan_bridge_exists
+  changed_when: false
+  failed_when: false
+
+- name: Require sensor bridge connection
+  ansible.builtin.assert:
+    that:
+      - nexus_sensor_vlan_bridge_exists.rc == 0
+    fail_msg: >-
+      Sensor bridge {{ nexus_sensor_bridge_connection_name }} does not exist.
+      Run the nexus_sensor_network role before nexus_sensor_vlan.
+
+- name: Check whether sensor VLAN connection exists
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - -g
+      - connection.id
+      - connection
+      - show
+      - "{{ nexus_sensor_vlan_connection_name }}"
+  register: nexus_sensor_vlan_connection_exists
+  changed_when: false
+  failed_when: false
+
+- name: Create sensor VLAN connection
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - add
+      - type
+      - vlan
+      - con-name
+      - "{{ nexus_sensor_vlan_connection_name }}"
+      - ifname
+      - "{{ nexus_sensor_vlan_interface }}"
+      - dev
+      - "{{ nexus_sensor_vlan_parent_interface }}"
+      - id
+      - "{{ nexus_sensor_vlan_id | string }}"
+  when: nexus_sensor_vlan_connection_exists.rc != 0
+
+# NetworkManager 1.36 does not allow ipv4/ipv6 settings to be changed in the
+# same command that converts a connection into a bridge port. Existing routed
+# VLAN profiles must first be deactivated and have their Layer-3 settings
+# removed. Once connection.slave-type=bridge is set, those setting groups are
+# no longer valid on the port profile.
+- name: Read current sensor VLAN bridge-port state
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - -g
+      - connection.slave-type
+      - connection
+      - show
+      - "{{ nexus_sensor_vlan_connection_name }}"
+  register: nexus_sensor_vlan_slave_type
+  changed_when: false
+
+- name: Deactivate sensor VLAN before bridge-port migration
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - down
+      - "{{ nexus_sensor_vlan_connection_name }}"
+  register: nexus_sensor_vlan_down
+  changed_when: nexus_sensor_vlan_down.rc == 0
+  failed_when: false
+  when: nexus_sensor_vlan_slave_type.stdout | trim != 'bridge'
+
+- name: Remove IPv4 settings before sensor VLAN bridge-port migration
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_vlan_connection_name }}"
+      - remove
+      - ipv4
+  when: nexus_sensor_vlan_slave_type.stdout | trim != 'bridge'
+
+- name: Remove IPv6 settings before sensor VLAN bridge-port migration
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_vlan_connection_name }}"
+      - remove
+      - ipv6
+  when: nexus_sensor_vlan_slave_type.stdout | trim != 'bridge'
+
+- name: Configure sensor VLAN as a bridge port
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_vlan_connection_name }}"
+      - connection.interface-name
+      - "{{ nexus_sensor_vlan_interface }}"
+      - connection.autoconnect
+      - "{{ 'yes' if nexus_sensor_vlan_autoconnect | bool else 'no' }}"
+      - vlan.parent
+      - "{{ nexus_sensor_vlan_parent_interface }}"
+      - vlan.id
+      - "{{ nexus_sensor_vlan_id | string }}"
+      - connection.master
+      - "{{ nexus_sensor_bridge_interface }}"
+      - connection.slave-type
+      - bridge
+  changed_when: false
+
+- name: Activate sensor VLAN connection
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - up
+      - "{{ nexus_sensor_vlan_connection_name }}"
+      - ifname
+      - "{{ nexus_sensor_vlan_interface }}"
+  changed_when: false
+
+- name: Read active sensor VLAN bridge membership
+  ansible.builtin.command:
+    argv:
+      - bridge
+      - link
+      - show
+      - dev
+      - "{{ nexus_sensor_vlan_interface }}"
+  register: nexus_sensor_vlan_bridge_link
+  changed_when: false
+
+- name: Verify active sensor VLAN is forwarding through sensor bridge
+  ansible.builtin.assert:
+    that:
+      - "('master ' ~ nexus_sensor_bridge_interface) in nexus_sensor_vlan_bridge_link.stdout"
+      - "'state forwarding' in nexus_sensor_vlan_bridge_link.stdout"
+    fail_msg: >-
+      {{ nexus_sensor_vlan_interface }} is not forwarding as a port of
+      {{ nexus_sensor_bridge_interface }}.
+
+- name: Read active sensor VLAN details
+  ansible.builtin.command:
+    argv:
+      - ip
+      - -details
+      - address
+      - show
+      - dev
+      - "{{ nexus_sensor_vlan_interface }}"
+  register: nexus_sensor_vlan_details
+  changed_when: false
+
+- name: Show active sensor VLAN
+  ansible.builtin.debug:
+    var: nexus_sensor_vlan_details.stdout_lines

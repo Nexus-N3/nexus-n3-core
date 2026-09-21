@@ -1,0 +1,20 @@
+---
+# Base Layer-3 sensor network shared by the wired sensor VLAN and USB Wi-Fi AP.
+# This role creates the Linux bridge that owns the node's sensor-network IP.
+nexus_sensor_network_enabled: false
+
+nexus_sensor_bridge_interface: br-sensor
+nexus_sensor_bridge_connection_name: nexus-n3-sensor-bridge
+nexus_sensor_network_address: ""
+nexus_sensor_network_autoconnect: true
+nexus_sensor_network_ipv4_never_default: true
+nexus_sensor_network_ipv6_method: disabled
+
+# In standalone mode the single node owns DHCP. In distributed mode the master
+# owns DHCP and workers only bridge their AP/VLAN ports into the shared LAN.
+nexus_sensor_dhcp_enabled: "{{ nexus_role in ['standalone', 'master'] }}"
+nexus_sensor_dhcp_range_start: 10.42.20.100
+nexus_sensor_dhcp_range_end: 10.42.20.199
+nexus_sensor_dhcp_netmask: 255.255.255.0
+nexus_sensor_dhcp_lease: 12h
+nexus_sensor_dhcp_config_path: /etc/dnsmasq.d/nexus-n3-sensor-network.conf

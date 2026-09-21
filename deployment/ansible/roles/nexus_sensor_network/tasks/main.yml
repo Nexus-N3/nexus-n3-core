@@ -1,0 +1,183 @@
+---
+- name: Validate sensor network configuration
+  ansible.builtin.assert:
+    that:
+      - nexus_role in ['standalone', 'master', 'worker']
+      - nexus_sensor_bridge_interface | length > 0
+      - nexus_sensor_bridge_connection_name | length > 0
+      - nexus_sensor_network_address | length > 0
+      - nexus_sensor_network_ipv6_method in ['disabled', 'ignore', 'auto']
+    fail_msg: >-
+      The sensor network is only valid on standalone/master/worker nodes and
+      requires a bridge interface, bridge connection name, and node CIDR.
+
+- name: Ensure sensor network packages are installed
+  ansible.builtin.apt:
+    name:
+      - network-manager
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Ensure sensor DHCP package is installed on DHCP owner
+  ansible.builtin.apt:
+    name:
+      - dnsmasq
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+  when: nexus_sensor_dhcp_enabled | bool
+
+- name: Ensure dnsmasq loads drop-in configuration
+  ansible.builtin.lineinfile:
+    path: /etc/dnsmasq.conf
+    regexp: '^#?conf-dir=/etc/dnsmasq\.d/,\*\.conf$'
+    line: 'conf-dir=/etc/dnsmasq.d/,*.conf'
+    state: present
+  when: nexus_sensor_dhcp_enabled | bool
+  notify: Reload sensor dnsmasq if running
+
+- name: Check whether sensor bridge connection exists
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - -g
+      - connection.id
+      - connection
+      - show
+      - "{{ nexus_sensor_bridge_connection_name }}"
+  register: nexus_sensor_bridge_connection_exists
+  changed_when: false
+  failed_when: false
+
+- name: Create sensor bridge connection
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - add
+      - type
+      - bridge
+      - con-name
+      - "{{ nexus_sensor_bridge_connection_name }}"
+      - ifname
+      - "{{ nexus_sensor_bridge_interface }}"
+  when: nexus_sensor_bridge_connection_exists.rc != 0
+
+- name: Configure sensor bridge link and persistence
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_bridge_connection_name }}"
+      - connection.interface-name
+      - "{{ nexus_sensor_bridge_interface }}"
+      - connection.autoconnect
+      - "{{ 'yes' if nexus_sensor_network_autoconnect | bool else 'no' }}"
+      - bridge.stp
+      - "no"
+  changed_when: false
+
+- name: Configure sensor bridge IPv4 addressing
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_bridge_connection_name }}"
+      - ipv4.method
+      - manual
+      - ipv4.addresses
+      - "{{ nexus_sensor_network_address }}"
+      - ipv4.gateway
+      - ""
+      - ipv4.dns
+      - ""
+      - ipv4.ignore-auto-dns
+      - "yes"
+      - ipv4.never-default
+      - "{{ 'yes' if nexus_sensor_network_ipv4_never_default | bool else 'no' }}"
+      - ipv4.routes
+      - ""
+  changed_when: false
+
+- name: Configure sensor bridge IPv6 state
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - modify
+      - "{{ nexus_sensor_bridge_connection_name }}"
+      - ipv6.method
+      - "{{ nexus_sensor_network_ipv6_method }}"
+  changed_when: false
+
+- name: Activate sensor bridge
+  ansible.builtin.command:
+    argv:
+      - nmcli
+      - connection
+      - up
+      - "{{ nexus_sensor_bridge_connection_name }}"
+      - ifname
+      - "{{ nexus_sensor_bridge_interface }}"
+  changed_when: false
+
+- name: Remove legacy per-AP sensor DHCP configuration
+  ansible.builtin.file:
+    path: /etc/dnsmasq.d/nexus-n3-sensor-ap.conf
+    state: absent
+  notify: Reload sensor dnsmasq if running
+
+- name: Install sensor-network DHCP configuration
+  ansible.builtin.template:
+    src: dnsmasq.conf.j2
+    dest: "{{ nexus_sensor_dhcp_config_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: nexus_sensor_dhcp_enabled | bool
+  notify: Reload sensor dnsmasq if running
+
+- name: Remove sensor-network DHCP configuration from non-DHCP nodes
+  ansible.builtin.file:
+    path: "{{ nexus_sensor_dhcp_config_path }}"
+    state: absent
+  when: not (nexus_sensor_dhcp_enabled | bool)
+  notify: Reload sensor dnsmasq if running
+
+- name: Validate dnsmasq configuration on DHCP owner
+  ansible.builtin.command:
+    argv:
+      - dnsmasq
+      - --test
+  changed_when: false
+  when: nexus_sensor_dhcp_enabled | bool
+
+- name: Ensure dnsmasq is enabled on sensor DHCP owner
+  ansible.builtin.service:
+    name: dnsmasq
+    enabled: true
+    state: started
+  when: nexus_sensor_dhcp_enabled | bool
+
+- name: Flush sensor DHCP configuration handlers
+  ansible.builtin.meta: flush_handlers
+
+- name: Read active sensor bridge details
+  ansible.builtin.command:
+    argv:
+      - ip
+      - -details
+      - address
+      - show
+      - dev
+      - "{{ nexus_sensor_bridge_interface }}"
+  register: nexus_sensor_bridge_details
+  changed_when: false
+
+- name: Show active sensor bridge
+  ansible.builtin.debug:
+    var: nexus_sensor_bridge_details.stdout_lines

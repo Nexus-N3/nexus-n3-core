@@ -42,9 +42,10 @@ Internally, responsibilities are split into services:
 ## Wi-Fi Sensor Adapter
 
 Sensors declare `adapter: WIFI` and provide vendor-specific Wi-Fi behavior
-through their installed sensor plugin. Core owns the shared host network and
-the plugin owns the sensor protocol. This keeps NetworkManager D-Bus objects,
-host interface management, and recovery permissions out of plugins, while
+through their installed sensor plugin. Deployment owns the persistent host
+network topology; Core validates and uses it, and the plugin owns the sensor
+protocol. This keeps NetworkManager D-Bus objects, host interface management,
+and recovery permissions out of plugins, while
 keeping vendor discovery, provisioning commands, connections, and sample
 parsing out of Core.
 
@@ -57,7 +58,9 @@ sensor of a model is available for live testing.
 
 ### Discovery and provisioning lifecycle
 
-1. Initialize the configured interface and validate the saved Nexus sensor AP.
+1. Validate the active `br-sensor` bridge, tagged VLAN, and saved Nexus sensor
+   AP bridge port, then read the sensor-network IPv4 configuration from the
+   bridge.
 2. Ask each plugin driver for sensors already announcing on the Nexus subnet.
 3. If a requested identity is missing, stop AP hosting temporarily and perform
    a fresh scan.
@@ -66,8 +69,9 @@ sensor of a model is available for live testing.
    owning plugin identify it before configuration.
 6. Pass the configured Nexus SSID, password, and channel to the plugin's
    provision method.
-7. Remove volatile state, restore the Nexus AP, and wait for the stable sensor
-   identity to announce on the Nexus subnet.
+7. Remove volatile state, restore the Nexus AP as a `br-sensor` member, read
+   the bridge IPv4 configuration, and wait for the stable sensor identity to
+   announce on the Nexus subnet.
 8. Cache the discovered device and its plugin driver for normal connection,
    streaming, and disconnection.
 
@@ -102,12 +106,17 @@ The main settings in `runtime.env` are:
 ```text
 NEXUS_SENSOR_NETWORK_ENABLED=1
 NEXUS_WIFI_BACKEND=linux-networkmanager
-NEXUS_SENSOR_INTERFACE=wlx00c0cabaa751
-NEXUS_SENSOR_CONNECTION=nexus-n3-sensor-ap
+NEXUS_SENSOR_WIFI_INTERFACE=wlx00c0cabaa751
+NEXUS_SENSOR_WIFI_PROFILE=nexus-n3-sensor-ap
+NEXUS_SENSOR_BRIDGE_INTERFACE=br-sensor
+NEXUS_SENSOR_BRIDGE_PROFILE=nexus-n3-sensor-bridge
+NEXUS_SENSOR_VLAN_INTERFACE=enp0s31f6.20
+NEXUS_SENSOR_VLAN_PROFILE=nexus-n3-sensor-vlan
+NEXUS_SENSOR_VLAN_ID=20
 NEXUS_SENSOR_AP_SSID=nexus-n3-sensors
 NEXUS_SENSOR_AP_PASSWORD=<secret>
 NEXUS_SENSOR_AP_CHANNEL=36
-NEXUS_SENSOR_AP_EXPECTED_CIDR=10.42.0.1/24
+NEXUS_SENSOR_EXPECTED_CIDR=10.42.20.250/24
 NEXUS_WIFI_PROVISIONING_CONNECTION=nexus-n3-sensor-provision
 NEXUS_WIFI_DISCOVERY_TIMEOUT_S=20
 NEXUS_WIFI_CONNECT_TIMEOUT_S=30
@@ -119,6 +128,11 @@ NEXUS_WIFI_REGULATORY_DOMAIN=EE
 
 `NEXUS_SENSOR_AP_PASSWORD` must be supplied through the protected runtime env;
 it must not be committed to the repository.
+
+The AP and VLAN profiles are Layer-2 bridge ports and own no sensor-network
+address. `br-sensor` owns the configured address. Core does not create this
+topology, provide DHCP, or require NetworkManager `ipv4.method=shared`; those
+are deployment responsibilities.
 
 ## BLE Backends
 BLE sensors still declare `adapter: BLE`, but Nexus N3 Core now supports two
