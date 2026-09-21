@@ -414,6 +414,39 @@ class GatewaySerialClient:
         if last_exc is not None:
             raise last_exc
 
+    def unsubscribe(
+        self,
+        address: str,
+        characteristic_uuid: str,
+        timeout_s: float,
+    ) -> None:
+        """Disable notifications for a characteristic through the gateway."""
+        normalized_address = self._normalize_address(address)
+        self.assert_connected(normalized_address, action="unsubscribe")
+
+        def _unsubscribe_once() -> None:
+            request_id = self.request_id("unsubscribe")
+            request_queue = self._register_request(request_id)
+            try:
+                self.send(
+                    {
+                        "type": "unsubscribe",
+                        "request_id": request_id,
+                        "address": normalized_address,
+                        "characteristic_uuid": characteristic_uuid,
+                    }
+                )
+                self._wait_for_success(
+                    request_id,
+                    request_queue,
+                    "unsubscribe_complete",
+                    timeout_s,
+                )
+            finally:
+                self._unregister_request(request_id)
+
+        self._execute_with_transport_retry("unsubscribe", _unsubscribe_once)
+
     def write_gatt(
         self,
         address: str,

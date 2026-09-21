@@ -239,6 +239,11 @@ class BLEAdapter:
             logger.error(f"Error during BLE Set Notify Callback: {e}")
 
     @staticmethod
+    async def unset_notify_callback(ble_device, uuid):
+        """Disable notifications for a BLE characteristic."""
+        return await BLEAdapter.execute(ble_device.stop_notify, uuid)
+
+    @staticmethod
     async def write(ble_device, uuid, char):
         """
         Write a GATT characteristic.

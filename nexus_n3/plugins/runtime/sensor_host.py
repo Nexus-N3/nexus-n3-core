@@ -69,6 +69,13 @@ class HostAdapterProxy:
             },
         )
 
+    async def unset_notify_callback(self, transport_client, uuid):
+        notify_uuid = str(uuid)
+        self._connection.request("adapter.unsubscribe", {"uuid": notify_uuid})
+        callback_id = self._callbacks_by_uuid.pop(notify_uuid, None)
+        if callback_id is not None:
+            self._callbacks.pop(callback_id, None)
+
     def _handle_notification(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._notification_lock:
             callback = self._callbacks[str(params["callback_id"])]
