@@ -184,7 +184,49 @@ results back.</p>
 <li><p>Stop commands carry a shared <code class="docutils literal notranslate"><span class="pre">stop_session_id</span></code>; each node reports its real
 <code class="docutils literal notranslate"><span class="pre">stream_drained</span></code> event after local file and diagnostics queues are closed</p></li>
 <li><p>Master archives only after every expected execution node has drained</p></li>
+<li><p>Distributed start commands carry a shared <code class="docutils literal notranslate"><span class="pre">start_session_id</span></code>. Physical
+streaming and readiness checks remain node-local, but a ready node does not
+open official persistence until the coordinating client sends
+<code class="docutils literal notranslate"><span class="pre">start_official_stream</span></code>.</p></li>
+<li><p>The master forwards <code class="docutils literal notranslate"><span class="pre">start_official_stream</span></code> only after every execution node
+assigned to that start has emitted <code class="docutils literal notranslate"><span class="pre">stream_ready_for_official</span></code>.</p></li>
+<li><p>Once that barrier is complete, the master emits
+<code class="docutils literal notranslate"><span class="pre">distributed_ready_for_official</span></code>; the coordinating client responds with the
+global <code class="docutils literal notranslate"><span class="pre">start_official_stream</span></code> command.</p></li>
+<li><p>Standalone nodes do not use this barrier and transition directly from local
+readiness to <code class="docutils literal notranslate"><span class="pre">stream_official_started</span></code>.</p></li>
 </ul>
+</section>
+<section id="official-start-barrier">
+<h2>Official-Start Barrier<a class="headerlink" href="#official-start-barrier" title="Permalink to this heading">¶</a></h2>
+<ol class="arabic simple">
+<li><p>The master snapshots the execution nodes participating in a distributed
+start and injects <code class="docutils literal notranslate"><span class="pre">official_start_mode=coordinated</span></code> plus one shared
+<code class="docutils literal notranslate"><span class="pre">start_session_id</span></code> into their start commands. Before dispatching any of
+those commands, the master runs its host-level stream preparation once;
+on USB hot-disk deployments this remounts and selects the shared output
+disk even when the master has no locally assigned subject.</p></li>
+<li><p>Each node starts its physical sensors, runs its local startup gate, and
+pre-creates its empty persistence containers. This absorbs local/NFS
+metadata latency before the node declares readiness.</p></li>
+<li><p>A successful local gate and persistence preflight enters
+<code class="docutils literal notranslate"><span class="pre">ready_for_official</span></code>; samples continue to be observed for the physical
+stream but are not persisted or computed.</p></li>
+<li><p>The master emits <code class="docutils literal notranslate"><span class="pre">distributed_ready_for_official</span></code> after observing readiness
+from every required node. The coordinating client then sends
+<code class="docutils literal notranslate"><span class="pre">start_official_stream</span></code> with the shared start ID.</p></li>
+<li><p>The master validates the barrier and broadcasts the commit only to the
+snapshotted participants.</p></li>
+<li><p>Each node enables persistence and compute routing, establishes its
+node-local Timeline origin, and acknowledges with
+<code class="docutils literal notranslate"><span class="pre">stream_official_started</span></code>. The pre-created files contain no acquisition
+samples before this commit.</p></li>
+</ol>
+<p>The master sends the commit to every remote participant before activating
+locally. Because all blocking persistence setup is part of readiness, the
+commit path no longer waits on node-specific filesystem or NFS metadata work.</p>
+<p>The commit is idempotent for its active start ID. Stale IDs and commits issued
+before all participants are ready are rejected.</p>
 </section>
 <section id="subject-assignment">
 <h2>Subject Assignment<a class="headerlink" href="#subject-assignment" title="Permalink to this heading">¶</a></h2>
@@ -258,6 +300,7 @@ if the archive callback fails</p></li>
 <li><a class="reference internal" href="#overview">Overview</a></li>
 <li><a class="reference internal" href="#key-classes-and-apis">Key Classes and APIs</a></li>
 <li><a class="reference internal" href="#message-flow">Message Flow</a></li>
+<li><a class="reference internal" href="#official-start-barrier">Official-Start Barrier</a></li>
 <li><a class="reference internal" href="#subject-assignment">Subject Assignment</a></li>
 <li><a class="reference internal" href="#identity-and-storage">Identity And Storage</a></li>
 <li><a class="reference internal" href="#drain-barrier">Drain Barrier</a></li>
