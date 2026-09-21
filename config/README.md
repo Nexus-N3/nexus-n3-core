@@ -85,8 +85,11 @@ container, but not for a direct host run.
 - Supported values currently normalize to `bleak` or `nexus_ble_gateway`.
 
 `GATEWAY_SERIAL_PORT`
-- Serial device path for the Nexus BLE gateway.
-- Required when `BLE_BACKEND` is the gateway backend.
+- Use `auto` (the default when unset) to select the sole attached Nexus BLE
+  gateway data interface. On Linux this matches the stable Zephyr IFMCU
+  CMSIS-DAP `if01` name under `/dev/serial/by-id`.
+- An explicit serial device path remains available as an override. If multiple
+  gateways are attached, an explicit path is required.
 
 `GATEWAY_BAUDRATE`
 - Serial baudrate for the Nexus BLE gateway transport.

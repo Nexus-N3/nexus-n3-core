@@ -16,3 +16,4 @@ python-multipart
 azure-iot-device
 azure-storage-blob
 pyserial
+dbus-fast>=4,<5; sys_platform == "linux"

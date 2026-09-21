@@ -18,6 +18,8 @@ nexus_sensor_ap_country_code: EE
 nexus_sensor_ap_band: a
 nexus_sensor_ap_channel: 36
 nexus_sensor_ap_isolation: true
+nexus_sensor_ap_service_user: "{{ ansible_user }}"
+nexus_sensor_ap_recovery_timeout_seconds: 30
 
 # Separate subnet from nexus-n3-edge-access.
 nexus_sensor_ap_address: 192.168.60.1/24

@@ -49,7 +49,7 @@ for maintainability:
   it does not stop the background worker thread.
 - Performance logging can be enabled with `NEXUS_PERF_LOG=1`.
 - Core emits one `compute_performance` event per compute result and appends the
-  same payload to `diagnostics/session_diagnostics.jsonl`.
+  same payload to `<node-id>-diagnostics/session_diagnostics.jsonl`.
 - The algorithm host wraps `execute_real_time()` at runtime when that method is
   available. Those records use `execution_measurement=wrapped_execute_real_time`
   and are exact for that method boundary. Plugins without that conventional

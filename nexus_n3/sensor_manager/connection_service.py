@@ -98,15 +98,24 @@ class ConnectionService:
         adapter_groups = self.adapter_pool.group_sensors(sensors_to_disconnect)
 
         for adapter, sensors_for_adapter in adapter_groups.items():
-            if not self.adapter_pool.has_method(adapter, "disconnect"):
+            has_sensor_disconnect = self.adapter_pool.has_method(
+                adapter,
+                "disconnect_sensor",
+            )
+            has_client_disconnect = self.adapter_pool.has_method(adapter, "disconnect")
+            if not has_sensor_disconnect and not has_client_disconnect:
                 self.logger.warning(
-                    "Adapter %s does not implement disconnect",
+                    "Adapter %s does not implement sensor or client disconnect",
                     getattr(adapter, "adapter_type", str(adapter)),
                 )
                 continue
 
             for sensor in sensors_for_adapter:
-                if await adapter.disconnect(sensor.transport_client):
+                if has_sensor_disconnect:
+                    result = await adapter.disconnect_sensor(sensor)
+                else:
+                    result = await adapter.disconnect(sensor.transport_client)
+                if result:
                     sensor.set_connection_status(disconnected_status)
                     disconnected.append(sensor.address)
 

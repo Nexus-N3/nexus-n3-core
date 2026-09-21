@@ -125,7 +125,11 @@ class WorkerNode:
             }
         )
         self.system_event_bus.subscribe(self.send_event)
-        self.handler = MessageHandler(self.site, self.system_event_bus)
+        self.handler = MessageHandler(
+            self.site,
+            self.system_event_bus,
+            node_id=self.node_id,
+        )
         self.handler.registry = self.registry
 
         self._running = False

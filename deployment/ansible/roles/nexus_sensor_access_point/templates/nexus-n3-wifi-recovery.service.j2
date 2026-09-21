@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexus N3 fixed-purpose sensor Wi-Fi recovery
+
+[Service]
+Type=oneshot
+User=root
+Environment=NEXUS_WIFI_REGULATORY_DOMAIN={{ nexus_sensor_ap_country_code }}
+ExecStart=/usr/bin/systemctl restart wpa_supplicant.service
+ExecStart=/usr/bin/systemctl restart NetworkManager.service
+ExecStart=/usr/bin/sleep 5
+ExecStart=/usr/sbin/iw reg set ${NEXUS_WIFI_REGULATORY_DOMAIN}
+TimeoutStartSec={{ nexus_sensor_ap_recovery_timeout_seconds }}
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+

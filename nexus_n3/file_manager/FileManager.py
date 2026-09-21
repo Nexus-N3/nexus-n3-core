@@ -34,14 +34,17 @@ class FileManager:
         logger: Logger instance for logging file operations.
     """
 
-    def __init__(self, site, base_dir="nexus_n3_outputs"):
+    def __init__(self, site, base_dir="nexus_n3_outputs", node_id: str = "standalone"):
         """
         Initialize the FileManager.
 
         Args:
+            site: Site name/identifier used in the session path.
             base_dir (str | Path, optional): Base directory for CSV outputs. Defaults to "nexus_n3_outputs".
+            node_id: Runtime node identity used to isolate diagnostics files.
         """
         self.site = str(site or "local").strip() or "local"
+        self.node_id = self._sanitize_component(node_id, "standalone")
         self.base_root = Path(base_dir)
         self.session_label = None
         self.session_name = None
@@ -117,6 +120,13 @@ class FileManager:
         if not session_index:
             return None
         return self.base_dir / self._build_session_id(str(session_index))
+
+    def _diagnostics_dir(self, session_index: str | None) -> Path | None:
+        """Return this node's diagnostics directory within a shared session."""
+        session_dir = self._session_dir(session_index)
+        if session_dir is None:
+            return None
+        return session_dir / f"{self.node_id}-diagnostics"
 
     def _build_subject_activity_dir(
         self,
@@ -453,6 +463,7 @@ class FileManager:
         pipeline_diagnostics.start_session(
             session_dir,
             site=self.site,
+            node_id=self.node_id,
             session_label=self.session_label,
             session_timestamp=session_ts,
         )
@@ -548,7 +559,9 @@ class FileManager:
         session_dir = self._session_dir(session_ts)
         if not session_dir:
             return
-        diagnostics_dir = session_dir / "diagnostics"
+        diagnostics_dir = self._diagnostics_dir(session_ts)
+        if diagnostics_dir is None:
+            return
         summary_path = diagnostics_dir / "session_diagnostics.json"
         events_path = diagnostics_dir / "session_diagnostics.jsonl"
         now = datetime.now().isoformat(timespec="seconds")
@@ -565,6 +578,7 @@ class FileManager:
                     "events_path": events_path,
                     "summary": {
                         "site": self.site,
+                        "node_id": self.node_id,
                         "session_label": self.session_label,
                         "session_name": self.session_name,
                         "session_timestamp": session_ts,

@@ -36,6 +36,7 @@ class Client:
         evt_sub_addr="tcp://localhost:5556",
         stream_seconds=30,
         subjects=None,
+        session_label="two_sensor_session_30s",
     ):
         self.ctx = zmq.Context()
 
@@ -56,6 +57,7 @@ class Client:
 
         self.subjects = subjects or DEFAULT_SUBJECTS
         self.stream_seconds = stream_seconds
+        self.session_label = session_label
         self.expected_sensor_count = sum(
             sensor.get("number_of", 0)
             for subject in self.subjects
@@ -117,7 +119,7 @@ class Client:
                     "type": mt.CMD_INIT_SYSTEM,
                     "payload": {
                         "subjects": self.subjects,
-                        "init_label": "two_sensor_session_30s",
+                        "init_label": self.session_label,
                     },
                 }
             )
@@ -156,7 +158,7 @@ class Client:
                 self.send_command(
                     {
                         "type": mt.CMD_START_STREAM_FOR_ALL,
-                        "payload": {"tag": "two_sensor_session_30s"},
+                        "payload": {"tag": self.session_label},
                     }
                 )
             return
@@ -177,6 +179,8 @@ class Client:
 
         if evt_type == mt.EVT_SENSOR_DISCONNECTED:
             disconnected = payload.get("disconnected_sensors") or []
+            if isinstance(disconnected, dict):
+                disconnected = [disconnected]
             for sensor in disconnected:
                 if isinstance(sensor, str):
                     self.disconnected_addresses.add(sensor)
@@ -232,6 +236,11 @@ class Client:
             if not self._running:
                 return
             self._running = False
+            if self._event_thread and threading.current_thread() is not self._event_thread:
+                # recv_json wakes at least every RCVTIMEO (250 ms).  Let the
+                # receiving thread exit before closing its socket; closing a
+                # ZeroMQ socket concurrently with recv can abort in libzmq.
+                self._event_thread.join()
             try:
                 self.evt_sub.close()
             except Exception:
@@ -240,8 +249,6 @@ class Client:
                 self.cmd_pub.close()
             except Exception:
                 pass
-            if self._event_thread and threading.current_thread() is not self._event_thread:
-                self._event_thread.join(timeout=1.0)
             try:
                 self.ctx.term()
             except Exception:

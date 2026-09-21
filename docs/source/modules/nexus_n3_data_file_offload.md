@@ -21,6 +21,9 @@ detection or control.
 - `USBDiskManager` detects mount availability and write access
 - On insert/remove -> callbacks -> `Server` emits `CMD_UPDATE_FILE_PATH`
 - Master forwards `network_path` to workers
+- Workers write assigned subject data into the shared session tree
+- Only the master archives after every participating execution node reports
+  `stream_drained`
 
 ## Key Files
 - `nexus_n3.data_file_offload/sinks/usb.py`

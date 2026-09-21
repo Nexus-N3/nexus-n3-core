@@ -199,8 +199,17 @@ directly.
 Worker:
 
 ```bash
-python nexus_n3_server.py --role worker --node-id worker_A
+python nexus_n3_server.py \
+  --role worker \
+  --node-id worker_A \
+  --customer-id <customer-id> \
+  --site <site> \
+  --site-id <site-id> \
+  --site-name "<site name>"
 ```
+
+Worker identity must match the master deployment identity. Ansible renders
+these values into the worker systemd service from its host variables.
 
 AI node:
 
@@ -308,7 +317,14 @@ Supported BLE backends:
 Select the backend with `BLE_BACKEND` in `runtime.env` or `--ble-backend` at
 startup.
 
-When using `nexus_ble_gateway`, set `GATEWAY_SERIAL_PORT` for the host OS:
+When using `nexus_ble_gateway`, automatic discovery is recommended:
+
+```text
+GATEWAY_SERIAL_PORT=auto
+```
+
+Core selects the sole attached Zephyr IFMCU CMSIS-DAP gateway data interface.
+If multiple gateways are attached, set an explicit port for the host OS:
 
 - Linux example: `/dev/serial/by-id/...`
 - Windows example: `COM3`
@@ -345,7 +361,12 @@ This includes:
 - real-time NDJSON compute results
 - intermediate NDJSON results
 - consolidated NDJSON results
-- diagnostics NDJSON when enabled
+- structured diagnostics under `<node-id>-diagnostics/`
+- pipeline diagnostics NDJSON in the same node directory when enabled
+
+Distributed sessions use separate `master-diagnostics/` and
+`<worker-node-id>-diagnostics/` directories in the shared session tree.
+Standalone sessions use `standalone-diagnostics/`.
 
 On Linux standalone and master nodes, the optional hot-disk workflow can switch
 the active output path to the managed removable disk mount. On non-Linux hosts,

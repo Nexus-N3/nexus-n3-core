@@ -153,6 +153,7 @@ deployed systems.</p>
 <li><p>the admin UI is reachable</p></li>
 <li><p>the BLE backend is configured correctly</p></li>
 <li><p>the expected plugin inventory was detected at startup</p></li>
+<li><p>the Wi-Fi sensor AP is active when Wi-Fi sensors are configured</p></li>
 </ul>
 </section>
 <section id="service-operation">
@@ -184,15 +185,35 @@ deployed systems.</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python<span class="w"> </span>-m<span class="w"> </span>nexus_n3.plugins<span class="w"> </span>install<span class="w"> </span>/path/to/plugin.rsnxplugin<span class="w"> </span>--plugin-root<span class="w"> </span>/opt/nexus-n3-plugins
 </pre></div>
 </div>
+<p>Plugin versions are immutable after installation. Build and install a higher
+version whenever plugin code or its bundled SDK changes.</p>
+</section>
+<section id="wi-fi-sensor-operation">
+<h2>Wi-Fi Sensor Operation<a class="headerlink" href="#wi-fi-sensor-operation" title="Permalink to this heading">¶</a></h2>
+<p>The configured Wi-Fi interface normally hosts the Nexus sensor AP. Sensors that
+are already provisioned reconnect to it automatically. Reset devices into their
+vendor AP mode only when explicitly testing or performing provisioning.</p>
+<p>Network-stack recovery requires the fixed-purpose systemd service and sudoers
+rule described in the deployment guide. Runtime recovery uses <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">-n</span></code>; an
+authentication prompt indicates an incomplete or incorrect deployment and must
+not be accepted as normal operation on a headless system.</p>
 </section>
 <section id="storage">
 <h2>Storage<a class="headerlink" href="#storage" title="Permalink to this heading">¶</a></h2>
 <p>Session data is written under the configured output root and finalized into zip
 archives when a session is fully drained.</p>
-<p>Each archive contains <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.json</span></code> for the final
-session summary and <code class="docutils literal notranslate"><span class="pre">diagnostics/session_diagnostics.jsonl</span></code> for ordered runtime
-events. These structured diagnostics are written for every recording; they do
-not require the optional <code class="docutils literal notranslate"><span class="pre">--diagnostics</span></code> pipeline-debug mode.</p>
+<p>Each archive contains node-specific diagnostics. The master writes under
+<code class="docutils literal notranslate"><span class="pre">master-diagnostics/</span></code>, each worker writes under <code class="docutils literal notranslate"><span class="pre">&lt;worker-node-id&gt;-diagnostics/</span></code>,
+and standalone mode writes under <code class="docutils literal notranslate"><span class="pre">standalone-diagnostics/</span></code>. Each directory
+contains <code class="docutils literal notranslate"><span class="pre">session_diagnostics.json</span></code> for the final summary and
+<code class="docutils literal notranslate"><span class="pre">session_diagnostics.jsonl</span></code> for ordered runtime events. These structured
+diagnostics are written for every recording; they do not require the optional
+<code class="docutils literal notranslate"><span class="pre">--diagnostics</span></code> pipeline-debug mode.</p>
+<p>For mixed BLE/Wi-Fi sessions, inspect
+<code class="docutils literal notranslate"><span class="pre">latest_gateway_diagnostics.diagnostics.BLE</span></code> and
+<code class="docutils literal notranslate"><span class="pre">latest_gateway_diagnostics.diagnostics.WIFI</span></code> in the summary. The Wi-Fi entry
+includes adapter/backend state and any diagnostics exported by the installed
+sensor plugin.</p>
 <p>If using the removable USB disk workflow on a Linux edge host, the manual
 helper scripts are:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>bash<span class="w"> </span>scripts/usb_disk_add_or_remount.sh
@@ -210,6 +231,7 @@ USB management actions.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/MANUAL_DEPLOYMENT.md</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/SYSTEMD_DEPLOYMENT.md</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/ANSIBLE_DEPLOYMENT.md</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/DISTRIBUTED_DEPLOYMENT.md</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">deployment/guides/DOCKER_DEPLOYMENT.md</span></code></p></li>
 </ul>
 </section>
@@ -235,6 +257,7 @@ USB management actions.</p>
 <li><a class="reference internal" href="#first-checks">First Checks</a></li>
 <li><a class="reference internal" href="#service-operation">Service Operation</a></li>
 <li><a class="reference internal" href="#plugin-operations">Plugin Operations</a></li>
+<li><a class="reference internal" href="#wi-fi-sensor-operation">Wi-Fi Sensor Operation</a></li>
 <li><a class="reference internal" href="#storage">Storage</a></li>
 <li><a class="reference internal" href="#references">References</a></li>
 </ul>

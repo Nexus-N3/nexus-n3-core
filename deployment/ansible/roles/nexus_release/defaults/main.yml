@@ -1,4 +1,4 @@
-nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.1.12-py3-none-any.whl"
+nexus_release_local_path: "{{ inventory_dir }}/../../dist/nexus_n3_core-0.1.13-py3-none-any.whl"
 nexus_release_remote_path: "/tmp/{{ nexus_release_local_path | basename }}"
 nexus_install_root: /opt/nexus-n3-core
 nexus_venv_path: "{{ nexus_install_root }}/venv"
@@ -14,7 +14,7 @@ nexus_site_name: "{{ nexus_site }}"
 nexus_neia_apps_catalog_url: "http://127.0.0.1:8050/api/v1/apps/catalog"
 nexus_gateway: zeromq_gateway
 nexus_ble_backend: bleak
-nexus_ble_gateway_serial_port: ""
+nexus_ble_gateway_serial_port: auto
 nexus_ble_gateway_baudrate: 1000000
 nexus_ble_gateway_protocol_version: 1
 nexus_ble_gateway_connect_timeout_s: 15.0
@@ -33,6 +33,7 @@ nexus_azure_bridge_local_evt_addr: "tcp://127.0.0.1:5556"
 nexus_azure_bridge_use_websockets: true
 nexus_azure_bridge_keep_alive: 120
 nexus_azure_bridge_connection_retry_interval: 15
+nexus_azure_bridge_upload_retry_interval: 5
 nexus_azure_bridge_state_file: /tmp/nexus_n3.azure_bridge_state.json
 nexus_azure_iot_upload_container: nexusn3-session-uploads
 nexus_admin_enabled: true

@@ -1,6 +1,7 @@
 """Install-time plugin support for nexus_n3.plugins."""
 
 from .bundle import (
+    CURRENT_CORE_VERSION,
     CURRENT_OS_VERSION,
     PluginBundleError,
     ValidatedBundle,
@@ -16,6 +17,7 @@ from .versions import normalize_version, version_gte
 
 __all__ = [
     "CURRENT_OS_VERSION",
+    "CURRENT_CORE_VERSION",
     "DEFAULT_PLUGIN_ROOT",
     "PluginBundleError",
     "PluginInstallError",

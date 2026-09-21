@@ -247,11 +247,11 @@ if __name__ == "__main__":
     archive_path = client.stream_drained_payload.get("session_archive_path")
     if archive_path:
         _assert_path_exists(archive_path, "session archive")
-        _assert_archive_contains(archive_path, "diagnostics/session_diagnostics.json")
-        _assert_archive_contains(archive_path, "diagnostics/session_diagnostics.jsonl")
+        _assert_archive_contains(archive_path, "standalone-diagnostics/session_diagnostics.json")
+        _assert_archive_contains(archive_path, "standalone-diagnostics/session_diagnostics.jsonl")
     else:
         _assert_path_exists(session_dir, "session directory")
-        diagnostics_dir = Path(session_dir) / "diagnostics"
+        diagnostics_dir = Path(session_dir) / "standalone-diagnostics"
         _assert_path_exists(str(diagnostics_dir / "session_diagnostics.json"), "session diagnostics summary")
         _assert_path_exists(str(diagnostics_dir / "session_diagnostics.jsonl"), "session diagnostics event log")
 

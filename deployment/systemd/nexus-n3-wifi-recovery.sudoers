@@ -1,0 +1,2 @@
+@NEXUS_SERVICE_USER@ ALL=(root) NOPASSWD: /usr/bin/systemctl restart nexus-n3-wifi-recovery.service
+

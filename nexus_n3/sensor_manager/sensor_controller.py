@@ -96,8 +96,14 @@ class SensorController:
         )
 
     async def handle_discover_and_connect(self):
-        await self.handle_discover()
-        return await self.handle_connect_all()
+        discovered = await self.handle_discover()
+        if not discovered:
+            return []
+        return await self.connection_service.connect_all(
+            sensors=discovered,
+            set_up_sensor=self.set_up_sensor,
+            emit_to_client=self.emit_to_client,
+        )
 
     async def handle_disconnect_all(self):
         return await self.connection_service.disconnect(
@@ -115,7 +121,8 @@ class SensorController:
         )
 
     async def handle_reset_session_diagnostics(self):
-        self.adapter_pool.reset_session_diagnostics()
+        """Reset diagnostics for every active adapter before stream start."""
+        await self.adapter_pool.reset_session_diagnostics()
 
     async def handle_start_all(self):
         return await self.streaming_service.start(

@@ -13,10 +13,14 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from nexus_n3.core.version import get_core_version
+
 from .versions import version_gte
 
 
-CURRENT_OS_VERSION = "0.1.3"
+CURRENT_CORE_VERSION = get_core_version()
+# Backward-compatible import for callers using the old, misleading name.
+CURRENT_OS_VERSION = CURRENT_CORE_VERSION
 
 
 class PluginBundleError(RuntimeError):
@@ -92,9 +96,9 @@ def validate_bundle(bundle_path: Path) -> ValidatedBundle:
         _validate_artifacts(manifest, checksums, member_names)
 
         min_version = manifest["min_nexus_n3_core_version"]
-        if not version_gte(CURRENT_OS_VERSION, min_version):
+        if not version_gte(CURRENT_CORE_VERSION, min_version):
             raise PluginBundleError(
-                f"bundle requires nexus-n3-core>={min_version}, current={CURRENT_OS_VERSION}"
+                f"bundle requires nexus-n3-core>={min_version}, current={CURRENT_CORE_VERSION}"
             )
         _validate_bundle_target(manifest)
 

@@ -227,6 +227,6 @@ def _env_flag(name, default=False):
 
 
 def _build_plugin_runtime():
-    from nexus_n3.plugins.runtime.runtime import PluginRuntimeManager
+    from nexus_n3.plugins.runtime.algorithm_runtime import AlgorithmRuntimeManager
 
-    return PluginRuntimeManager()
+    return AlgorithmRuntimeManager()

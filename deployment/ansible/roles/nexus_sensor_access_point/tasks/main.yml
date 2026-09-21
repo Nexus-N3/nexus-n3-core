@@ -6,6 +6,7 @@
       - ethtool
       - dnsmasq
       - network-manager
+      - sudo
     state: present
     update_cache: true
     cache_valid_time: 3600
@@ -93,6 +94,32 @@
       - set
       - "{{ nexus_sensor_ap_country_code }}"
   changed_when: false
+
+- name: Install fixed-purpose sensor Wi-Fi recovery service
+  ansible.builtin.template:
+    src: nexus-n3-wifi-recovery.service.j2
+    dest: /etc/systemd/system/nexus-n3-wifi-recovery.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload systemd
+
+- name: Install sensor Wi-Fi recovery sudoers rule
+  ansible.builtin.template:
+    src: nexus-n3-wifi-recovery.sudoers.j2
+    dest: /etc/sudoers.d/nexus-n3-wifi-recovery
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+
+- name: Remove superseded sensor Wi-Fi PolicyKit rule
+  ansible.builtin.file:
+    path: /etc/polkit-1/rules.d/49-nexus-n3-wifi-recovery.rules
+    state: absent
+
+- name: Flush handlers before sensor Wi-Fi recovery can be used
+  ansible.builtin.meta: flush_handlers
 
 - name: Check whether sensor AP connection exists
   ansible.builtin.command:

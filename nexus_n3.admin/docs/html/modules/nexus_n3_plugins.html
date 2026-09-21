@@ -174,6 +174,35 @@ runtime host support used by Nexus N3 Core.</p>
 python<span class="w"> </span>-m<span class="w"> </span>nexus_n3.plugins<span class="w"> </span>install-dev-list
 </pre></div>
 </div>
+<p>When building directly from the development workspaces, explicitly provide the
+local SDK so the bundle contains the SDK revision used by the plugin source:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>nexus-n3-plugin<span class="w"> </span>prepare<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--plugin-root<span class="w"> </span>/path/to/nexus-n3-plugin-catalog/sensors/my-sensor<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--sdk-root<span class="w"> </span>/path/to/nexus-n3-plugin-tooling/packages/sdk
+
+nexus-n3-plugin<span class="w"> </span>build<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--plugin-root<span class="w"> </span>/path/to/nexus-n3-plugin-catalog/sensors/my-sensor<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--output-dir<span class="w"> </span>/path/to/nexus-n3-plugin-catalog/plugin-builds/sensors<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--sdk-root<span class="w"> </span>/path/to/nexus-n3-plugin-tooling/packages/sdk<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--target<span class="w"> </span><span class="nb">local</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">prepare</span></code> installs the local SDK editably into the plugin’s development
+environment. <code class="docutils literal notranslate"><span class="pre">build</span></code> creates and includes a local SDK wheel for the isolated
+installed runtime. Installed plugin versions are immutable, so changed bundle
+contents require a new plugin version rather than overwriting an existing one.</p>
+</section>
+<section id="sensor-host-wi-fi-bridge">
+<h2>Sensor Host Wi-Fi Bridge<a class="headerlink" href="#sensor-host-wi-fi-bridge" title="Permalink to this heading">¶</a></h2>
+<p>Installed Wi-Fi sensor plugins run in the same isolated host model as other
+sensor plugins. The Core-side driver bridge exposes plugin methods for connected
+discovery, candidate classification and identification, provisioning, vendor
+connection, and disconnection over JSON-RPC.</p>
+<p>The SDK also supplies optional <code class="docutils literal notranslate"><span class="pre">reset_session_diagnostics()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">get_diagnostics_snapshot()</span></code> hooks. The sensor host forwards them without making
+diagnostics mandatory for existing plugins. Returned snapshots must be
+JSON-serializable and must not contain credentials, native handles, or secret
+vendor command payloads.</p>
 </section>
 <section id="layout">
 <h2>Layout<a class="headerlink" href="#layout" title="Permalink to this heading">¶</a></h2>
@@ -215,7 +244,7 @@ inventory visible to the runtime</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/install/installer.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/install/catalog.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/runtime/discovery.py</span></code></p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/runtime/runtime.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/runtime/algorithm_runtime.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/runtime/sensor_runtime.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/runtime/sensor_host.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.plugins/runtime/algorithm_host.py</span></code></p></li>
@@ -243,6 +272,7 @@ inventory visible to the runtime</p></li>
 <li><a class="reference internal" href="#overview">Overview</a></li>
 <li><a class="reference internal" href="#responsibilities">Responsibilities</a></li>
 <li><a class="reference internal" href="#current-runtime-model">Current Runtime Model</a></li>
+<li><a class="reference internal" href="#sensor-host-wi-fi-bridge">Sensor Host Wi-Fi Bridge</a></li>
 <li><a class="reference internal" href="#layout">Layout</a></li>
 <li><a class="reference internal" href="#runtime-notes">Runtime Notes</a></li>
 <li><a class="reference internal" href="#key-files">Key Files</a></li>

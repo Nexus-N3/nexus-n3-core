@@ -57,6 +57,26 @@ Expected env file mode:
 -rw-r----- 1 root rsnexus /etc/nexus-n3/runtime.env
 ```
 
+### Sensor Wi-Fi recovery permission
+
+When Wi-Fi sensor provisioning is enabled, install the fixed-purpose recovery
+unit once for the Nexus service identity:
+
+```bash
+sudo deployment/systemd/install_wifi_recovery.sh rsnexus EE
+```
+
+Replace `rsnexus` and `EE` with the actual service user and regulatory country
+code. The installer adds a root-owned oneshot unit and an exact sudoers rule
+that allows only `systemctl restart nexus-n3-wifi-recovery.service`. Core uses
+`sudo -n`, so missing permission fails immediately without opening an
+authentication agent. This does not
+grant general `systemctl`, shell, or passwordless-sudo access.
+
+Set `NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1` only on hosts where this
+disruptive recovery is accepted. Normal discovery and AP restoration do not
+invoke the recovery service.
+
 ## Example System Service
 
 Create `/etc/systemd/system/nexus-n3.service`:

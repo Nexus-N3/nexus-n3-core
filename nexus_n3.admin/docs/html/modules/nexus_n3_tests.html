@@ -152,6 +152,18 @@ manager, and data offload components.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3_tests/azure_bridge</span></code> -&gt; bridge behavior and upload paths</p></li>
 </ul>
 </section>
+<section id="distributed-hardware-session">
+<h2>Distributed Hardware Session<a class="headerlink" href="#distributed-hardware-session" title="Permalink to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">core/test_4e_two_subject_distributed_session_30s.py</span></code> exercises one master and
+one worker with two Movella DOT sensors per subject. It validates capability-
+based assignment, sequential per-subject discovery and connection, unique
+physical sensor ownership, compute output on both nodes, and the distributed
+drain barrier before disconnecting.</p>
+<p>Run it against a local master after exactly one worker has registered:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>python3<span class="w"> </span>nexus_n3_tests/core/test_4e_two_subject_distributed_session_30s.py
+</pre></div>
+</div>
+</section>
 <section id="key-files">
 <h2>Key Files<a class="headerlink" href="#key-files" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
@@ -175,6 +187,7 @@ manager, and data offload components.</p>
 <li><a class="reference internal" href="#">nexus_n3_tests</a><ul>
 <li><a class="reference internal" href="#overview">Overview</a></li>
 <li><a class="reference internal" href="#areas-covered">Areas Covered</a></li>
+<li><a class="reference internal" href="#distributed-hardware-session">Distributed Hardware Session</a></li>
 <li><a class="reference internal" href="#key-files">Key Files</a></li>
 </ul>
 </li>

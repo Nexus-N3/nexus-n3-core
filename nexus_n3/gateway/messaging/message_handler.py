@@ -1,24 +1,31 @@
 """Gateway message handler for commands and core dispatch."""
 
 from nexus_n3.core.core import Core
+from nexus_n3.core.version import get_core_version
 from nexus_n3.gateway.messaging import message_types as mt
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.plugins.runtime.discovery import get_installed_plugin_inventory
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 
 from datetime import datetime, timezone
-from importlib import metadata
 
 logger = get_module_logger("Message Handler")
 
 class MessageHandler:
-    def __init__(self, site, _system_event_bus, ble_runtime_config: BLERuntimeConfig | None = None):
+    def __init__(
+        self,
+        site,
+        _system_event_bus,
+        ble_runtime_config: BLERuntimeConfig | None = None,
+        node_id: str = "standalone",
+    ):
         """
         Args:
             site: Site name for this deployment.
             _system_event_bus: Event bus for system events.
         """
         self.site = site
+        self.node_id = node_id
         self._system_event_bus = _system_event_bus
         self.ble_runtime_config = ble_runtime_config or BLERuntimeConfig.from_env()
         self.si = None
@@ -56,6 +63,11 @@ class MessageHandler:
         self._before_stream_start = before_stream_start
         self._after_stream_stop = after_stream_stop
 
+    def prepare_stream_start(self):
+        """Run the host-level preparation required before stream dispatch."""
+        if self._before_stream_start:
+            self._before_stream_start()
+
     def set_usb_handlers(self, mount_handler=None, unmount_handler=None, status_provider=None):
         """Register optional USB control handlers for standalone/master nodes."""
         self._usb_mount_handler = mount_handler
@@ -75,13 +87,8 @@ class MessageHandler:
         self._archive_service = dict(service) if service else {"available": False}
 
     def _release_version(self) -> str:
-        """Return the installed nexus-n3-core version or 'unknown'."""
-        for name in ("nexus-n3-core", "nexus_n3_core"):
-            try:
-                return metadata.version(name)
-            except metadata.PackageNotFoundError:
-                continue
-        return "unknown"
+        """Return the authoritative source or installed Core version."""
+        return get_core_version()
 
     def _capabilities_payload(self) -> dict:
         """Return currently supported edge capabilities."""
@@ -231,7 +238,7 @@ class MessageHandler:
         # Otherwise execute locally (standalone mode and worker mode)
         self._handle_local(msg_type, payload)
 
-    def _handle_local(self, msg_type, payload):
+    def _handle_local(self, msg_type, payload, *, stream_start_prepared=False):
         """
         Execute commands locally for standalone/worker modes.
 
@@ -313,6 +320,7 @@ class MessageHandler:
                 self.site,
                 system_event_bus=self._system_event_bus,
                 ble_runtime_config=self.ble_runtime_config,
+                node_id=self.node_id,
             )
             if self.registry and hasattr(self.si, "compute_orch"):
                 self.si.compute_orch.set_registry(self.registry)
@@ -440,8 +448,8 @@ class MessageHandler:
 
         # must broadcast the session timestamp
         elif msg_type == mt.CMD_START_STREAM_FOR_SUBJECTS:
-            if self._before_stream_start:
-                self._before_stream_start()
+            if not stream_start_prepared:
+                self.prepare_stream_start()
             self.si.pending_correlation_id = correlation_id
             try:
                 self.si.start_stream_for_subjects(payload)
@@ -450,8 +458,8 @@ class MessageHandler:
                 self.si.pending_correlation_id = None
                 emit_error(f"Start stream for subjects failed: {exc}")
         elif msg_type == mt.CMD_START_STREAM_FOR_ALL:
-            if self._before_stream_start:
-                self._before_stream_start()
+            if not stream_start_prepared:
+                self.prepare_stream_start()
             self.si.pending_correlation_id = correlation_id
             try:
                 self.si.start_stream(payload)
@@ -459,6 +467,12 @@ class MessageHandler:
                 logger.exception("Failed to start stream for all")
                 self.si.pending_correlation_id = None
                 emit_error(f"Start stream for all failed: {exc}")
+        elif msg_type == mt.CMD_START_OFFICIAL_STREAM:
+            try:
+                self.si.start_official_stream(payload)
+            except Exception as exc:
+                logger.exception("Failed to start official distributed stream")
+                emit_error(f"Official stream start failed: {exc}")
         elif msg_type == mt.CMD_STOP_STREAM_FOR_SUBJECTS:
             self.si.pending_correlation_id = correlation_id
             try:

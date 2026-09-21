@@ -14,8 +14,13 @@ The package is now organized into subpackages:
 
 ## What This Module Does
 
+### this is outdated and needs updating to include the complete sensor and alogirhtm runtimes and host proxies.
+
 - resolves the configured plugin root
 - validates `.rsnxplugin` ZIP bundles
+- validates minimum-core compatibility against the version in the core
+  project's `pyproject.toml` (or installed distribution metadata in packaged
+  deployments); runtime environment files do not duplicate the release version
 - enforces Phase 1 safe ZIP rules
 - creates versioned installed plugin directories
 - creates one `.venv` per installed plugin version
@@ -28,17 +33,6 @@ The package is now organized into subpackages:
 - provides a small developer CLI for bundle install and plugin-root inspection
 - provides dev-plugin build+install helpers for local source trees
 
-## What Phase 1 Does Not Do
-
-- no `SensorProxy`
-- no live plugin host process supervision
-- no JSON-RPC lifecycle for live sensor sessions
-- no adapter proxy or BLE forwarding over plugin IPC
-- no plugin-to-plugin runtime sample routing
-- no callback compatibility layer for isolated sensor hosts yet
-
-Those belong to later phases described in
-`plans/RUNTIME_PLUGIN_DEPLOYMENT_PLAN.md`.
 
 ## Plugin Root
 
@@ -91,7 +85,7 @@ Development example:
   Installs bundles into the configured plugin root.
 - `install/catalog.py`
   Persists plugin catalog and failure records.
-- `runtime/runtime.py`
+- `runtime/algorithm_runtime.py`
   Resolves installed external algorithm plugins and launches isolated hosts.
 - `runtime/transport.py`
   Implements the Phase 3 stdio JSON-RPC transport.

@@ -69,6 +69,13 @@ class HostAdapterProxy:
             },
         )
 
+    async def unset_notify_callback(self, transport_client, uuid):
+        notify_uuid = str(uuid)
+        self._connection.request("adapter.unsubscribe", {"uuid": notify_uuid})
+        callback_id = self._callbacks_by_uuid.pop(notify_uuid, None)
+        if callback_id is not None:
+            self._callbacks.pop(callback_id, None)
+
     def _handle_notification(self, params: dict[str, Any]) -> dict[str, Any]:
         with self._notification_lock:
             callback = self._callbacks[str(params["callback_id"])]
@@ -156,6 +163,91 @@ class SensorHost:
         )
         return {"ok": bool(result)}
 
+    def wifi_discover_connected(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run optional plugin discovery and serialize returned devices."""
+        discover = getattr(self._sensor, "discover_connected", None)
+        if not callable(discover):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi discovery")
+        devices = _run_maybe_async(discover(deep_namespace(params["network"])))
+        return {"devices": to_jsonable(devices or [])}
+
+    def wifi_connect_sensor(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run the plugin's vendor-specific Wi-Fi connection method."""
+        connect = getattr(self._sensor, "connect_sensor", None)
+        if not callable(connect):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi connect")
+        result = _run_maybe_async(connect(deep_namespace(params["device"])))
+        return {"ok": bool(result)}
+
+    def wifi_disconnect_sensor(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Run the plugin's vendor-specific Wi-Fi disconnect method."""
+        _ = params
+        disconnect = getattr(self._sensor, "disconnect_sensor", None)
+        if not callable(disconnect):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi disconnect")
+        result = _run_maybe_async(disconnect())
+        return {"ok": bool(result)}
+
+    def wifi_classify_access_points(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Let the plugin claim compatible provisioning access points."""
+        classify = getattr(self._sensor, "classify_access_points", None)
+        if not callable(classify):
+            return {"candidates": []}
+        access_points = [
+            deep_namespace(item)
+            for item in (params.get("access_points") or [])
+        ]
+        result = _run_maybe_async(classify(access_points))
+        return {"candidates": to_jsonable(result or [])}
+
+    def wifi_provision(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Provision a sensor and return cleanup hints to Core."""
+        provision = getattr(self._sensor, "provision", None)
+        if not callable(provision):
+            raise RuntimeError("sensor plugin does not implement Wi-Fi provisioning")
+        controls = _HostProvisioningControls()
+        result = _run_maybe_async(
+            provision(
+                deep_namespace(params["network"]),
+                deep_namespace(params["target"]),
+                controls,
+            )
+        )
+        return {
+            "device": to_jsonable(result),
+            "remote_access_point_disappeared": controls.disappeared,
+        }
+
+    def wifi_identify_candidate(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Identify a provisioning candidate before it is modified."""
+        identify = getattr(self._sensor, "identify_candidate", None)
+        if not callable(identify):
+            raise RuntimeError(
+                "sensor plugin does not implement Wi-Fi candidate identification"
+            )
+        result = _run_maybe_async(
+            identify(deep_namespace(params["network"]))
+        )
+        return {"device": to_jsonable(result)}
+
+    def get_diagnostics_snapshot(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Return an optional JSON-safe diagnostics snapshot from the plugin."""
+        _ = params
+        getter = getattr(self._sensor, "get_diagnostics_snapshot", None)
+        if not callable(getter):
+            return {"supported": False, "snapshot": {}}
+        result = _run_maybe_async(getter())
+        return {"supported": True, "snapshot": to_jsonable(result or {})}
+
+    def reset_session_diagnostics(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Reset optional plugin counters at a recording-session boundary."""
+        _ = params
+        reset = getattr(self._sensor, "reset_session_diagnostics", None)
+        if not callable(reset):
+            return {"supported": False}
+        _run_maybe_async(reset())
+        return {"supported": True}
+
     def shutdown(self) -> dict[str, Any]:
         return {"ok": True}
 
@@ -173,12 +265,21 @@ class SensorHost:
             sample_type = getattr(payload, "sample_type", None)
             if sample_type:
                 serialized["sample_type"] = sample_type
+        timing = None
+        if event_name == "on_data":
+            timing = {}
+            payload_timing = getattr(payload, "_nexus_timing", None)
+            if payload_timing:
+                timing.update(dict(payload_timing))
+            # Adapter-owned transports such as BLE remain authoritative when
+            # both the transport callback and payload provide the same field.
+            timing.update(self._adapter.current_notification_timing())
         self._adapter._connection.request(
             "sensor.emit_event",
             {
                 "event": event_name,
                 "payload": serialized,
-                "timing": self._adapter.current_notification_timing() if event_name == "on_data" else None,
+                "timing": timing or None,
             },
         )
 
@@ -204,6 +305,14 @@ def main(argv: list[str] | None = None) -> int:
         "stop_stream": host.stop_stream,
         "identify": host.identify,
         "consume_input": host.consume_input,
+        "wifi.discover_connected": host.wifi_discover_connected,
+        "wifi.connect_sensor": host.wifi_connect_sensor,
+        "wifi.disconnect_sensor": host.wifi_disconnect_sensor,
+        "wifi.classify_access_points": host.wifi_classify_access_points,
+        "wifi.identify_candidate": host.wifi_identify_candidate,
+        "wifi.provision": host.wifi_provision,
+        "get_diagnostics_snapshot": host.get_diagnostics_snapshot,
+        "reset_session_diagnostics": host.reset_session_diagnostics,
         "shutdown": lambda _params: host.shutdown(),
     }
     for method_name, handler in methods.items():
@@ -214,6 +323,14 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         connection.close()
     return 0
+
+
+class _HostProvisioningControls:
+    def __init__(self) -> None:
+        self.disappeared = False
+
+    def remote_access_point_disappeared(self) -> None:
+        self.disappeared = True
 
 
 if __name__ == "__main__":

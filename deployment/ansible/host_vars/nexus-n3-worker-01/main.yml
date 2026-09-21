@@ -1,0 +1,20 @@
+---
+# Runtime identity
+nexus_site: lunar
+nexus_site_id: lunar_facility_cologne
+nexus_site_name: "Lunar Cologne"
+nexus_customer_id: customer-dlr
+
+# BLE hardware
+nexus_ble_backend: nexus_ble_gateway
+nexus_ble_gateway_serial_port: /dev/serial/by-id/usb-ZEPHYR_IFMCU_CMSIS-DAP_820D9A5F0D64CFA48AEBA-if01
+
+# Shared disk hosted by this development machine
+nexus_worker_smb_server: "192.168.1.147"
+nexus_worker_smb_share: nexus_n3_data
+nexus_worker_mount_point: /exports/nexus_n3_data
+nexus_worker_mount_state: mounted
+nexus_worker_smb_user: rsnexus
+
+# Required because this variable is missing from the release defaults
+nexus_azure_bridge_upload_retry_interval: 5

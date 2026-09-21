@@ -64,6 +64,7 @@ This file is the source of truth for:
 
 - plugin root and optional dev bootstrap list
 - BLE backend and gateway serial settings
+- Wi-Fi sensor interface, AP, provisioning, and recovery settings
 - local ZeroMQ gateway bindings
 - Azure bridge settings
 - admin/runtime options
@@ -134,8 +135,17 @@ python nexus_n3_server.py --role standalone --bridge azure_bridge --azure-bridge
 Worker node:
 
 ```bash
-python nexus_n3_server.py --role worker --node-id worker_A
+python nexus_n3_server.py \
+  --role worker \
+  --node-id worker_A \
+  --customer-id <customer-id> \
+  --site <site> \
+  --site-id <site-id> \
+  --site-name "<site name>"
 ```
+
+Master and workers in one distributed deployment must use matching customer and
+site identity. Ansible supplies these flags from the worker host variables.
 
 AI node:
 
@@ -148,6 +158,12 @@ Master node:
 ```bash
 python nexus_n3_server.py --role master --mdns-hostname nexus-n3-master --admin --admin-host 0.0.0.0 --admin-port 9000
 ```
+
+In distributed mode the master participates in subject execution. Subjects are
+assigned to capable master/worker nodes by current sensor load, with the master
+preferred when loads are equal. A shared stop is archived by the master only
+after every participating node emits `stream_drained` for the same stop and
+session.
 
 The runtime uses the internal `zeromq_gateway`. `--gateway` remains accepted,
 but `zeromq_gateway` is the only supported value.
@@ -264,6 +280,25 @@ GATEWAY_SERIAL_PORT=COM3
 For Windows development, `nexus_ble_gateway` is the preferred BLE path because
 it uses the serial gateway rather than host BLE stack integration.
 
+## Wi-Fi Sensors
+
+Wi-Fi sensors use one shared Core adapter and vendor-specific installed sensor
+plugins. On Linux, the production backend controls NetworkManager through
+`dbus-fast` on the system bus. Configure the saved Nexus AP and runtime settings
+before enabling the sensor network; see
+`modules/nexus_n3_sensor_manager.md` for the complete lifecycle and variable
+list.
+
+Normal operation keeps the host on the Nexus sensor AP. Discovery first checks
+for already-connected sensors without disrupting that AP. Provisioning occurs
+only for a requested deficit and temporarily switches the configured radio to a
+sensor's provisioning AP inside an exclusive, cleanup-protected session.
+
+The X-IMU3 plugin uses stable serial numbers as sensor addresses. Its sample
+rate is applied during setup for a new session. The plugin emits canonical
+`IMUSample` units: acceleration in m/s², angular velocity in degrees/s, and
+timestamps in microseconds.
+
 ## File Output
 
 The core writes data generically through the file manager rather than through
@@ -292,19 +327,35 @@ hosts, file output remains local-only.
 
 ## Diagnostics
 
-Every recording session contains structured diagnostics under:
+Every recording session contains structured diagnostics under a directory
+owned by the runtime node:
 
 ```text
-diagnostics/session_diagnostics.json
-diagnostics/session_diagnostics.jsonl
+<node-id>-diagnostics/session_diagnostics.json
+<node-id>-diagnostics/session_diagnostics.jsonl
 ```
+
+The master uses `master-diagnostics`, workers use their configured node ID, and
+standalone mode uses `standalone-diagnostics`.
 
 These files are created independently of the optional pipeline-debug switch and
 are included in the finalized session archive. The JSON file is the current
 session summary. The JSONL file is the time-ordered event record and includes
-stream lifecycle events, compute-performance records, gateway diagnostics, and
-errors. The summary field `official_stream` begins as `pending` and is finalized
-as `passed` or `failed`.
+stream lifecycle events, compute-performance records, BLE and Wi-Fi transport
+diagnostics, and errors. The summary field `official_stream` begins as `pending`
+and is finalized as `passed` or `failed`.
+
+The latest transport snapshot is stored at:
+
+```text
+latest_gateway_diagnostics.diagnostics.BLE
+latest_gateway_diagnostics.diagnostics.WIFI
+```
+
+The `WIFI` entry combines shared adapter state, NetworkManager backend state,
+and optional per-sensor plugin counters. Despite the historical summary field
+name, it is a transport-diagnostics container and may contain both adapter
+families.
 
 Core emits one `compute_performance` event for every compute result. Important
 fields include:
@@ -341,7 +392,7 @@ python nexus_n3_server.py --diagnostics
 This writes:
 
 ```text
-nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/diagnostics/pipeline_debug.ndjson
+nexus_n3_outputs/<site>/sessions/<session_name>_<timestamp>/<node-id>-diagnostics/pipeline_debug.ndjson
 ```
 
 `pipeline_debug.ndjson` is an additional debugging artifact. It is not required

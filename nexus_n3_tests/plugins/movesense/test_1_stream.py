@@ -7,23 +7,36 @@ from pathlib import Path
 # Allow importing the plugin package without installation.
 REPO_ROOT = Path(__file__).resolve().parents[4]
 OS_ROOT = Path(__file__).resolve().parents[3]
-PLUGIN_PATH = REPO_ROOT / "nexus-n3-sensors-plugins" / "nexus-n3-sensor-movesense"
+PLUGIN_PATH = (
+    REPO_ROOT
+    / "nexus-n3-plugin-catalog"
+    / "sensors"
+    / "nexus-n3-sensor-movesense"
+    / "src"
+)
+PLUGIN_SDK_PATH = REPO_ROOT / "nexus-n3-plugin-tooling" / "packages" / "sdk" / "src"
 if str(OS_ROOT) not in sys.path:
     sys.path.insert(0, str(OS_ROOT))
+if str(PLUGIN_SDK_PATH) not in sys.path:
+    sys.path.insert(0, str(PLUGIN_SDK_PATH))
 if str(PLUGIN_PATH) not in sys.path:
     sys.path.insert(0, str(PLUGIN_PATH))
 
 # Ensure we load the local plugin, not the installed package.
-for module_name in ("movesense_sensor", "movesense_sensor.sensor", "movesense_sensor.parser"):
+for module_name in (
+    "nexus_n3_sensor_movesense",
+    "nexus_n3_sensor_movesense.sensor",
+    "nexus_n3_sensor_movesense.parser",
+):
     if module_name in sys.modules:
         del sys.modules[module_name]
 importlib.invalidate_caches()
 
-import movesense_sensor.parser as p
+import nexus_n3_sensor_movesense.parser as p
 print("parser file:", p.__file__, flush=True)
 
 from nexus_n3.sensor_manager.SensorManager import SensorManager
-from movesense_sensor.sensor import MovesenseSensor
+from nexus_n3_sensor_movesense.sensor import MovesenseSensor
 
 
 def main():

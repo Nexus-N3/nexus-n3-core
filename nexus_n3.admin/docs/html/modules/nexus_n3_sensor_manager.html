@@ -182,10 +182,90 @@ reconnect failures from prior sessions.</p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">BLEAdapter</span></code> (Bleak host BLE backend)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">GatewayBLEAdapter</span></code> (Nexus BLE gateway backend over USB serial)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">WifiAdapter</span></code> (shared Wi-Fi sensor adapter)</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">USBCameraAdapter</span></code> (V4L2 discovery)</p></li>
 </ul>
 </li>
 </ul>
+</section>
+<section id="wi-fi-sensor-adapter">
+<h2>Wi-Fi Sensor Adapter<a class="headerlink" href="#wi-fi-sensor-adapter" title="Permalink to this heading">¶</a></h2>
+<p>Sensors declare <code class="docutils literal notranslate"><span class="pre">adapter:</span> <span class="pre">WIFI</span></code> and provide vendor-specific Wi-Fi behavior
+through their installed sensor plugin. Core owns the shared host network and
+the plugin owns the sensor protocol. This keeps NetworkManager D-Bus objects,
+host interface management, and recovery permissions out of plugins, while
+keeping vendor discovery, provisioning commands, connections, and sample
+parsing out of Core.</p>
+<p>The Linux implementation uses NetworkManager’s system D-Bus API through
+<code class="docutils literal notranslate"><span class="pre">dbus-fast</span></code>; it does not parse <code class="docutils literal notranslate"><span class="pre">nmcli</span></code> output. One <code class="docutils literal notranslate"><span class="pre">WifiAdapter</span></code> is pooled for
+all Wi-Fi sensors. Multiple requested sensors are reconciled by stable identity,
+and missing sensors are provisioned sequentially through an exclusive session.
+The multi-sensor path is covered with fake drivers even when only one physical
+sensor of a model is available for live testing.</p>
+<section id="discovery-and-provisioning-lifecycle">
+<h3>Discovery and provisioning lifecycle<a class="headerlink" href="#discovery-and-provisioning-lifecycle" title="Permalink to this heading">¶</a></h3>
+<ol class="arabic simple">
+<li><p>Initialize the configured interface and validate the saved Nexus sensor AP.</p></li>
+<li><p>Ask each plugin driver for sensors already announcing on the Nexus subnet.</p></li>
+<li><p>If a requested identity is missing, stop AP hosting temporarily and perform
+a fresh scan.</p></li>
+<li><p>Let plugin drivers classify candidate provisioning APs.</p></li>
+<li><p>Connect to one candidate with a volatile NetworkManager profile and have the
+owning plugin identify it before configuration.</p></li>
+<li><p>Pass the configured Nexus SSID, password, and channel to the plugin’s
+provision method.</p></li>
+<li><p>Remove volatile state, restore the Nexus AP, and wait for the stable sensor
+identity to announce on the Nexus subnet.</p></li>
+<li><p>Cache the discovered device and its plugin driver for normal connection,
+streaming, and disconnection.</p></li>
+</ol>
+<p>Cleanup is shielded from cancellation and restores the host AP on every exit
+path. Provisioning does not expose AP credentials in errors or diagnostics.</p>
+</section>
+<section id="x-imu3-plugin-lifecycle">
+<h3>X-IMU3 plugin lifecycle<a class="headerlink" href="#x-imu3-plugin-lifecycle" title="Permalink to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">nexus-n3-sensor-x-imu3</span></code> plugin uses the vendor <code class="docutils literal notranslate"><span class="pre">ximu3</span></code> package for network
+announcements, configuration commands, UDP connections, and data callbacks.
+Its lifecycle is:</p>
+<ul class="simple">
+<li><p>discover connected sensors from vendor network announcements</p></li>
+<li><p>identify a sensor while connected to its open provisioning AP</p></li>
+<li><p>configure it as a client of the Nexus sensor AP and apply the settings</p></li>
+<li><p>rediscover and verify the stable serial identity with a UDP ping</p></li>
+<li><p>configure matched inertial and quaternion message rates during setup</p></li>
+<li><p>enable UDP data messages at stream start and disable them at stream stop</p></li>
+<li><p>remove native callbacks and close the vendor connection at disconnect</p></li>
+</ul>
+<p>The sampling rate is selected when a new session is set up; it is not changed
+mid-stream. Inertial and quaternion messages are joined by the vendor’s
+microsecond timestamp. The plugin converts vendor acceleration from g to the SDK
+contract’s m/s² before emitting <code class="docutils literal notranslate"><span class="pre">IMUSample</span></code>; gyroscope values remain degrees/s.
+Environmental gravity passed to an algorithm remains an algorithm input and is
+not used as the unit-conversion constant.</p>
+</section>
+<section id="wi-fi-runtime-configuration">
+<h3>Wi-Fi runtime configuration<a class="headerlink" href="#wi-fi-runtime-configuration" title="Permalink to this heading">¶</a></h3>
+<p>The main settings in <code class="docutils literal notranslate"><span class="pre">runtime.env</span></code> are:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>NEXUS_SENSOR_NETWORK_ENABLED=1
+NEXUS_WIFI_BACKEND=linux-networkmanager
+NEXUS_SENSOR_INTERFACE=wlx00c0cabaa751
+NEXUS_SENSOR_CONNECTION=nexus-n3-sensor-ap
+NEXUS_SENSOR_AP_SSID=nexus-n3-sensors
+NEXUS_SENSOR_AP_PASSWORD=&lt;secret&gt;
+NEXUS_SENSOR_AP_CHANNEL=36
+NEXUS_SENSOR_AP_EXPECTED_CIDR=10.42.0.1/24
+NEXUS_WIFI_PROVISIONING_CONNECTION=nexus-n3-sensor-provision
+NEXUS_WIFI_DISCOVERY_TIMEOUT_S=20
+NEXUS_WIFI_CONNECT_TIMEOUT_S=30
+NEXUS_WIFI_PROVISIONING_JOIN_TIMEOUT_S=90
+NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1
+NEXUS_NETWORK_STACK_RESTART_TIMEOUT_SECONDS=30
+NEXUS_WIFI_REGULATORY_DOMAIN=EE
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">NEXUS_SENSOR_AP_PASSWORD</span></code> must be supplied through the protected runtime env;
+it must not be committed to the repository.</p>
+</section>
 </section>
 <section id="ble-backends">
 <h2>BLE Backends<a class="headerlink" href="#ble-backends" title="Permalink to this heading">¶</a></h2>
@@ -280,6 +360,25 @@ gateway <code class="docutils literal notranslate"><span class="pre">reset_sessi
 own gateway-side lifetime/reset semantics and should not be interpreted as the
 same host parser-counter scope.</p>
 </section>
+<section id="wi-fi-diagnostics">
+<h3>Wi-Fi diagnostics<a class="headerlink" href="#wi-fi-diagnostics" title="Permalink to this heading">¶</a></h3>
+<p>At stream stop, <code class="docutils literal notranslate"><span class="pre">AdapterPool.collect_diagnostics()</span></code> returns a <code class="docutils literal notranslate"><span class="pre">WIFI</span></code> payload
+alongside any <code class="docutils literal notranslate"><span class="pre">BLE</span></code> payload. It contains:</p>
+<ul class="simple">
+<li><p>adapter lifecycle counters, bounded recent errors, capabilities, active
+subnet, and current discovered/connected identities</p></li>
+<li><p>NetworkManager AP activation, scan, temporary-profile, restoration, and
+fixed-service recovery state and counters</p></li>
+<li><p>optional per-sensor diagnostics retrieved from the isolated plugin host</p></li>
+</ul>
+<p>The X-IMU3 plugin reports inertial and quaternion callback counts, complete
+timestamp-paired samples, pending and evicted message halves, callback failures,
+timestamp gaps, estimated missing and out-of-order samples, configured and
+observed sampling rates, and current connection/stream state.</p>
+<p>Core resets adapter and plugin counters at the beginning of each recording
+session without changing connections. Plugins that do not implement the
+optional diagnostics hooks remain compatible.</p>
+</section>
 </section>
 <section id="message-flow">
 <h2>Message Flow<a class="headerlink" href="#message-flow" title="Permalink to this heading">¶</a></h2>
@@ -289,7 +388,7 @@ same host parser-counter scope.</p>
 <li><p>Discovery -&gt; adapter scan -&gt; name matching -&gt; address assignment -&gt; callbacks to <code class="docutils literal notranslate"><span class="pre">Core</span></code></p></li>
 <li><p>Connect -&gt; adapter connect -&gt; sensor setup hook</p></li>
 <li><p>Streaming -&gt; sensor stream hooks (<code class="docutils literal notranslate"><span class="pre">start_stream</span></code>/<code class="docutils literal notranslate"><span class="pre">stop_stream</span></code>) -&gt; <code class="docutils literal notranslate"><span class="pre">on_data</span></code></p></li>
-<li><p>New recording session -&gt; reset host parser diagnostics -&gt; stream start hooks</p></li>
+<li><p>New recording session -&gt; reset adapter/plugin diagnostics -&gt; stream start hooks</p></li>
 <li><p>Polling fallback (<code class="docutils literal notranslate"><span class="pre">request_sample</span></code>) remains available but optional</p></li>
 <li><p>Battery check runs as a standalone pre-init BLE flow and returns
 <code class="docutils literal notranslate"><span class="pre">{&quot;sensors&quot;:</span> <span class="pre">[...],</span> <span class="pre">&quot;errors&quot;:</span> <span class="pre">{...}}</span></code></p></li>
@@ -311,6 +410,9 @@ optional <code class="docutils literal notranslate"><span class="pre">consume_in
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/ble_adapter.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/gateway_ble_adapter.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/gateway_ble_client.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/wifi_adapter.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/wifi/backends/networkmanager_dbus.py</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/wifi/backends/linux_networkmanager.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/ble_runtime_config.py</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">nexus_n3.sensor_manager/adapters/usb_camera_adapter.py</span></code></p></li>
 </ul>
@@ -335,11 +437,18 @@ optional <code class="docutils literal notranslate"><span class="pre">consume_in
 <li><a class="reference internal" href="#">nexus_n3.sensor_manager</a><ul>
 <li><a class="reference internal" href="#overview">Overview</a></li>
 <li><a class="reference internal" href="#key-classes-and-apis">Key Classes and APIs</a></li>
+<li><a class="reference internal" href="#wi-fi-sensor-adapter">Wi-Fi Sensor Adapter</a><ul>
+<li><a class="reference internal" href="#discovery-and-provisioning-lifecycle">Discovery and provisioning lifecycle</a></li>
+<li><a class="reference internal" href="#x-imu3-plugin-lifecycle">X-IMU3 plugin lifecycle</a></li>
+<li><a class="reference internal" href="#wi-fi-runtime-configuration">Wi-Fi runtime configuration</a></li>
+</ul>
+</li>
 <li><a class="reference internal" href="#ble-backends">BLE Backends</a><ul>
 <li><a class="reference internal" href="#bleak"><code class="docutils literal notranslate"><span class="pre">bleak</span></code></a></li>
 <li><a class="reference internal" href="#nexus-ble-gateway"><code class="docutils literal notranslate"><span class="pre">nexus_ble_gateway</span></code></a></li>
 <li><a class="reference internal" href="#runtime-selection">Runtime Selection</a></li>
 <li><a class="reference internal" href="#gateway-timing-and-diagnostics">Gateway timing and diagnostics</a></li>
+<li><a class="reference internal" href="#wi-fi-diagnostics">Wi-Fi diagnostics</a></li>
 </ul>
 </li>
 <li><a class="reference internal" href="#message-flow">Message Flow</a></li>

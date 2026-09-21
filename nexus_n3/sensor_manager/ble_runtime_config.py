@@ -17,15 +17,16 @@ from dataclasses import dataclass
 import os
 
 from nexus_n3.core.runtime_env import load_runtime_env
+from nexus_n3.sensor_manager.gateway_serial import AUTO_GATEWAY_SERIAL_PORT
 
 
 def _normalize_ble_backend(value: str | None) -> str:
     normalized = (value or "bleak").strip().lower()
     if normalized in {"bleak", "host", "local"}:
-        print(f"[BLE_BACKEND] Using Internal Bleak BLE Backend")
+        print("[BLE_BACKEND] Using Internal Bleak BLE Backend")
         return "bleak"
     if normalized in {"gateway", "nexus_ble_gateway", "ble_gateway"}:
-        print(f"[BLE_BACKEND] Using Nexus BLE Gateway BLE Backend")
+        print("[BLE_BACKEND] Using Nexus BLE Gateway BLE Backend")
         return "gateway"
     raise ValueError(
         "Unsupported BLE_BACKEND value: "
@@ -60,7 +61,9 @@ class BLERuntimeConfig:
         load_runtime_env()
         return cls(
             backend=_normalize_ble_backend(os.environ.get("BLE_BACKEND")),
-            gateway_serial_port=os.environ.get("GATEWAY_SERIAL_PORT") or None,
+            gateway_serial_port=(
+                os.environ.get("GATEWAY_SERIAL_PORT") or AUTO_GATEWAY_SERIAL_PORT
+            ),
             gateway_baudrate=int(os.environ.get("GATEWAY_BAUDRATE", "1000000")),
             gateway_protocol_version=int(os.environ.get("GATEWAY_PROTOCOL_VERSION", "1")),
             gateway_connect_timeout_s=float(os.environ.get("GATEWAY_CONNECT_TIMEOUT_S", "15.0")),

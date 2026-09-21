@@ -48,6 +48,78 @@ nexus-n3-plugin build \
 Run that from the `nexus-n3-plugin-catalog/` repository root. For algorithms,
 replace the `--plugin-root` and `--output-dir` paths accordingly.
 
+### Python ABI and Target-Specific Bundle Directories
+
+Dependency-complete plugin bundles are specific to the target operating system,
+CPU architecture, Python implementation, Python version, and ABI whenever they
+contain native wheels. For example, a bundle containing `cp310` wheels cannot be
+installed by a Nexus N3 plugin runtime using Python 3.12 (`cp312`). The installer
+validates declared target metadata and pip also rejects incompatible wheels.
+
+The relevant interpreter is `nexus_plugin_installer_python`, which defaults to
+the Python executable inside the deployed Nexus Core virtualenv. Installing an
+additional Python version on the host does not change an existing Core virtualenv
+or make an incompatible bundle usable. Rebuild the bundle for the Python version
+used by the target runtime instead.
+
+The build machine and deployment target do not need to use the same Python
+version. The plugin tooling can cross-build an x86_64/Python 3.12 bundle while
+running on an x86_64/Python 3.10 development machine:
+
+```bash
+nexus-n3-plugin build \
+  --plugin-root sensors/nexus-n3-sensor-movesense \
+  --output-dir plugin-builds/sensors/x86_64-py312 \
+  --target local \
+  --target-platform manylinux2014_x86_64 \
+  --target-python-version 3.12 \
+  --target-implementation cp \
+  --target-abi cp312
+```
+
+Use the equivalent family directory for algorithms:
+
+```bash
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-ecg-rhythm \
+  --output-dir plugin-builds/algorithms/x86_64-py312 \
+  --target local \
+  --target-platform manylinux2014_x86_64 \
+  --target-python-version 3.12 \
+  --target-implementation cp \
+  --target-abi cp312
+```
+
+Keep separate bundle directories when deployments use different Python ABIs:
+
+```text
+plugin-builds/
+  sensors/
+    x86_64-py310/
+    x86_64-py312/
+  algorithms/
+    x86_64-py310/
+    x86_64-py312/
+```
+
+Select the matching directory in host or group vars:
+
+```yaml
+nexus_plugin_bundle_target: x86_64-py312
+```
+
+`nexus_plugin_bundle_target` is an Ansible directory selector; it does not have
+to match one of the plugin tool's `--target` preset names. Both the sensor and
+algorithm target directories must exist when their respective installation
+switches are enabled. Setting the variable to an empty string selects bundles
+directly from `plugin-builds/sensors/` and `plugin-builds/algorithms/`, but that
+layout should only be used when a single target ABI needs to be supported.
+
+Do not use `--slim` for offline Ansible deployment. A deployment bundle must
+include all required third-party wheels, including transitive SDK dependencies
+such as PyYAML. Installing those packages globally on the target does not satisfy
+an isolated plugin virtualenv.
+
 ## Role-Based Plugin Deployment
 
 Plugin deployment is role-based.
@@ -132,6 +204,23 @@ Core deployment variables:
 - `nexus_runtime_env_remote_path`
 - `nexus_plugin_root`
 - `nexus_plugin_bundle_staging_root`
+
+Distributed identity variables:
+
+- `nexus_customer_id`
+- `nexus_site`
+- `nexus_site_id`
+- `nexus_site_name`
+- `nexus_node_id` (unique per worker)
+
+The customer and site values must match the master. WorkerNode receives them
+from the rendered command line rather than loading them independently. For a
+worker, the service command includes:
+
+```text
+--customer-id <customer-id> --site <site> --site-id <site-id> \
+--site-name "<site name>" --role worker --node-id <worker-node-id>
+```
 
 Bundle variables:
 
@@ -442,6 +531,17 @@ ansible-playbook -i inventory.ini playbooks/deploy_workers.yml -e nexus_deploy_h
 That is the standard path for cases like adding a new worker to an existing
 system where the master is already deployed.
 
+After deployment, inspect the complete unit and command with:
+
+```bash
+ansible <worker-node-id> -b -m command -a 'systemctl cat nexus-n3'
+ansible <worker-node-id> -b -m command \
+  -a 'systemctl show nexus-n3.service --property=ExecStart --value'
+```
+
+The worker service does not enable the admin server. It still installs the
+shared release payload used by the generic deployment role.
+
 ## What The Role Does
 
 The `nexus_release` role:
@@ -555,6 +655,14 @@ systemctl status nexus-n3 --no-pager
 The `ExecStart=` line must remain separate from `Restart=on-failure`.
 
 ## Troubleshooting
+
+When the `nexus_sensor_access_point` role is enabled, it installs the
+root-owned `nexus-n3-wifi-recovery.service` and an exact sudoers rule scoped to
+`nexus_sensor_ap_service_user` (the Ansible connection user by default). The
+rule authorizes only a non-interactive restart of that exact unit. Set the
+runtime opt-in
+`NEXUS_WIFI_ALLOW_NETWORK_STACK_RESTART=1` only where restarting the sensor
+Wi-Fi stack is operationally acceptable.
 
 Common failure signatures seen during Raspberry Pi rollout on July 21, 2026:
 

@@ -124,12 +124,17 @@ class USBCameraAdapter:
         return mapping
 
     @staticmethod
-    async def discover_devices(names: list[str]) -> Dict[str, Tuple[USBCameraDevice, CameraAdvertisement]]:
+    async def discover_devices(requested) -> Dict[str, Tuple[USBCameraDevice, CameraAdvertisement]]:
         """
         Discover V4L2 cameras and return devices with advertisement data.
 
-        Matches devices by name or by-id value when provided in `names`.
+        Matches devices by name or by-id value. Both historical string callers
+        and SensorManager sensor-instance callers are supported.
         """
+        names = [
+            item if isinstance(item, str) else item.name
+            for item in requested
+        ]
         devices: Dict[str, Tuple[USBCameraDevice, CameraAdvertisement]] = {}
         by_id = USBCameraAdapter._by_id_map()
         by_path = USBCameraAdapter._by_path_map()
@@ -171,6 +176,10 @@ class USBCameraAdapter:
         return devices
 
     @staticmethod
-    def create_transport_client(address: str, loop=None) -> USBCameraClient:
+    def create_transport_client(
+        address: str,
+        loop=None,
+        disconnected_callback=None,
+    ) -> USBCameraClient:
         """Create a transport client for a camera device address."""
         return USBCameraClient(address)

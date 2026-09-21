@@ -152,7 +152,7 @@ results back.</p>
 <li><p><code class="docutils literal notranslate"><span class="pre">assign_subjects(subjects)</span></code></p></li>
 </ul>
 </li>
-<li><p><code class="docutils literal notranslate"><span class="pre">WorkerNode(node_id,</span> <span class="pre">site,</span> <span class="pre">registry=None)</span></code></p>
+<li><p><code class="docutils literal notranslate"><span class="pre">WorkerNode(node_id,</span> <span class="pre">site,</span> <span class="pre">customer_id=None,</span> <span class="pre">site_id=None,</span> <span class="pre">site_name=None,</span> <span class="pre">registry=None)</span></code></p>
 <ul>
 <li><p><code class="docutils literal notranslate"><span class="pre">start()</span></code> / <code class="docutils literal notranslate"><span class="pre">stop()</span></code></p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">send_event(event)</span></code></p></li>
@@ -181,14 +181,44 @@ results back.</p>
 <li><p>USB path changes -&gt; master broadcasts <code class="docutils literal notranslate"><span class="pre">CMD_UPDATE_FILE_PATH</span></code> to workers</p></li>
 <li><p>AI compute nodes register with the master and expose a direct compute endpoint</p></li>
 <li><p>Master broadcasts AI registry snapshots to workers over the internal control channel</p></li>
+<li><p>Stop commands carry a shared <code class="docutils literal notranslate"><span class="pre">stop_session_id</span></code>; each node reports its real
+<code class="docutils literal notranslate"><span class="pre">stream_drained</span></code> event after local file and diagnostics queues are closed</p></li>
+<li><p>Master archives only after every expected execution node has drained</p></li>
 </ul>
 </section>
 <section id="subject-assignment">
 <h2>Subject Assignment<a class="headerlink" href="#subject-assignment" title="Permalink to this heading">¶</a></h2>
 <ul class="simple">
-<li><p>If <strong>no workers</strong> are registered, all subjects are assigned to the <strong>master</strong></p></li>
-<li><p>If <strong>one or more workers</strong> are registered, subjects are assigned <strong>round-robin to workers only</strong></p></li>
-<li><p>Result: in a master+worker setup, subjects typically land on workers, not the master</p></li>
+<li><p>Master and workers are both execution-capable assignment candidates</p></li>
+<li><p>Nodes must advertise every sensor and algorithm capability required by a subject</p></li>
+<li><p>Subjects are placed on the eligible node with the lowest assigned sensor count</p></li>
+<li><p>Equal loads prefer the master, followed by a stable node-ID tie break</p></li>
+<li><p>With one master, one worker, and two equivalent subjects, assignment normally
+places one subject on each node</p></li>
+</ul>
+</section>
+<section id="identity-and-storage">
+<h2>Identity And Storage<a class="headerlink" href="#identity-and-storage" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Master and workers must share customer ID, site, site ID, and site name</p></li>
+<li><p>Workers receive these values through their service command and require a
+unique <code class="docutils literal notranslate"><span class="pre">--node-id</span></code></p></li>
+<li><p>The master sends its worker-facing shared output path during registration and
+broadcasts later path changes</p></li>
+<li><p>Diagnostics are node-local within the shared session:
+<code class="docutils literal notranslate"><span class="pre">master-diagnostics/</span></code>, <code class="docutils literal notranslate"><span class="pre">&lt;worker-node-id&gt;-diagnostics/</span></code>, or
+<code class="docutils literal notranslate"><span class="pre">standalone-diagnostics/</span></code></p></li>
+</ul>
+</section>
+<section id="drain-barrier">
+<h2>Drain Barrier<a class="headerlink" href="#drain-barrier" title="Permalink to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Every node closes its own raw, compute, and diagnostics writers before its
+successful drain acknowledgement</p></li>
+<li><p>Raw-write errors produce an error/partial shared archive after all nodes drain</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">drained=false</span></code> prevents archiving when a node failed before it was safe</p></li>
+<li><p>Finalization is bound to the acknowledged session timestamp and can be retried
+if the archive callback fails</p></li>
 </ul>
 </section>
 <section id="node-liveness">
@@ -229,6 +259,8 @@ results back.</p>
 <li><a class="reference internal" href="#key-classes-and-apis">Key Classes and APIs</a></li>
 <li><a class="reference internal" href="#message-flow">Message Flow</a></li>
 <li><a class="reference internal" href="#subject-assignment">Subject Assignment</a></li>
+<li><a class="reference internal" href="#identity-and-storage">Identity And Storage</a></li>
+<li><a class="reference internal" href="#drain-barrier">Drain Barrier</a></li>
 <li><a class="reference internal" href="#node-liveness">Node Liveness</a></li>
 <li><a class="reference internal" href="#key-files">Key Files</a></li>
 </ul>

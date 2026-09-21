@@ -156,13 +156,30 @@ class GatewayBLEAdapter:
         """Test discovery through the gateway."""
         return await self.discover_devices([], timeout=timeout)
 
-    async def discover_devices(self, names: list[str], timeout: float = 5.0):
+    async def discover_devices(self, requested, timeout: float = 5.0):
         """Discover devices through the gateway.
 
         This must eventually return enough metadata for host-side discovery
         matching in `DiscoveryService`.
         """
-        requested_names = [str(name).strip() for name in names if str(name).strip()]
+        requested_names = []
+        requires_unfiltered_scan = False
+        for item in requested:
+            name = item if isinstance(item, str) else getattr(item, "name", "")
+            if not isinstance(item, str):
+                spec = getattr(item, "spec", {}) or {}
+                discovery = spec.get("discovery", {}) or {}
+                if discovery.get("service_uuids"):
+                    requires_unfiltered_scan = True
+                prefixes = discovery.get("local_name_prefixes", []) or []
+                if prefixes:
+                    requested_names.extend(
+                        str(prefix).strip() for prefix in prefixes if str(prefix).strip()
+                    )
+                    continue
+            normalized = str(name).strip()
+            if normalized:
+                requested_names.append(normalized)
         unique_names = sorted(set(requested_names))
         multi_family_scan = len(unique_names) > 1
         effective_timeout_s = timeout
@@ -172,7 +189,12 @@ class GatewayBLEAdapter:
             effective_timeout_s = max(timeout, 10.0)
         timeout_ms = max(int(effective_timeout_s * 1000.0), 1000)
 
-        if len(unique_names) == 1:
+        if requires_unfiltered_scan or not unique_names:
+            devices = await self.execute(
+                self.gateway_client.scan,
+                timeout_ms,
+            )
+        elif len(unique_names) == 1:
             devices = await self.execute(
                 self.gateway_client.scan,
                 timeout_ms,
@@ -261,6 +283,19 @@ class GatewayBLEAdapter:
             self.ble_runtime_config.gateway_subscribe_timeout_s,
             binary_notifications=subscribe_as_binary,
         )
+
+    async def unset_notify_callback(self, ble_device, uuid):
+        """Disable a gateway notification subscription and remove its callback."""
+        characteristic_uuid = str(uuid)
+        await self.execute(
+            self.gateway_client.unsubscribe,
+            ble_device.address,
+            characteristic_uuid,
+            self.ble_runtime_config.gateway_subscribe_timeout_s,
+        )
+        ble_device.notify_callbacks.pop(characteristic_uuid, None)
+        if ble_device.binary_notify_uuid == characteristic_uuid:
+            ble_device.binary_notify_uuid = None
 
     async def write(self, ble_device, uuid, char):
         """Write a GATT characteristic through the gateway."""
@@ -448,6 +483,10 @@ class GatewayBLEAdapter:
             )
         payload = {
             "backend": self.ble_runtime_config.backend_label,
+            "gateway_serial_port": (
+                self.gateway_client.active_serial_port
+                or self.ble_runtime_config.gateway_serial_port
+            ),
             "event": event,
             "notification_drop_count": self.gateway_client.notification_drop_count,
             "parser": {

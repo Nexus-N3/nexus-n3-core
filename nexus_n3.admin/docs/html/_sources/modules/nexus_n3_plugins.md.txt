@@ -41,6 +41,39 @@ python -m nexus_n3.plugins install-dev --nexus-n3-plugin-catalog-root /path/to/n
 python -m nexus_n3.plugins install-dev-list
 ```
 
+When building directly from the development workspaces, explicitly provide the
+local SDK so the bundle contains the SDK revision used by the plugin source:
+
+```bash
+nexus-n3-plugin prepare \
+  --plugin-root /path/to/nexus-n3-plugin-catalog/sensors/my-sensor \
+  --sdk-root /path/to/nexus-n3-plugin-tooling/packages/sdk
+
+nexus-n3-plugin build \
+  --plugin-root /path/to/nexus-n3-plugin-catalog/sensors/my-sensor \
+  --output-dir /path/to/nexus-n3-plugin-catalog/plugin-builds/sensors \
+  --sdk-root /path/to/nexus-n3-plugin-tooling/packages/sdk \
+  --target local
+```
+
+`prepare` installs the local SDK editably into the plugin's development
+environment. `build` creates and includes a local SDK wheel for the isolated
+installed runtime. Installed plugin versions are immutable, so changed bundle
+contents require a new plugin version rather than overwriting an existing one.
+
+## Sensor Host Wi-Fi Bridge
+
+Installed Wi-Fi sensor plugins run in the same isolated host model as other
+sensor plugins. The Core-side driver bridge exposes plugin methods for connected
+discovery, candidate classification and identification, provisioning, vendor
+connection, and disconnection over JSON-RPC.
+
+The SDK also supplies optional `reset_session_diagnostics()` and
+`get_diagnostics_snapshot()` hooks. The sensor host forwards them without making
+diagnostics mandatory for existing plugins. Returned snapshots must be
+JSON-serializable and must not contain credentials, native handles, or secret
+vendor command payloads.
+
 ## Layout
 
 ```text
@@ -78,7 +111,7 @@ python -m nexus_n3.plugins install-dev-list
 - `nexus_n3.plugins/install/installer.py`
 - `nexus_n3.plugins/install/catalog.py`
 - `nexus_n3.plugins/runtime/discovery.py`
-- `nexus_n3.plugins/runtime/runtime.py`
+- `nexus_n3.plugins/runtime/algorithm_runtime.py`
 - `nexus_n3.plugins/runtime/sensor_runtime.py`
 - `nexus_n3.plugins/runtime/sensor_host.py`
 - `nexus_n3.plugins/runtime/algorithm_host.py`

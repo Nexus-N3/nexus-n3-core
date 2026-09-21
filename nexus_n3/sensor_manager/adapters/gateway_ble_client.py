@@ -27,6 +27,7 @@ import serial
 
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
+from nexus_n3.sensor_manager.gateway_serial import resolve_gateway_serial_port
 
 logger = get_module_logger("Gateway BLE Client")
 
@@ -120,14 +121,15 @@ class GatewaySerialClient:
         self._partial_block_len: int = -1
         self.phase = "idle"
         self._transport_reset_lock = threading.Lock()
+        self.active_serial_port: str | None = None
 
     def start(self) -> None:
         """Open the serial port, start the reader, and complete the gateway handshake."""
         if self.started:
             return
-        port = self.config.gateway_serial_port
-        if not port:
-            raise ValueError("GATEWAY_SERIAL_PORT is required for BLE gateway backend")
+        port = resolve_gateway_serial_port(self.config.gateway_serial_port)
+        self.active_serial_port = port
+        logger.info("Using Nexus BLE gateway serial interface %s", port)
 
         try:
             self.ser = serial.Serial(
@@ -166,6 +168,7 @@ class GatewaySerialClient:
         self.disconnected_addresses.clear()
         self.started = False
         self.phase = "idle"
+        self.active_serial_port = None
 
     def _close_transport(self) -> None:
         """Close serial transport resources without clearing all cached state."""
@@ -178,9 +181,10 @@ class GatewaySerialClient:
                 self.ser.close()
             except Exception:
                 pass
-            self.ser = None
+        self.ser = None
         self.started = False
         self.phase = "idle"
+        self.active_serial_port = None
 
     def request_id(self, prefix: str) -> str:
         return f"{prefix}_{int(time.time() * 1000)}"
@@ -409,6 +413,39 @@ class GatewaySerialClient:
                 time.sleep(retry_delay_s)
         if last_exc is not None:
             raise last_exc
+
+    def unsubscribe(
+        self,
+        address: str,
+        characteristic_uuid: str,
+        timeout_s: float,
+    ) -> None:
+        """Disable notifications for a characteristic through the gateway."""
+        normalized_address = self._normalize_address(address)
+        self.assert_connected(normalized_address, action="unsubscribe")
+
+        def _unsubscribe_once() -> None:
+            request_id = self.request_id("unsubscribe")
+            request_queue = self._register_request(request_id)
+            try:
+                self.send(
+                    {
+                        "type": "unsubscribe",
+                        "request_id": request_id,
+                        "address": normalized_address,
+                        "characteristic_uuid": characteristic_uuid,
+                    }
+                )
+                self._wait_for_success(
+                    request_id,
+                    request_queue,
+                    "unsubscribe_complete",
+                    timeout_s,
+                )
+            finally:
+                self._unregister_request(request_id)
+
+        self._execute_with_transport_retry("unsubscribe", _unsubscribe_once)
 
     def write_gatt(
         self,
