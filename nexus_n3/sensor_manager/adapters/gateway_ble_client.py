@@ -288,9 +288,44 @@ class GatewaySerialClient:
                             continue
                         if name_prefix_filter is not None and not name.startswith(name_prefix_filter):
                             continue
+
                         address = self._normalize_address(msg.get("address"))
-                        if not address or address in matches:
+                        if not address:
                             continue
+
+                        service_uuids = tuple(
+                            str(value).lower()
+                            for value in msg.get("service_uuids", [])
+                            if isinstance(value, str)
+                        )
+
+                        existing = matches.get(address)
+
+                        if existing is not None:
+                            name = name or existing.name
+
+                            service_uuids = tuple(
+                                dict.fromkeys(
+                                    existing.service_uuids + service_uuids
+                                )
+                            )
+
+                            rssi = (
+                                msg.get("rssi")
+                                if msg.get("rssi") is not None
+                                else existing.rssi
+                            )
+                        else:
+                            rssi = msg.get("rssi")
+
+                        matches[address] = DiscoveredDevice(
+                            address=address,
+                            name=name,
+                            rssi=rssi,
+                            service_uuids=service_uuids,
+                            raw=dict(msg),
+                        )
+                        
                         service_uuids = tuple(
                             str(value).lower()
                             for value in msg.get("service_uuids", [])
@@ -358,6 +393,7 @@ class GatewaySerialClient:
         timeout_s: float,
         *,
         binary_notifications: bool = False,
+        indicate: bool = False,
     ) -> None:
         """Subscribe to notifications for a characteristic through the gateway."""
         def _subscribe_once() -> None:
@@ -371,6 +407,7 @@ class GatewaySerialClient:
                         "address": address,
                         "characteristic_uuid": characteristic_uuid,
                         "binary_notifications": binary_notifications,
+                        "indicate": indicate,
                     }
                 )
                 self._wait_for_success(request_id, request_queue, "subscribe_complete", timeout_s)
@@ -386,6 +423,7 @@ class GatewaySerialClient:
         timeout_s: float,
         *,
         binary_notifications: bool = False,
+        indicate: bool = False,
         attempts: int = 2,
         retry_delay_s: float = 0.3,
     ) -> None:
@@ -400,6 +438,7 @@ class GatewaySerialClient:
                     characteristic_uuid,
                     timeout_s,
                     binary_notifications=binary_notifications,
+                    indicate=indicate,
                 )
                 return
             except Exception as exc:

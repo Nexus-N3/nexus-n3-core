@@ -239,7 +239,7 @@ class GatewayBLEAdapter:
             logger.error("Error during gateway BLE operation: %s", exc)
             raise
 
-    async def set_notify_callback(self, ble_device, uuid, callback_func):
+    async def set_notify_callback(self, ble_device, uuid, callback_func, *, indicate: bool = False,):
         """Register a notification callback for a remote BLE characteristic.
 
         The gateway implementation must later subscribe remotely and route raw
@@ -272,16 +272,21 @@ class GatewayBLEAdapter:
                 )
                 raise
 
-        subscribe_as_binary = len(ble_device.notify_callbacks) == 0
+        subscribe_as_binary = (
+            not indicate
+            and len(ble_device.notify_callbacks) == 0
+        )
         ble_device.notify_callbacks[str(uuid)] = wrapped_callback
         if subscribe_as_binary:
             ble_device.binary_notify_uuid = str(uuid)
+            
         await self.execute(
             self.gateway_client.subscribe_with_retry,
             ble_device.address,
             str(uuid),
             self.ble_runtime_config.gateway_subscribe_timeout_s,
             binary_notifications=subscribe_as_binary,
+            indicate=indicate,
         )
 
     async def unset_notify_callback(self, ble_device, uuid):

@@ -229,10 +229,11 @@ class SensorHostClient:
         self.proxy._register_host_callback(
             callback_id=str(params["callback_id"]),
             notify_uuid=str(params["uuid"]),
+            indicate=bool(params.get("indicate", False)),
             transport=self.transport,
         )
         return {"ok": True}
-
+    
     def _handle_adapter_unsubscribe(self, params: dict[str, Any]) -> dict[str, Any]:
         self.proxy._adapter_request("unsubscribe", str(params["uuid"]))
         return {"ok": True}
@@ -365,7 +366,7 @@ class InstalledSensorProxy(SensorBase):
             raise RuntimeError(f"unsupported adapter request: {method}")
         return asyncio.run_coroutine_threadsafe(coro, self._manager_loop).result(timeout=30.0)
 
-    def _register_host_callback(self, *, callback_id: str, notify_uuid: str, transport: StdioJsonRpcTransport) -> None:
+    def _register_host_callback(self, *, callback_id: str, notify_uuid: str, indicate: bool = False, transport: StdioJsonRpcTransport) -> None:
         adapter = getattr(self, "_runtime_adapter", None)
         if adapter is None:
             raise RuntimeError("sensor proxy adapter not bound")
@@ -394,7 +395,7 @@ class InstalledSensorProxy(SensorBase):
         _notify._nexus_accepts_timing_metadata = True
 
         self._adapter_callbacks[callback_id] = notify_uuid
-        coro = adapter.set_notify_callback(self.transport_client, notify_uuid, _notify)
+        coro = adapter.set_notify_callback(self.transport_client, notify_uuid, _notify, indicate=indicate)
         asyncio.run_coroutine_threadsafe(coro, self._manager_loop).result(timeout=30.0)
 
     def _handle_host_event(self, event_name: str, payload: Any, timing=None) -> None:

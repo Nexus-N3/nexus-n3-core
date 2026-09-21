@@ -202,7 +202,14 @@ class BLEAdapter:
             logger.error(f"Error during BLE operation: {e}")
 
     @staticmethod
-    async def set_notify_callback(ble_device, uuid, callback_func):
+    async def set_notify_callback(
+        ble_device,
+        uuid,
+        callback_func,
+        *,
+        indicate: bool = False,
+    ):
+        _ = indicate
         """
         Set a notification callback for a given BLE characteristic.
         """

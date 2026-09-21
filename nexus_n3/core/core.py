@@ -3,6 +3,7 @@
 import time
 import csv
 import threading
+import math
 from datetime import datetime, timezone
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.gateway.messaging import message_types as mt
@@ -99,6 +100,7 @@ class Core:
         self._startup_max_attempts = 1
         self._startup_stability_window_seconds = 3.0
         self._startup_packets_required = 60
+        self._startup_min_packets_required = 3
         self._startup_min_rate_ratio = 0.95
         self._startup_min_observation_seconds = 2.0
         self._startup_retry_delay_seconds = 5.0
@@ -157,6 +159,7 @@ class Core:
                 self._startup_post_connect_settle_seconds + self._startup_stability_window_seconds
             ),
             "startup_packets_required": self._startup_packets_required,
+            "startup_min_packets_required": self._startup_min_packets_required,
             "startup_min_rate_hz": min(min_rate_thresholds) if min_rate_thresholds else None,
             "startup_min_rate_ratio": self._startup_min_rate_ratio,
             "startup_min_observation_seconds": self._startup_min_observation_seconds,
@@ -234,6 +237,11 @@ class Core:
                 if not stats:
                     continue
                 status = stats.as_status_payload()
+
+                status["startup_packets_required"] = (
+                    self._required_startup_packets(stats)
+                )
+
                 status["startup_min_rate_hz"] = self._effective_startup_min_rate_hz(stats)
                 stable = self._is_sensor_startup_stable(stats)
                 status["stable"] = stable
@@ -294,8 +302,12 @@ class Core:
     def _is_sensor_startup_stable(self, stats: StartupGateSensorStats) -> bool:
         if stats.first_packet_time is None:
             return False
-        if stats.startup_packets_received < self._startup_packets_required:
+        
+        required_packets = self._required_startup_packets(stats)
+
+        if stats.startup_packets_received < required_packets:
             return False
+
         if stats.startup_duration_seconds < self._startup_min_observation_seconds:
             return False
         effective_min_rate_hz = self._effective_startup_min_rate_hz(stats)
@@ -304,6 +316,33 @@ class Core:
         if stats.startup_gap_events > 0 or stats.startup_estimated_dropped_packets > 0:
             return False
         return True
+
+    def _required_startup_packets(
+        self,
+        stats: StartupGateSensorStats,
+    ) -> int:
+        """
+        Return a sensor-specific startup packet requirement.
+
+        Low-rate sensors must be able to satisfy the gate within the configured
+        minimum observation period, while higher-rate sensors retain the existing
+        60-packet evidence requirement.
+        """
+        if not stats.expected_rate_hz:
+            return self._startup_packets_required
+
+        expected_during_observation = math.ceil(
+            float(stats.expected_rate_hz)
+            * float(self._startup_min_observation_seconds)
+        )
+
+        return max(
+            self._startup_min_packets_required,
+            min(
+                self._startup_packets_required,
+                expected_during_observation,
+            ),
+        )
 
     def _effective_startup_min_rate_hz(self, stats: StartupGateSensorStats) -> float | None:
         if not stats.expected_rate_hz:

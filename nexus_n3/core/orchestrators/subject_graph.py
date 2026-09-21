@@ -38,10 +38,12 @@ class SubjectGraph:
             subject_id = conf["subject_id"]
             sensors_conf = conf.get("sensors", [])
 
-            all_locations = []
+            seen_sensor_locations = set()
+
             for s_conf in sensors_conf:
                 num = s_conf.get("number_of", 1)
                 locations = s_conf.get("locations", [])
+
                 if len(locations) != num:
                     msg = (
                         f"Subject '{subject_id}' sensor '{s_conf.get('local_name')}' "
@@ -52,15 +54,32 @@ class SubjectGraph:
                     if error_cb:
                         error_cb(msg)
                     return False
-                all_locations.extend(locations)
 
-            if len(all_locations) != len(set(all_locations)):
-                msg = f"Subject '{subject_id}' has duplicate body locations: {all_locations}"
-                if self.system_event_bus:
-                    self.system_event_bus.emit({"type": "error", "payload": msg})
-                if error_cb:
-                    error_cb(msg)
-                return False
+                sensor_name = str(
+                    s_conf.get("local_name") or ""
+                ).strip().casefold()
+
+                for location in locations:
+                    key = (
+                        sensor_name,
+                        str(location).strip().casefold(),
+                    )
+
+                    if key in seen_sensor_locations:
+                        msg = (
+                            f"Subject '{subject_id}' has duplicate sensor/location "
+                            f"assignment: sensor='{s_conf.get('local_name')}', "
+                            f"location='{location}'"
+                        )
+                        if self.system_event_bus:
+                            self.system_event_bus.emit(
+                                {"type": "error", "payload": msg}
+                            )
+                        if error_cb:
+                            error_cb(msg)
+                        return False
+
+                    seen_sensor_locations.add(key)
 
             sub = Subject(subject_id, sensors_conf)
             for s_conf in sensors_conf:

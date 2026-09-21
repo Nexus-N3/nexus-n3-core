@@ -54,18 +54,27 @@ class HostAdapterProxy:
             },
         )
 
-    async def set_notify_callback(self, transport_client, uuid, callback_func):
+    async def set_notify_callback(
+        self,
+        transport_client,
+        uuid,
+        callback_func,
+        *,
+        indicate: bool = False,
+    ):
         notify_uuid = str(uuid)
         callback_id = self._callbacks_by_uuid.get(notify_uuid)
         if callback_id is None:
             callback_id = f"cb-{len(self._callbacks) + 1}"
             self._callbacks_by_uuid[notify_uuid] = callback_id
         self._callbacks[callback_id] = callback_func
+
         self._connection.request(
             "adapter.subscribe",
             {
                 "callback_id": callback_id,
                 "uuid": notify_uuid,
+                "indicate": indicate,
             },
         )
 
