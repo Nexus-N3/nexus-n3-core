@@ -50,6 +50,9 @@ CMD_START_STREAM_FOR_ALL = "start_stream_for_all"
 #: Command: Start streaming for subjects (optional tag or tags map)
 CMD_START_STREAM_FOR_SUBJECTS = "start_stream_for_subjects"
 
+#: Distributed command: Commit a prepared stream to official acquisition
+CMD_START_OFFICIAL_STREAM = "start_official_stream"
+
 #: Command: Stop streaming sensor data
 CMD_STOP_STREAM_FOR_ALL = "stop_stream_for_all"
 
@@ -123,6 +126,12 @@ EVT_STREAM_STARTUP_RETRY = "stream_startup_retry"
 
 #: Event: Startup gate passed and official capture has begun
 EVT_STREAM_OFFICIAL_STARTED = "stream_official_started"
+
+#: Event: A distributed node passed local readiness and awaits the global commit
+EVT_STREAM_READY_FOR_OFFICIAL = "stream_ready_for_official"
+
+#: Event: Every node in a distributed start has passed its local readiness gate
+EVT_DISTRIBUTED_READY_FOR_OFFICIAL = "distributed_ready_for_official"
 
 #: Event: Startup gate failed and no further retries remain
 EVT_STREAM_STARTUP_FAILED = "stream_startup_failed"

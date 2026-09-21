@@ -50,14 +50,18 @@ class SystemEventBus:
         )
         self._worker.start()
 
-    def subscribe(self, cb):
+    def subscribe(self, cb, *, prepend: bool = False):
         """
         Register a subscriber callback.
 
         Args:
             cb: Callable that accepts an event dict.
+            prepend: Run this callback before existing subscribers.
         """
-        self._subs.append(cb)
+        if prepend:
+            self._subs.insert(0, cb)
+        else:
+            self._subs.append(cb)
 
     def emit(self, event: dict):
         """

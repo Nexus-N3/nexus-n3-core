@@ -94,14 +94,54 @@ def remove_devices(devices):
 
 
 # ---------------- DEVICE MATCHING ----------------
-def match_devices(names, devices):
+def _matches_discovery_identity(requested, device, adv_data):
+    """Match one advertisement using plugin discovery metadata when present."""
+    local_name = (
+        getattr(adv_data, "local_name", None)
+        or getattr(device, "name", None)
+        or ""
+    )
+
+    if isinstance(requested, str):
+        return local_name == requested or local_name.startswith(requested)
+
+    spec = getattr(requested, "spec", {}) or {}
+    discovery = spec.get("discovery", {}) or {}
+    prefixes = discovery.get("local_name_prefixes", []) or []
+    service_uuids = {
+        str(value).strip().lower()
+        for value in discovery.get("service_uuids", []) or []
+        if value
+    }
+    advertised_services = {
+        str(value).strip().lower()
+        for value in getattr(adv_data, "service_uuids", ()) or ()
+        if value
+    }
+
+    if service_uuids and advertised_services & service_uuids:
+        return True
+
+    normalized_name = str(local_name).strip().casefold()
+    if any(
+        normalized_name.startswith(str(prefix).strip().casefold())
+        for prefix in prefixes
+        if str(prefix).strip()
+    ):
+        return True
+
+    requested_name = str(getattr(requested, "name", "") or "")
+    return local_name == requested_name or local_name.startswith(requested_name)
+
+
+def match_devices(requested_sensors, devices):
     """
     Match discovered devices by their local names.
 
     Supports exact matching and prefix matching (e.g., "Movesense" prefix).
 
     Args:
-        names (list[str]): Names of devices to match
+        requested_sensors (list[str] | list[SensorBase]): Sensors or names to match
         devices (dict): Dictionary of devices returned from discover_devices
                         {addr: (device, advertisement_data)}
 
@@ -111,12 +151,13 @@ def match_devices(names, devices):
     matching_devices = []
     used_addresses = set()
 
-    for name in names:
+    for requested in requested_sensors:
+        name = requested if isinstance(requested, str) else requested.name
         matched = None
         for addr, (device, adv_data) in devices.items():
-            if addr in used_addresses or not adv_data.local_name:
+            if addr in used_addresses:
                 continue
-            if adv_data.local_name == name or adv_data.local_name.startswith(name):
+            if _matches_discovery_identity(requested, device, adv_data):
                 matched = (device, adv_data, name)
                 used_addresses.add(addr)
                 break

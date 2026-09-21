@@ -14,9 +14,11 @@ For this test the subjects are prepared sequentially:
     3. Discover sensors for the worker subject.
     4. Connect sensors for the worker subject.
     5. Start streaming for all subjects.
-    6. Wait for both subjects to enter official streaming.
-    7. Run the official stream for the requested duration.
-    8. Stop, drain and disconnect all subjects.
+    6. Wait for both nodes to report READY FOR OFFICIAL.
+    7. Issue the global official-start command.
+    8. Wait for both nodes to acknowledge official streaming.
+    9. Run the official stream for the requested duration.
+   10. Stop, drain and disconnect all subjects.
 
 This verifies the subject-specific distributed discovery/connection lifecycle
 before testing the higher-level discover-all/connect-all orchestration.
@@ -24,6 +26,7 @@ before testing the higher-level discover-all/connect-all orchestration.
 
 import argparse
 import threading
+import uuid
 
 from nexus_n3.gateway.messaging import message_types as mt
 from nexus_n3_tests.core.test_4c_two_sensor_session_30s import Client
@@ -98,8 +101,10 @@ class DistributedClient(Client):
         # Physical stream-start events.
         self.started_subject_ids = set()
 
-        # Subjects that have passed the startup/readiness gate and entered
-        # official streaming.
+        # Subjects and nodes whose local startup/readiness gate has passed.
+        self.ready_subject_ids = set()
+
+        # Subjects and nodes that acknowledged the coordinated official start.
         self.official_subject_ids = set()
 
         self.stopped_subject_ids = set()
@@ -126,6 +131,8 @@ class DistributedClient(Client):
 
         self.init_sent = False
         self.stream_start_sent = False
+        self.official_start_sent = False
+        self.start_session_id = uuid.uuid4().hex
         self.stop_timer_started = False
         self.disconnect_sent = False
 
@@ -427,6 +434,7 @@ class DistributedClient(Client):
                 "type": mt.CMD_START_STREAM_FOR_ALL,
                 "payload": {
                     "tag": self.session_label,
+                    "start_session_id": self.start_session_id,
                 },
             }
         )
@@ -654,24 +662,73 @@ class DistributedClient(Client):
             return
 
         # --------------------------------------------------------------
+        # READY FOR OFFICIAL
+        # --------------------------------------------------------------
+
+        if evt_type == mt.EVT_STREAM_READY_FOR_OFFICIAL:
+            if payload.get("start_session_id") != self.start_session_id:
+                return
+
+            self.ready_subject_ids.update(self._subject_ids(payload))
+
+            print(
+                "READY FOR OFFICIAL:",
+                f"node={node_id}",
+                sorted(self.ready_subject_ids),
+            )
+
+            return
+
+        # --------------------------------------------------------------
+        # DISTRIBUTED BARRIER PASSED
+        # --------------------------------------------------------------
+
+        if evt_type == mt.EVT_DISTRIBUTED_READY_FOR_OFFICIAL:
+            if payload.get("start_session_id") != self.start_session_id:
+                return
+
+            if not self.official_start_sent:
+                self.official_start_sent = True
+                print(
+                    "ALL NODES READY:",
+                    payload.get("ready_nodes"),
+                    "issuing global official-start command",
+                )
+                self.send_command(
+                    {
+                        "type": mt.CMD_START_OFFICIAL_STREAM,
+                        "payload": {
+                            "start_session_id": self.start_session_id,
+                            "session_timestamp": payload.get("session_timestamp"),
+                        },
+                    }
+                )
+
+            return
+
+        # --------------------------------------------------------------
         # OFFICIAL STREAM STARTED
         # --------------------------------------------------------------
 
         if evt_type == mt.EVT_STREAM_OFFICIAL_STARTED:
+            if payload.get("start_session_id") != self.start_session_id:
+                return
             self.official_subject_ids.update(
                 self._subject_ids(payload)
             )
+            official_start_timing = payload.get("official_start_timing") or {}
 
             print(
                 "OFFICIAL STREAM STARTED:",
                 sorted(self.official_subject_ids),
                 f"({len(self.official_subject_ids)}/"
                 f"{len(self.expected_subject_ids)})",
+                "timing=",
+                official_start_timing,
             )
 
-            # Each node completes its startup gate independently. The
-            # requested session duration begins only when every expected
-            # subject has entered official streaming.
+            # The requested duration begins only after every participant has
+            # acknowledged the coordinated official-start command.
             if (
                 self.official_subject_ids >= self.expected_subject_ids
                 and not self.stop_timer_started

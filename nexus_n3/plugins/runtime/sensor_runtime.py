@@ -74,6 +74,7 @@ class SensorHostClient:
         self.transport.register_handler("adapter.read", self._handle_adapter_read)
         self.transport.register_handler("adapter.write", self._handle_adapter_write)
         self.transport.register_handler("adapter.subscribe", self._handle_adapter_subscribe)
+        self.transport.register_handler("adapter.unsubscribe", self._handle_adapter_unsubscribe)
         self.transport.register_handler("sensor.emit_event", self._handle_sensor_event)
         description = self.transport.request("describe", {})
         health = self.transport.request("healthcheck", {})
@@ -232,6 +233,10 @@ class SensorHostClient:
         )
         return {"ok": True}
 
+    def _handle_adapter_unsubscribe(self, params: dict[str, Any]) -> dict[str, Any]:
+        self.proxy._adapter_request("unsubscribe", str(params["uuid"]))
+        return {"ok": True}
+
     def _handle_sensor_event(self, params: dict[str, Any]) -> dict[str, Any]:
         self.proxy._handle_host_event(
             str(params["event"]),
@@ -354,6 +359,8 @@ class InstalledSensorProxy(SensorBase):
             coro = adapter.read(self.transport_client, uuid)
         elif method == "write":
             coro = adapter.write(self.transport_client, uuid, payload)
+        elif method == "unsubscribe":
+            coro = adapter.unset_notify_callback(self.transport_client, uuid)
         else:
             raise RuntimeError(f"unsupported adapter request: {method}")
         return asyncio.run_coroutine_threadsafe(coro, self._manager_loop).result(timeout=30.0)

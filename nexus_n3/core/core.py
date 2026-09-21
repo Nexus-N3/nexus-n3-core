@@ -114,6 +114,12 @@ class Core:
         self._stream_stop_finalization_lock = threading.RLock()
         self._stream_stop_finalization_pending = False
         self._official_stream_origin_monotonic_ns = None
+        self._official_start_mode = "local"
+        self._start_session_id: str | None = None
+        self._official_commit_received = False
+        self._official_outputs_active = False
+        self._official_persistence_prepared_subject_ids: set[str] = set()
+        self._official_start_timing: dict = {}
 
     def get_ble_runtime_config(self) -> dict:
         """Return the active BLE runtime backend configuration."""
@@ -189,6 +195,13 @@ class Core:
             self._startup_stats_by_address = {}
             self._startup_attempt = 0
             self._pending_stream_tags = {}
+            self._official_start_mode = "local"
+            self._start_session_id = None
+            self._official_commit_received = False
+            self._official_outputs_active = False
+            self._official_persistence_prepared_subject_ids = set()
+            self._official_stream_origin_monotonic_ns = None
+            self._official_start_timing = {}
 
     def _iter_sensor_entries(self):
         for subject in self.subjects:
@@ -229,6 +242,8 @@ class Core:
                     stable_count += 1
             payload = {
                 "phase": phase,
+                "start_session_id": self._start_session_id,
+                "official_start_mode": self._official_start_mode,
                 "attempt": self._startup_attempt,
                 "max_attempts": self._startup_max_attempts,
                 "required_sensor_count": len(self._startup_addresses),
@@ -237,30 +252,44 @@ class Core:
                 "sensors": sensors,
                 **self._startup_policy_payload(),
             }
+            if self._official_start_timing:
+                payload["official_start_timing"] = dict(self._official_start_timing)
             if reason:
                 payload["reason"] = reason
             return payload
 
-    def _emit_startup_event(self, event_type: str, payload: dict) -> None:
+    def _emit_startup_event(
+        self,
+        event_type: str,
+        payload: dict,
+        *,
+        persist_async: bool = False,
+    ) -> None:
         pipeline_diagnostics.record_event(f"startup_gate_{event_type}", **payload)
-        self.storage.file_manager.append_session_diagnostics_event(
-            self.session_timestamp,
-            event_type,
-            {
-                **payload,
-                **self._event_context(subject_ids=self._startup_subject_ids),
-            },
-        )
-        if self.system_event_bus:
-            self.system_event_bus.emit(
-                {
-                    "type": event_type,
-                    "payload": {
-                        **payload,
-                        **self._event_context(subject_ids=self._startup_subject_ids),
-                    },
-                }
+        diagnostics_payload = {
+            **payload,
+            **self._event_context(subject_ids=self._startup_subject_ids),
+        }
+        if persist_async:
+            self.storage.file_manager.enqueue_session_diagnostics_event(
+                self.session_timestamp,
+                event_type,
+                diagnostics_payload,
             )
+        else:
+            self.storage.file_manager.append_session_diagnostics_event(
+                self.session_timestamp,
+                event_type,
+                diagnostics_payload,
+            )
+        if self.system_event_bus:
+            event = {
+                "type": event_type,
+                "payload": diagnostics_payload,
+            }
+            if self._official_start_mode == "coordinated":
+                event["node_id"] = self.node_id
+            self.system_event_bus.emit(event)
 
     def _is_sensor_startup_stable(self, stats: StartupGateSensorStats) -> bool:
         if stats.first_packet_time is None:
@@ -300,6 +329,7 @@ class Core:
                     return
             time.sleep(0.1)
 
+        coordinated_prepare = False
         with self._startup_lock:
             if token != self._startup_gate_token or self.stream_phase != "warming_up":
                 return
@@ -309,25 +339,62 @@ class Core:
                 if address in self._startup_stats_by_address
             )
             if stable:
-                self.stream_phase = "official_streaming"
-                self._activate_official_streaming()
-                payload = self._startup_status_payload(phase=self.stream_phase)
-                self._emit_startup_event(mt.EVT_STREAM_OFFICIAL_STARTED, payload)
-                return
+                if self._official_start_mode == "coordinated":
+                    self.stream_phase = "preparing_official"
+                    coordinated_prepare = True
+                else:
+                    self.stream_phase = "activating_official"
+                    self._activate_official_streaming()
+                    payload = self._startup_status_payload(phase="official_streaming")
+                    self._emit_startup_event(mt.EVT_STREAM_OFFICIAL_STARTED, payload)
+                    self.stream_phase = "official_streaming"
+                    self._official_outputs_active = True
+                    return
+                # Persistence preflight runs below without holding the startup
+                # lock, so physical sample callbacks remain non-blocking.
             reason = "startup gate stability window elapsed before all sensors became stable"
-            if self._startup_attempt < self._startup_max_attempts:
+            if not stable and self._startup_attempt < self._startup_max_attempts:
                 self.stream_phase = "retrying_startup"
                 self._startup_retry_pending = True
                 payload = self._startup_status_payload(phase=self.stream_phase, reason=reason)
                 self._emit_startup_event(mt.EVT_STREAM_STARTUP_RETRY, payload)
                 self.sensor_orch.stop_specific(self._startup_addresses)
                 return
-            self.stream_phase = "startup_failed"
-            self._startup_retry_pending = False
-            self._startup_last_failure_reason = reason
-            payload = self._startup_status_payload(phase=self.stream_phase, reason=reason)
+            if not stable:
+                self.stream_phase = "startup_failed"
+                self._startup_retry_pending = False
+                self._startup_last_failure_reason = reason
+                payload = self._startup_status_payload(phase=self.stream_phase, reason=reason)
+                self._emit_startup_event(mt.EVT_STREAM_STARTUP_FAILED, payload)
+                self.sensor_orch.stop_specific(self._startup_addresses)
+                return
+
+        if not coordinated_prepare:
+            return
+        try:
+            self._prepare_official_persistence()
+        except Exception as exc:
+            reason = f"official persistence preparation failed: {exc}"
+            with self._startup_lock:
+                if token != self._startup_gate_token or self.stream_phase != "preparing_official":
+                    return
+                self.stream_phase = "startup_failed"
+                self._startup_retry_pending = False
+                self._startup_last_failure_reason = reason
+                payload = self._startup_status_payload(
+                    phase=self.stream_phase,
+                    reason=reason,
+                )
             self._emit_startup_event(mt.EVT_STREAM_STARTUP_FAILED, payload)
             self.sensor_orch.stop_specific(self._startup_addresses)
+            return
+
+        with self._startup_lock:
+            if token != self._startup_gate_token or self.stream_phase != "preparing_official":
+                return
+            self.stream_phase = "ready_for_official"
+            payload = self._startup_status_payload(phase=self.stream_phase)
+        self._emit_startup_event(mt.EVT_STREAM_READY_FOR_OFFICIAL, payload)
 
     def _schedule_startup_retry(self, token: int) -> None:
         time.sleep(self._startup_retry_delay_seconds)
@@ -386,23 +453,151 @@ class Core:
         drain_payload.update(session_info)
         self._emit_stream_drained(drain_payload)
 
+    def _prepare_official_persistence(self) -> None:
+        """Create empty output containers without enabling sample routing."""
+        active_subject_ids = set(self._startup_subject_ids)
+        preparation_started_monotonic_ns = time.monotonic_ns()
+        prepared_now = []
+        for sub in self.subjects:
+            if sub.subject_id not in active_subject_ids:
+                continue
+            if sub.subject_id in self._official_persistence_prepared_subject_ids:
+                continue
+            tag = self._pending_stream_tags.get(sub.subject_id)
+            self.storage.file_manager.start_stream(
+                sub,
+                self.session_timestamp,
+                tag=tag,
+            )
+            self._official_persistence_prepared_subject_ids.add(sub.subject_id)
+            prepared_now.append(sub.subject_id)
+
+        preparation_completed_monotonic_ns = time.monotonic_ns()
+        if prepared_now:
+            self._official_start_timing.update(
+                {
+                    "node_persistence_preparation_started_monotonic_ns": (
+                        preparation_started_monotonic_ns
+                    ),
+                    "node_persistence_preparation_completed_monotonic_ns": (
+                        preparation_completed_monotonic_ns
+                    ),
+                    "node_persistence_preparation_duration_ms": round(
+                        (
+                            preparation_completed_monotonic_ns
+                            - preparation_started_monotonic_ns
+                        )
+                        / 1_000_000.0,
+                        3,
+                    ),
+                    "node_persistence_prepared_subject_ids": sorted(prepared_now),
+                }
+            )
+
     def _activate_official_streaming(self) -> None:
-        self._official_stream_origin_monotonic_ns = time.monotonic_ns()
+        if self._official_start_mode == "coordinated" and not self._official_commit_received:
+            raise RuntimeError("Coordinated official persistence requires the global commit")
+        self._prepare_official_persistence()
+        official_origin_ns = time.monotonic_ns()
         active_subject_ids = set(self._startup_subject_ids)
         for sub in self.subjects:
             if sub.subject_id not in active_subject_ids:
                 continue
             if not sub.is_streaming:
-                tag = self._pending_stream_tags.get(sub.subject_id)
-                self.storage.file_manager.start_stream(sub, self.session_timestamp, tag=tag)
                 sub.is_streaming = True
-        self.storage.file_manager.update_session_diagnostics_summary(
-            self.session_timestamp,
-            {
-                "official_stream": "passed",
-                "official_stream_started_at": datetime.now().isoformat(timespec="seconds"),
-            },
+        self._official_stream_origin_monotonic_ns = official_origin_ns
+
+    def start_official_stream(self, payload: dict) -> None:
+        """Commit a locally-ready distributed stream to official acquisition."""
+        command_received_monotonic_ns = time.monotonic_ns()
+        command_received_utc_ns = time.time_ns()
+        requested_start_id = payload.get("start_session_id")
+        requested_timestamp = payload.get("session_timestamp")
+        with self._startup_lock:
+            if self._official_start_mode != "coordinated":
+                raise RuntimeError("Official-start commands are only valid for coordinated streams")
+            if not requested_start_id or requested_start_id != self._start_session_id:
+                raise RuntimeError("Official-start command does not match the active start session")
+            if requested_timestamp and str(requested_timestamp) != str(self.session_timestamp):
+                raise RuntimeError("Official-start command has a stale session timestamp")
+            if self.stream_phase == "official_streaming":
+                payload = self._startup_status_payload(phase=self.stream_phase)
+                self._emit_startup_event(
+                    mt.EVT_STREAM_OFFICIAL_STARTED,
+                    payload,
+                    persist_async=True,
+                )
+                return
+            if self.stream_phase == "activating_official":
+                return
+            if self.stream_phase != "ready_for_official":
+                raise RuntimeError(
+                    f"Local stream is not ready for official acquisition (phase={self.stream_phase})"
+                )
+            self._official_commit_received = True
+            self.stream_phase = "activating_official"
+
+        activation_started_monotonic_ns = time.monotonic_ns()
+        try:
+            self._activate_official_streaming()
+        except Exception:
+            with self._startup_lock:
+                self._official_commit_received = False
+                self._official_outputs_active = False
+                self._official_stream_origin_monotonic_ns = None
+                self.stream_phase = "startup_failed"
+                self._startup_last_failure_reason = "official persistence activation failed"
+            raise
+
+        activation_completed_monotonic_ns = time.monotonic_ns()
+        activation_completed_utc_ns = time.time_ns()
+        with self._startup_lock:
+            coordinator_timing = dict(payload.get("official_start_timing") or {})
+            preparation_timing = dict(self._official_start_timing)
+            coordinator_dispatch_utc_ns = coordinator_timing.get("coordinator_dispatch_utc_ns")
+            coordinator_received_utc_ns = coordinator_timing.get(
+                "coordinator_command_received_utc_ns"
+            )
+            self._official_start_timing = {
+                **preparation_timing,
+                **coordinator_timing,
+                "node_id": self.node_id,
+                "node_command_received_utc_ns": command_received_utc_ns,
+                "node_command_received_monotonic_ns": command_received_monotonic_ns,
+                "node_activation_started_monotonic_ns": activation_started_monotonic_ns,
+                "node_activation_completed_utc_ns": activation_completed_utc_ns,
+                "node_activation_completed_monotonic_ns": activation_completed_monotonic_ns,
+                "node_command_to_activation_start_ms": round(
+                    (activation_started_monotonic_ns - command_received_monotonic_ns) / 1_000_000.0,
+                    3,
+                ),
+                "node_activation_duration_ms": round(
+                    (activation_completed_monotonic_ns - activation_started_monotonic_ns) / 1_000_000.0,
+                    3,
+                ),
+            }
+            if isinstance(coordinator_dispatch_utc_ns, int):
+                self._official_start_timing["dispatch_to_node_receive_ms"] = round(
+                    (command_received_utc_ns - coordinator_dispatch_utc_ns) / 1_000_000.0,
+                    3,
+                )
+            if isinstance(coordinator_received_utc_ns, int):
+                self._official_start_timing["coordinator_receive_to_activation_complete_ms"] = round(
+                    (activation_completed_utc_ns - coordinator_received_utc_ns) / 1_000_000.0,
+                    3,
+                )
+            event_payload = self._startup_status_payload(phase="official_streaming")
+            event_payload["official_stream_started_at"] = datetime.now().isoformat(
+                timespec="seconds"
+            )
+        self._emit_startup_event(
+            mt.EVT_STREAM_OFFICIAL_STARTED,
+            event_payload,
+            persist_async=True,
         )
+        with self._startup_lock:
+            self.stream_phase = "official_streaming"
+            self._official_outputs_active = True
 
     # -------------------------
     # Private Initialization
@@ -690,6 +885,12 @@ class Core:
     def start_stream(self, payload):
         """Start streaming data for all subjects."""
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self._official_start_mode = payload.get("official_start_mode", "local")
+        self._start_session_id = payload.get("start_session_id")
+        self._official_commit_received = False
+        self._official_outputs_active = False
+        self._official_persistence_prepared_subject_ids = set()
+        self._official_start_timing = {}
         self.archived_session_timestamp = None
         self._official_stream_origin_monotonic_ns = None
         tag_all = payload.get("tag")
@@ -718,6 +919,8 @@ class Core:
                 "requested_sensor_addresses": list(stream_addresses),
                 "startup_policy": self._startup_policy_payload(),
                 "official_stream": "pending",
+                "official_start_mode": self._official_start_mode,
+                "start_session_id": self._start_session_id,
             },
         )
         self.sensor_orch.reset_session_diagnostics()
@@ -727,6 +930,12 @@ class Core:
         """Start streaming sensors for specific subjects."""
         subject_ids = payload["subject_ids"]
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
+        self._official_start_mode = payload.get("official_start_mode", "local")
+        self._start_session_id = payload.get("start_session_id")
+        self._official_commit_received = False
+        self._official_outputs_active = False
+        self._official_persistence_prepared_subject_ids = set()
+        self._official_start_timing = {}
         self.archived_session_timestamp = None
         self._official_stream_origin_monotonic_ns = None
         tag_all = payload.get("tag")
@@ -757,6 +966,8 @@ class Core:
                 "requested_sensor_addresses": list(addresses),
                 "startup_policy": self._startup_policy_payload(),
                 "official_stream": "pending",
+                "official_start_mode": self._official_start_mode,
+                "start_session_id": self._start_session_id,
             },
         )
         self.sensor_orch.reset_session_diagnostics()
@@ -1211,13 +1422,22 @@ class Core:
                 "official_streaming",
             } and sampling_rate is not None:
                 self._startup_stats_by_address[address].record_sample(payload, time.monotonic())
-            official_streaming = self.stream_phase == "official_streaming"
+            official_streaming = (
+                self.stream_phase == "official_streaming"
+                and self._official_outputs_active
+                and (
+                    self._official_start_mode != "coordinated"
+                    or self._official_commit_received
+                )
+            )
         if not official_streaming:
             return
+        # resolve the subject
         subject = self.subject_graph.find_subject_by_address(payload.address)
         if subject:
+            # a timeline module would need to compute the session coordinate for the sample before persiting it.
             subject.ingest_sample(payload, self.storage.file_manager)
-            # push to compute manager also
+            # timing evidence is derived after the sample is persisted.
             transport_timing = dict(getattr(payload, "_nexus_timing", {}) or {})
             host_receive_ns = transport_timing.get("host_receive_monotonic_ns", core_receive_ns)
             timing_metadata = {
@@ -1241,6 +1461,9 @@ class Core:
         Called when an intermediate result is ready (per-sensor averages).
         Adds location metadata for each sensor and emits to the system event bus.
         """
+        if not self._official_outputs_active:
+            logger.info("Dropping intermediate result outside official acquisition")
+            return
         results = result.get("results", [])
         subjects_map = {}
         for entry in results:
@@ -1290,6 +1513,9 @@ class Core:
         Called when a per-sensor real-time result is received.
         Adds location metadata and emits to the system event bus.
         """
+        if not self._official_outputs_active:
+            logger.info("Dropping compute result outside official acquisition")
+            return
         # find the subject that owns this sensor
         result_address = result.get("address") if isinstance(result, dict) else getattr(result, "address", None)
         subject = self.subject_graph.find_subject_by_address(result_address)
@@ -1329,6 +1555,8 @@ class Core:
 
     def _on_compute_performance(self, performance):
         """Emit and archive core-owned timing diagnostics for one compute result."""
+        if not self._official_outputs_active:
+            return
         payload = dict(performance or {})
         address = payload.get("address")
         subject = self.subject_graph.find_subject_by_address(address)

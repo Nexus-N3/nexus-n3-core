@@ -56,7 +56,8 @@
           <div class="value-sub">Disabled</div>
         {% endif %}
       {% else %}
-        <div class="value">Disabled</div>
+        <div class="value">Not configured</div>
+        <div class="value-sub">Select a remote bridge below to enable it.</div>
       {% endif %}
     </div>
     <div class="tile">
@@ -78,10 +79,10 @@
     <div class="tile usb-tile">
       <div class="label">USB SSD</div>
       {% if server_status.usb_disk.present %}
-        <div class="value">Attached</div>
+        <div class="value">Mounted</div>
         <div class="value-sub">{{ server_status.usb_disk.path }}</div>
       {% else %}
-        <div class="value">Not detected</div>
+        <div class="value">Not mounted</div>
         <div class="value-sub">/exports/nexus_n3_data/nexus_n3_outputs</div>
       {% endif %}
       {% if usb_action_status %}

@@ -63,7 +63,8 @@ nexus_n3_outputs/
 # -------------------------------
 # Local deployment secrets
 # -------------------------------
-deployment/ansible/host_vars/*.secrets.yml
+
+deployment/ansible/host_vars/*/secrets.yml
 
 # -------------------------------
 # OS files

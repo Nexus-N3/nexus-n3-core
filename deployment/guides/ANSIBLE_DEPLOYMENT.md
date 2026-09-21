@@ -48,6 +48,78 @@ nexus-n3-plugin build \
 Run that from the `nexus-n3-plugin-catalog/` repository root. For algorithms,
 replace the `--plugin-root` and `--output-dir` paths accordingly.
 
+### Python ABI and Target-Specific Bundle Directories
+
+Dependency-complete plugin bundles are specific to the target operating system,
+CPU architecture, Python implementation, Python version, and ABI whenever they
+contain native wheels. For example, a bundle containing `cp310` wheels cannot be
+installed by a Nexus N3 plugin runtime using Python 3.12 (`cp312`). The installer
+validates declared target metadata and pip also rejects incompatible wheels.
+
+The relevant interpreter is `nexus_plugin_installer_python`, which defaults to
+the Python executable inside the deployed Nexus Core virtualenv. Installing an
+additional Python version on the host does not change an existing Core virtualenv
+or make an incompatible bundle usable. Rebuild the bundle for the Python version
+used by the target runtime instead.
+
+The build machine and deployment target do not need to use the same Python
+version. The plugin tooling can cross-build an x86_64/Python 3.12 bundle while
+running on an x86_64/Python 3.10 development machine:
+
+```bash
+nexus-n3-plugin build \
+  --plugin-root sensors/nexus-n3-sensor-movesense \
+  --output-dir plugin-builds/sensors/x86_64-py312 \
+  --target local \
+  --target-platform manylinux2014_x86_64 \
+  --target-python-version 3.12 \
+  --target-implementation cp \
+  --target-abi cp312
+```
+
+Use the equivalent family directory for algorithms:
+
+```bash
+nexus-n3-plugin build \
+  --plugin-root algorithms/nexus-n3-algorithm-ecg-rhythm \
+  --output-dir plugin-builds/algorithms/x86_64-py312 \
+  --target local \
+  --target-platform manylinux2014_x86_64 \
+  --target-python-version 3.12 \
+  --target-implementation cp \
+  --target-abi cp312
+```
+
+Keep separate bundle directories when deployments use different Python ABIs:
+
+```text
+plugin-builds/
+  sensors/
+    x86_64-py310/
+    x86_64-py312/
+  algorithms/
+    x86_64-py310/
+    x86_64-py312/
+```
+
+Select the matching directory in host or group vars:
+
+```yaml
+nexus_plugin_bundle_target: x86_64-py312
+```
+
+`nexus_plugin_bundle_target` is an Ansible directory selector; it does not have
+to match one of the plugin tool's `--target` preset names. Both the sensor and
+algorithm target directories must exist when their respective installation
+switches are enabled. Setting the variable to an empty string selects bundles
+directly from `plugin-builds/sensors/` and `plugin-builds/algorithms/`, but that
+layout should only be used when a single target ABI needs to be supported.
+
+Do not use `--slim` for offline Ansible deployment. A deployment bundle must
+include all required third-party wheels, including transitive SDK dependencies
+such as PyYAML. Installing those packages globally on the target does not satisfy
+an isolated plugin virtualenv.
+
 ## Role-Based Plugin Deployment
 
 Plugin deployment is role-based.

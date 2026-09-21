@@ -204,9 +204,10 @@ def _format_uptime(seconds: int) -> str:
 def _server_status_snapshot(server_start_time, usb_disk_manager, bridge_name, remote_bridge, ble_runtime_config):
     """Build a runtime status snapshot used by both the admin UI and device-info command."""
     uptime_seconds = int(time.monotonic() - server_start_time)
+    usb_path = usb_disk_manager.usb_path if usb_disk_manager else None
     usb_disk = {
-        "present": bool(usb_disk_manager and usb_disk_manager.usb_path),
-        "path": str(usb_disk_manager.usb_path) if usb_disk_manager and usb_disk_manager.usb_path else None,
+        "present": bool(usb_path),
+        "path": str(usb_path) if usb_path else None,
     }
     bridge_status = remote_bridge.status() if bridge_name and remote_bridge else {}
     ble_backend_status = {"status": "ready", "detail": "Internal Bleak backend ready"}
