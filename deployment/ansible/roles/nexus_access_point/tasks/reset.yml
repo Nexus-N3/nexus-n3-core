@@ -1,16 +1,3 @@
-- name: Stop and disable AP services
-  ansible.builtin.service:
-    name: "{{ item }}"
-    state: stopped
-    enabled: false
-  loop:
-    - dnsmasq
-  failed_when: false
-
-- name: Reset failed AP services
-  ansible.builtin.command: systemctl reset-failed dnsmasq
-  failed_when: false
-
 - name: Remove AP NetworkManager connection
   ansible.builtin.command:
     argv:

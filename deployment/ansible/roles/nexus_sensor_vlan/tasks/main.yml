@@ -154,8 +154,6 @@
       - "{{ nexus_sensor_vlan_interface }}"
       - connection.autoconnect
       - "{{ 'yes' if nexus_sensor_vlan_autoconnect | bool else 'no' }}"
-      - vlan.parent
-      - "{{ nexus_sensor_vlan_parent_interface }}"
       - vlan.id
       - "{{ nexus_sensor_vlan_id | string }}"
       - connection.master

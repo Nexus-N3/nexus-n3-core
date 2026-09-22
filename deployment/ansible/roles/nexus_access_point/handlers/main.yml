@@ -1,8 +1,3 @@
-- name: Restart dnsmasq
-  ansible.builtin.service:
-    name: dnsmasq
-    state: restarted
-
 - name: Restart avahi-daemon
   ansible.builtin.service:
     name: avahi-daemon

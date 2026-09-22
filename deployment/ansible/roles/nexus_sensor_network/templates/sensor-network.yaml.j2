@@ -1,0 +1,25 @@
+network:
+  version: 2
+  renderer: NetworkManager
+
+  vlans:
+    {{ nexus_sensor_vlan_interface }}:
+      id: {{ nexus_sensor_vlan_id }}
+      link: "{{ nexus_sensor_vlan_parent_interface }}"
+      networkmanager:
+        name: "{{ nexus_sensor_vlan_connection_name }}"
+
+  bridges:
+    {{ nexus_sensor_bridge_interface }}:
+      interfaces:
+        - "{{ nexus_sensor_vlan_interface }}"
+      addresses:
+        - "{{ nexus_sensor_network_address }}"
+      dhcp4: false
+      dhcp6: false
+      accept-ra: false
+      link-local: []
+      parameters:
+        stp: false
+      networkmanager:
+        name: "{{ nexus_sensor_bridge_connection_name }}"

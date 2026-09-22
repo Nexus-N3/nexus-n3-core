@@ -1,0 +1,14 @@
+polkit.addRule(function(action, subject) {
+    var allowed = [
+        "org.freedesktop.NetworkManager.network-control",
+        "org.freedesktop.NetworkManager.settings.modify.system",
+        "org.freedesktop.NetworkManager.wifi.scan"
+    ];
+
+    if (
+        subject.user == "{{ nexus_sensor_ap_service_user }}" &&
+        allowed.indexOf(action.id) >= 0
+    ) {
+        return polkit.Result.YES;
+    }
+});

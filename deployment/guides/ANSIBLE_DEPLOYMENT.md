@@ -191,6 +191,13 @@ cd deployment/ansible
 ansible-playbook -i inventory.ini playbooks/provision_master.yml -e nexus_provision_hosts=nexus-n3-master
 ```
 
+```bash
+cd deployment/ansible
+ansible-playbook -i inventory.ini \
+  playbooks/provision_master.yml \
+  --limit nexus-n3-master
+```
+
 The legacy `site.yml` entry point is now host-provisioning-only and no longer
 deploys the application release.
 
@@ -818,3 +825,4 @@ journalctl -u nexus-n3 -n 100 -l --no-pager
   workers or AI nodes.
 - The `deploy_*` playbooks are the software rollout path.
 - The `provision_*` playbooks and `site.yml` are the Linux host-preparation path.
+

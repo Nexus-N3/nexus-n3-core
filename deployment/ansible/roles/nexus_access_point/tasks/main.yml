@@ -1,11 +1,13 @@
 - name: Reset AP configuration (manual cleanup)
   ansible.builtin.include_tasks: reset.yml
-  tags: reset_ap
+  tags:
+    - never
+    - reset_ap
 
 - name: Ensure AP runtime packages are installed
   ansible.builtin.apt:
     name:
-      - dnsmasq
+      - dnsmasq-base
       - avahi-daemon
       - avahi-utils
     state: present
@@ -88,30 +90,34 @@
       - modify
       - "{{ nexus_ap_connection_name }}"
       - ipv4.method
-      - manual
+      - shared
       - ipv4.addresses
       - "{{ nexus_ap_address }}"
       - ipv4.never-default
       - "yes"
       - ipv6.method
       - disabled
+  
+- name: Remove legacy UI AP system dnsmasq configuration
+  ansible.builtin.file:
+    path: /etc/dnsmasq.d/nexus-n3-ap.conf
+    state: absent
+  register: nexus_ap_legacy_dnsmasq_config
 
-- name: Configure dnsmasq for AP DHCP
-  ansible.builtin.template:
-    src: dnsmasq.conf.j2
-    dest: /etc/dnsmasq.d/nexus-n3-ap.conf
-    mode: "0644"
-  notify: Restart dnsmasq
-
-- name: Validate dnsmasq configuration
-  ansible.builtin.command: dnsmasq --test
+- name: Reload system dnsmasq after removing legacy UI AP configuration
+  ansible.builtin.command:
+    argv:
+      - systemctl
+      - try-restart
+      - dnsmasq.service
   changed_when: false
+  failed_when: false
+  when: nexus_ap_legacy_dnsmasq_config.changed
 
-- name: Ensure dnsmasq is enabled
-  ansible.builtin.service:
-    name: dnsmasq
-    enabled: true
-    state: started
+- name: Remove legacy UI AP IP forwarding override
+  ansible.builtin.file:
+    path: /etc/sysctl.d/99-nexus-n3-ap.conf
+    state: absent
 
 - name: Ensure avahi-daemon is enabled
   ansible.builtin.service:
@@ -147,19 +153,3 @@
   changed_when: "'Skipping' not in nexus_ap_ufw_allow_admin.stdout"
   when: "'Status: active' in nexus_ap_ufw_status.stdout"
 
-- name: Persist disabled IP forwarding
-  ansible.builtin.copy:
-    dest: /etc/sysctl.d/99-nexus-n3-ap.conf
-    content: "net.ipv4.ip_forward=0\n"
-    owner: root
-    group: root
-    mode: "0644"
-
-- name: Apply disabled IP forwarding
-  ansible.builtin.command:
-    argv:
-      - sysctl
-      - -w
-      - net.ipv4.ip_forward=0
-  changed_when: false
-  when: nexus_ap_disable_ip_forwarding | bool

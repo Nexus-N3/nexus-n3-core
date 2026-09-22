@@ -5,6 +5,9 @@ nexus_usb_gid: 1000
 # Common sensor network. br-sensor owns the node IP; eth0.20 and the
 # USB Wi-Fi AP are Layer-2 members of this bridge.
 nexus_sensor_network_enabled: true
+nexus_sensor_ap_enabled: true
+nexus_sensor_ap_interface: wlx00c0cabaa751
+nexus_sensor_ap_passphrase: "NexusN3Sensors99!"
 nexus_sensor_network_address: 10.42.20.11/24
 
 nexus_sensor_vlan_enabled: true

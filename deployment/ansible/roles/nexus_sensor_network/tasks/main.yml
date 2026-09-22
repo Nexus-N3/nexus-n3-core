@@ -7,6 +7,10 @@
       - nexus_sensor_bridge_connection_name | length > 0
       - nexus_sensor_network_address | length > 0
       - nexus_sensor_network_ipv6_method in ['disabled', 'ignore', 'auto']
+      - nexus_sensor_vlan_id | int >= 1
+      - nexus_sensor_vlan_id | int <= 4094
+      - nexus_sensor_vlan_parent_interface | length > 0
+      - nexus_sensor_vlan_interface | length > 0
     fail_msg: >-
       The sensor network is only valid on standalone/master/worker nodes and
       requires a bridge interface, bridge connection name, and node CIDR.
@@ -19,6 +23,15 @@
     update_cache: true
     cache_valid_time: 3600
 
+- name: Disable dnsmasq DNS service
+  ansible.builtin.lineinfile:
+    path: /etc/dnsmasq.conf
+    regexp: '^#?port='
+    line: 'port=0'
+    state: present
+  when: nexus_sensor_dhcp_enabled | bool
+  notify: Reload sensor dnsmasq if running
+
 - name: Ensure sensor DHCP package is installed on DHCP owner
   ansible.builtin.apt:
     name:
@@ -29,107 +42,87 @@
     policy_rc_d: 101
   when: nexus_sensor_dhcp_enabled | bool
 
-- name: Ensure dnsmasq loads drop-in configuration
-  ansible.builtin.lineinfile:
-    path: /etc/dnsmasq.conf
-    regexp: '^#?conf-dir=/etc/dnsmasq\.d/,\*\.conf$'
-    line: 'conf-dir=/etc/dnsmasq.d/,*.conf'
-    state: present
-  when: nexus_sensor_dhcp_enabled | bool
-  notify: Reload sensor dnsmasq if running
-
-- name: Check whether sensor bridge connection exists
+- name: Check sensor VLAN parent interface
   ansible.builtin.command:
     argv:
-      - nmcli
-      - -g
-      - connection.id
-      - connection
+      - ip
+      - link
       - show
-      - "{{ nexus_sensor_bridge_connection_name }}"
-  register: nexus_sensor_bridge_connection_exists
+      - dev
+      - "{{ nexus_sensor_vlan_parent_interface }}"
+  register: nexus_sensor_network_parent_link
   changed_when: false
   failed_when: false
 
-- name: Create sensor bridge connection
-  ansible.builtin.command:
-    argv:
-      - nmcli
-      - connection
-      - add
-      - type
-      - bridge
-      - con-name
-      - "{{ nexus_sensor_bridge_connection_name }}"
-      - ifname
-      - "{{ nexus_sensor_bridge_interface }}"
-  when: nexus_sensor_bridge_connection_exists.rc != 0
+- name: Require sensor VLAN parent interface
+  ansible.builtin.assert:
+    that:
+      - nexus_sensor_network_parent_link.rc == 0
+    fail_msg: >-
+      Sensor VLAN parent interface {{ nexus_sensor_vlan_parent_interface }}
+      does not exist.
 
-- name: Configure sensor bridge link and persistence
-  ansible.builtin.command:
-    argv:
-      - nmcli
-      - connection
-      - modify
-      - "{{ nexus_sensor_bridge_connection_name }}"
-      - connection.interface-name
-      - "{{ nexus_sensor_bridge_interface }}"
-      - connection.autoconnect
-      - "{{ 'yes' if nexus_sensor_network_autoconnect | bool else 'no' }}"
-      - bridge.stp
-      - "no"
-  changed_when: false
+- name: Install Nexus N3 sensor network Netplan configuration
+  ansible.builtin.template:
+    src: sensor-network.yaml.j2
+    dest: /etc/netplan/80-nexus-n3-sensor-network.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  register: nexus_sensor_network_netplan
 
-- name: Configure sensor bridge IPv4 addressing
-  ansible.builtin.command:
-    argv:
-      - nmcli
-      - connection
-      - modify
-      - "{{ nexus_sensor_bridge_connection_name }}"
-      - ipv4.method
-      - manual
-      - ipv4.addresses
-      - "{{ nexus_sensor_network_address }}"
-      - ipv4.gateway
-      - ""
-      - ipv4.dns
-      - ""
-      - ipv4.ignore-auto-dns
-      - "yes"
-      - ipv4.never-default
-      - "{{ 'yes' if nexus_sensor_network_ipv4_never_default | bool else 'no' }}"
-      - ipv4.routes
-      - ""
-  changed_when: false
+- name: Find legacy NetworkManager-generated sensor Netplan files
+  ansible.builtin.find:
+    paths: /etc/netplan
+    patterns:
+      - "90-NM-*.yaml"
+    file_type: file
+    contains: 'name: "(nexus-n3-sensor-bridge|nexus-n3-sensor-vlan)"'
+    read_whole_file: true
+  register: nexus_sensor_network_legacy_netplan
 
-- name: Configure sensor bridge IPv6 state
-  ansible.builtin.command:
-    argv:
-      - nmcli
-      - connection
-      - modify
-      - "{{ nexus_sensor_bridge_connection_name }}"
-      - ipv6.method
-      - "{{ nexus_sensor_network_ipv6_method }}"
-  changed_when: false
-
-- name: Activate sensor bridge
-  ansible.builtin.command:
-    argv:
-      - nmcli
-      - connection
-      - up
-      - "{{ nexus_sensor_bridge_connection_name }}"
-      - ifname
-      - "{{ nexus_sensor_bridge_interface }}"
-  changed_when: false
-
-- name: Remove legacy per-AP sensor DHCP configuration
+- name: Remove legacy NetworkManager-generated sensor Netplan files
   ansible.builtin.file:
-    path: /etc/dnsmasq.d/nexus-n3-sensor-ap.conf
+    path: "{{ item.path }}"
     state: absent
-  notify: Reload sensor dnsmasq if running
+  loop: "{{ nexus_sensor_network_legacy_netplan.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Validate generated Netplan configuration
+  ansible.builtin.command:
+    argv:
+      - netplan
+      - generate
+  changed_when: false
+
+- name: Check ufw status for sensor network
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - status
+  register: nexus_sensor_network_ufw_status
+  changed_when: false
+
+- name: Allow x-IMU3 announcements through sensor bridge
+  ansible.builtin.command:
+    argv:
+      - ufw
+      - allow
+      - in
+      - on
+      - "{{ nexus_sensor_bridge_interface }}"
+      - proto
+      - udp
+      - to
+      - any
+      - port
+      - "10000"
+      - comment
+      - "Nexus N3 x-IMU3 announcements"
+  register: nexus_sensor_network_ufw_allow_ximu3
+  changed_when: "'Skipping' not in nexus_sensor_network_ufw_allow_ximu3.stdout"
+  when: "'Status: active' in nexus_sensor_network_ufw_status.stdout"
 
 - name: Install sensor-network DHCP configuration
   ansible.builtin.template:
