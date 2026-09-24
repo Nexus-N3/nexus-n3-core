@@ -42,6 +42,7 @@ class Client:
         stream_seconds=30,
         subjects=None,
         session_label="movesense_core_hr_integration_30s",
+        failure_cleanup_seconds=5,
     ):
         self.ctx = zmq.Context()
 
@@ -63,6 +64,7 @@ class Client:
         self.subjects = subjects or DEFAULT_SUBJECTS
         self.stream_seconds = stream_seconds
         self.session_label = session_label
+        self.failure_cleanup_seconds = failure_cleanup_seconds
 
         self.expected_sensor_count = sum(
             sensor.get("number_of", 0)
@@ -79,6 +81,7 @@ class Client:
         self.stream_stop_sent = False
         self.disconnect_sent = False
         self.stop_timer_started = False
+        self.failure_cleanup_started = False
 
         self.official_started = False
         self.stream_drained_payload = None
@@ -108,6 +111,12 @@ class Client:
             self._fail(
                 f"Timed out after {timeout_seconds}s "
                 "waiting for Movesense + CORE integration session."
+            )
+
+            # Give the gateway a bounded opportunity to acknowledge the
+            # disconnect request before closing the ZeroMQ sockets.
+            self._done.wait(
+                timeout=self.failure_cleanup_seconds + 1
             )
 
         self.stop()
@@ -319,8 +328,19 @@ class Client:
 
             if (
                 self.disconnect_sent
-                and len(self.disconnected_addresses)
-                >= self.expected_sensor_count
+                and (
+                    (
+                        self.failed
+                        and self.connected_addresses.issubset(
+                            self.disconnected_addresses
+                        )
+                    )
+                    or (
+                        not self.failed
+                        and len(self.disconnected_addresses)
+                        >= self.expected_sensor_count
+                    )
+                )
             ):
                 self._done.set()
 
@@ -339,7 +359,7 @@ class Client:
 
         time.sleep(self.stream_seconds)
 
-        if not self.stream_stop_sent:
+        if not self.stream_stop_sent and not self.failed:
             self.stream_stop_sent = True
 
             self.send_command(
@@ -389,6 +409,41 @@ class Client:
             f"FAILED: {reason}"
         )
 
+        # A failure can happen while sensors are connected (notably when the
+        # startup gate fails). Always ask Core to release every sensor before
+        # ending the client. The deadline prevents an unavailable gateway from
+        # keeping the test alive indefinitely.
+        if not self.disconnect_sent:
+            self.disconnect_sent = True
+
+            try:
+                self.send_command(
+                    {"type": mt.CMD_DISCONNECT_ALL}
+                )
+            except Exception as exc:
+                print(
+                    "FAILED TO REQUEST SENSOR "
+                    f"DISCONNECT: {exc}"
+                )
+
+        if not self.failure_cleanup_started:
+            self.failure_cleanup_started = True
+
+            threading.Thread(
+                target=self._finish_failed_cleanup_after_delay,
+                daemon=True,
+            ).start()
+
+    def _finish_failed_cleanup_after_delay(self):
+        if self._done.wait(
+            timeout=self.failure_cleanup_seconds
+        ):
+            return
+
+        print(
+            "DISCONNECT ACKNOWLEDGEMENT TIMEOUT: "
+            "ending failed session cleanup"
+        )
         self._done.set()
 
     def stop(self):

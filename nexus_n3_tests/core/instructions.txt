@@ -5,6 +5,8 @@ python -m nexus_n3_tests.core.test_4_start_and_stop
 python -m nexus_n3_tests.core.test_4c_two_sensor_session_30s
 python -m nexus_n3_tests.core.test_4d_movella_x_imu3_session_30s
 python -m nexus_n3_tests.core.test_4e_two_subject_distributed_session_30s
+python -m nexus_n3_tests.core.test_4f_movesense_core_hr_integration_30s
+python -m nexus_n3_tests.core.test_4g_movella_movesense_core_integration_30s
 python -m nexus_n3_tests.core.test_4b_start_and_stop_summary
 python -m nexus_n3_tests.core.test_4a_start_stop
 python -m nexus_n3_tests.core.test_5_start_and_stop_subject

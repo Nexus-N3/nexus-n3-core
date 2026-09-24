@@ -40,7 +40,7 @@ class StreamingService:
             "sensor stop sequence completed addresses=%s",
             [getattr(sensor, "address", None) for sensor in sensors],
         )
-        emit_to_client("on_stream_stopped", [sensor.address for sensor in sensors])
+        
         diagnostics = await self.adapter_pool.collect_diagnostics()
         if diagnostics:
             emit_to_client(
@@ -51,6 +51,7 @@ class StreamingService:
                     "diagnostics": diagnostics,
                 },
             )
+        emit_to_client("on_stream_stopped", [sensor.address for sensor in sensors])
 
     async def shutdown(self):
         await self.polling_stream_service.stop_all()
