@@ -72,6 +72,16 @@ class StartupGateSensorStats:
 
         observed_delta_us = timestamp - self.startup_last_sensor_timestamp
 
+        if observed_delta_us <= 0:
+            print(
+                "[STARTUP_GATE_OUT_OF_ORDER]",
+                self.address,
+                "observed_delta_us=", observed_delta_us,
+                "timestamp=", timestamp,
+                "last=", self.startup_last_sensor_timestamp,
+                flush=True,
+            )
+
         if observed_delta_us > int(expected_delta_us * 1.5):
             missing_packets = max(int(round(observed_delta_us / expected_delta_us)) - 1, 0)
             print(
@@ -110,9 +120,10 @@ class StartupGateSensorStats:
     @property
     def startup_observed_rate_hz(self) -> float:
         duration = self.startup_duration_seconds
-        if duration <= 0:
+        if duration <= 0 or self.startup_packets_received < 2:
             return 0.0
-        return self.startup_packets_received / duration
+
+        return (self.startup_packets_received - 1) / duration
 
     @property
     def time_to_first_packet_ms(self) -> float | None:

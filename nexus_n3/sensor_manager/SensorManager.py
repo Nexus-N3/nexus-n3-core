@@ -7,6 +7,7 @@ import time
 from collections import defaultdict
 from types import SimpleNamespace
 from typing import List
+from concurrent.futures import Future
 
 from nexus_n3.sensor_manager.types.connections import ConnectionStatus
 from nexus_n3.sensor_manager.utils import utils as utils
@@ -50,6 +51,10 @@ class SensorManager:
         self.sensors: List = []
         self.sensor_meta = {}
         self.routing_table = {}
+
+        self._routing_condition = threading.Condition()
+        self._routing_enabled = True
+        self._active_routed_calls = 0
 
         self.listeners = {
             "on_discover": None,
@@ -240,6 +245,18 @@ class SensorManager:
     # ----------------- Initialization ----------------- #
     def init_sensor_manager(self, sensors_to_init: list):
         """Initialize manager with pre-instantiated sensors and adapters."""
+
+        # Dispose of plugin-host processes belonging to the previous
+        # sensor configuration before replacing those sensor instances.
+        for sensor in list(self.sensors):
+            if hasattr(sensor, "close_host") and callable(getattr(sensor, "close_host")):
+                try:
+                    sensor.close_host()
+                except Exception:
+                    self.logger.exception(
+                        "Failed to close plugin host for sensor %s",
+                        getattr(sensor, "name", type(sensor).__name__),
+                    )
         self.sensors = []
         self.sensor_meta = {}
         self.routing_table = {}
@@ -290,26 +307,60 @@ class SensorManager:
     async def _manager_loop(self):
         while self.running:
             msg = await self.queue.get()
+            completion = msg.get("_completion")
+
             try:
                 if msg.get("message") == "__stop__":
+                    if completion is not None and not completion.done():
+                        completion.set_result(True)
                     break
+
                 try:
                     if msg.get("message") == "__initialize_adapters__":
                         await self.adapter_pool.initialize_all()
                         handled = True
                     else:
+                        if msg.get("message") in (
+                            "stop_all",
+                            "stop_specific_sensors",
+                        ):
+                            await asyncio.to_thread(self._wait_for_routing_to_drain)
+
                         handled = await self.controller.dispatch(msg)
+
                 except Exception as exc:
                     command_name = msg.get("message", "unknown")
                     error_msg = f"{command_name} failed: {type(exc).__name__}: {exc}"
-                    self.logger.exception("Sensor manager command failed: %s", command_name)
-                    self._emit_to_client("on_error", error_msg)
+
+                    self.logger.exception(
+                        "Sensor manager command failed: %s",
+                        command_name,
+                    )
+
+                    if completion is not None and not completion.done():
+                        completion.set_exception(exc)
+                    else:
+                        self._emit_to_client("on_error", error_msg)
+
                     handled = True
+
                 if not handled:
+                    command_name = msg.get("message", "unknown")
                     self.logger.warning(
                         "Unknown sensor manager message: %s",
-                        msg.get("message"),
+                        command_name,
                     )
+
+                    if completion is not None and not completion.done():
+                        completion.set_exception(
+                            RuntimeError(
+                                f"Unknown sensor manager command: {command_name}"
+                            )
+                        )
+
+                elif completion is not None and not completion.done():
+                    completion.set_result(True)
+
             finally:
                 self.queue.task_done()
 
@@ -357,6 +408,7 @@ class SensorManager:
         )
 
     def start_all(self):
+        self._enable_routing()
         self.loop.call_soon_threadsafe(self.queue.put_nowait, {"message": "start_all"})
 
     def reset_session_diagnostics(self):
@@ -366,19 +418,42 @@ class SensorManager:
         )
 
     def start_specific_sensors(self, addresses: List):
+        self._enable_routing()
         self.loop.call_soon_threadsafe(
             self.queue.put_nowait,
             {"message": "start_specific_sensors", "addresses": addresses},
         )
 
     def stop_all(self):
-        self.loop.call_soon_threadsafe(self.queue.put_nowait, {"message": "stop_all"})
+        self._quiesce_routing()
 
-    def stop_specific_sensors(self, addresses: List):
+        completion = Future()
+
         self.loop.call_soon_threadsafe(
             self.queue.put_nowait,
-            {"message": "stop_specific_sensors", "addresses": addresses},
+            {
+                "message": "stop_all",
+                "_completion": completion,
+            },
         )
+
+        return completion
+
+    def stop_specific_sensors(self, addresses: List):
+        self._quiesce_routing()
+
+        completion = Future()
+
+        self.loop.call_soon_threadsafe(
+            self.queue.put_nowait,
+            {
+                "message": "stop_specific_sensors",
+                "addresses": addresses,
+                "_completion": completion,
+            },
+        )
+
+        return completion
 
     async def check_battery_preinit(
         self,
@@ -479,8 +554,34 @@ class SensorManager:
         for target in routes:
             if not self._routes_compatible(payload_outputs, self._routing_inputs_for_sensor(target)):
                 continue
+            if not self._begin_routed_call():
+                return
+
             try:
+                started = time.monotonic()
+
+                print(
+                    "[ROUTE_BEGIN]",
+                    "source=", getattr(source, "name", source),
+                    "target=", getattr(target, "name", target),
+                    "sample_type=", getattr(payload, "sample_type", None),
+                    "address=", getattr(payload, "address", None),
+                    "timestamp=", getattr(payload, "timestamp", None),
+                    flush=True,
+                )
+
                 result = target.consume_input(source_plugin_id, envelope)
+
+                elapsed = time.monotonic() - started
+
+                print(
+                    "[ROUTE_END]",
+                    "source=", getattr(source, "name", source),
+                    "target=", getattr(target, "name", target),
+                    "sample_type=", getattr(payload, "sample_type", None),
+                    "elapsed_ms=", round(elapsed * 1000.0, 3),
+                    flush=True,
+                )
 
                 if asyncio.iscoroutine(result):
                     print(
@@ -508,6 +609,8 @@ class SensorManager:
                     getattr(target, "name", target),
                     exc,
                 )
+            finally:
+                self._end_routed_call()
 
     def _find_sensor_for_payload(self, payload):
         """Resolve the originating sensor instance from a routed payload."""
@@ -517,6 +620,33 @@ class SensorManager:
         if not address:
             return None
         return next((sensor for sensor in self.sensors if getattr(sensor, "address", None) == address), None)
+
+    def _quiesce_routing(self):
+        """Block new routed calls while allowing active calls to drain."""
+        with self._routing_condition:
+            self._routing_enabled = False
+
+    def _wait_for_routing_to_drain(self):
+        with self._routing_condition:
+            while self._active_routed_calls:
+                self._routing_condition.wait()
+
+    def _enable_routing(self):
+        with self._routing_condition:
+            self._routing_enabled = True
+
+    def _begin_routed_call(self):
+        with self._routing_condition:
+            if not self._routing_enabled:
+                return False
+            self._active_routed_calls += 1
+            return True
+
+    def _end_routed_call(self):
+        with self._routing_condition:
+            self._active_routed_calls -= 1
+            if not self._active_routed_calls:
+                self._routing_condition.notify_all()
 
     @staticmethod
     def _routes_compatible(outputs, inputs):

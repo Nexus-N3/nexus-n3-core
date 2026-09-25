@@ -7,6 +7,7 @@ import threading
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, TextIO
+import queue
 
 
 class JsonRpcError(RuntimeError):
@@ -39,20 +40,38 @@ class JsonRpcConnection:
         self._closed = False
         self._pending: dict[str, _PendingRequest] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], Any]] = {}
+        self._ordered_handlers: set[str] = set()
+        self._ordered_queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
+        self._ordered_worker_thread = threading.Thread(
+            target=self._ordered_worker_loop,
+            daemon=True,
+)
         self._reader_thread = threading.Thread(target=self._read_loop, daemon=True)
         if autostart:
             self.start()
 
-    def register_handler(self, method: str, handler: Callable[[dict[str, Any]], Any]) -> None:
+    def register_handler(
+        self,
+        method: str,
+        handler: Callable[[dict[str, Any]], Any],
+        *,
+        ordered: bool = False,
+    ) -> None:
         """Register a callable to service an incoming request method."""
         with self._handler_lock:
             self._handlers[method] = handler
+            if ordered:
+                self._ordered_handlers.add(method)
+            else:
+                self._ordered_handlers.discard(method)
 
     def start(self) -> None:
         """Start the background reader thread once handlers are ready."""
-        if self._reader_thread.is_alive():
-            return
-        self._reader_thread.start()
+        if not self._ordered_worker_thread.is_alive():
+            self._ordered_worker_thread.start()
+
+        if not self._reader_thread.is_alive():
+            self._reader_thread.start()
 
     def request(self, method: str, params: dict[str, Any] | None = None, *, timeout: float = 30.0) -> Any:
         """Send a JSON-RPC request and wait for the result."""
@@ -96,6 +115,7 @@ class JsonRpcConnection:
             return
         self._closed = True
         self._fail_pending(JsonRpcError(f"{self._name} connection closed"))
+        self._ordered_queue.put(None)
 
     def _write_message(self, payload: dict[str, Any]) -> None:
         with self._write_lock:
@@ -119,14 +139,36 @@ class JsonRpcConnection:
         finally:
             self._closed = True
             self._fail_pending(JsonRpcError(f"{self._name} connection closed"))
+            self._ordered_queue.put(None)
 
     def _dispatch_request(self, message: dict[str, Any]) -> None:
+        method = str(message.get("method") or "")
+
+        with self._handler_lock:
+            ordered = method in self._ordered_handlers
+
+        if ordered:
+            self._ordered_queue.put(message)
+            return
+
         worker = threading.Thread(
             target=self._handle_request,
             args=(message,),
             daemon=True,
         )
         worker.start()
+
+    def _ordered_worker_loop(self) -> None:
+        """Process ordered handlers sequentially in reader arrival order."""
+        while True:
+            message = self._ordered_queue.get()
+            try:
+                if message is None:
+                    return
+
+                self._handle_request(message)
+            finally:
+                self._ordered_queue.task_done()
 
     def _handle_request(self, message: dict[str, Any]) -> None:
         method = str(message.get("method") or "")

@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import textwrap
+import threading
 import zipfile
 from pathlib import Path
 
@@ -63,6 +64,43 @@ class NoopAdapter:
         return None
 
 
+def _routing_sample():
+    return {
+        "timestamp": 1,
+        "sensor_type": "Source Sensor",
+        "address": "source-1",
+        "location": "CHEST",
+        "sampling_rate": 60,
+        "quat": (1.0, 0.0, 0.0, 0.0),
+        "accel": (0.1, 0.2, 0.3),
+        "gyro": (1.1, 1.2, 1.3),
+        "sample_type": "imu",
+    }
+
+
+def _create_routing_manager(monkeypatch, consumer=None):
+    monkeypatch.setattr(
+        "nexus_n3.sensor_manager.utils.utils.DBUS_AVAILABLE",
+        False,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "nexus_n3.sensor_manager.adapter_pool.resolve_adapter_class",
+        lambda adapter_type, ble_runtime_config=None: NoopAdapter,
+    )
+    source = SourceSensor()
+    source.address = "source-1"
+    source.set_location("CHEST")
+    source.set_connection_status(ConnectionStatus.CONNECTED)
+    consumer = consumer or BuiltinConsumerSensor()
+    consumer.address = "consumer-1"
+    consumer.set_location("CHEST")
+    consumer.set_connection_status(ConnectionStatus.CONNECTED)
+    manager = SensorManager()
+    manager.init_sensor_manager([source, consumer])
+    return manager, consumer
+
+
 def test_phase5_routes_builtin_sensor_output_to_builtin_consumer(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr("nexus_n3.sensor_manager.utils.utils.DBUS_AVAILABLE", False, raising=False)
     monkeypatch.setattr(
@@ -105,6 +143,143 @@ def test_phase5_routes_builtin_sensor_output_to_builtin_consumer(monkeypatch: py
     assert envelope.payload.sample_type == "imu"
 
     manager.stop_manager()
+
+
+def test_phase5_stop_all_blocks_new_sensor_routing(monkeypatch: pytest.MonkeyPatch):
+    manager, consumer = _create_routing_manager(monkeypatch)
+
+    async def dispatch(_message):
+        return True
+
+    manager.controller.dispatch = dispatch
+
+    try:
+        manager.stop_all().result(timeout=2)
+        manager._emit_to_client("on_data", _routing_sample())
+
+        assert consumer.consumed == []
+    finally:
+        manager.stop_manager()
+
+
+def test_phase5_stop_all_waits_for_active_routing(monkeypatch: pytest.MonkeyPatch):
+    routing_started = threading.Event()
+    release_routing = threading.Event()
+    stop_returned = threading.Event()
+    physical_stop_started = threading.Event()
+    stop_result = {}
+
+    class BlockingConsumer(BuiltinConsumerSensor):
+        def consume_input(self, source_plugin_id, payload):
+            routing_started.set()
+            assert release_routing.wait(timeout=2)
+            return super().consume_input(source_plugin_id, payload)
+
+    manager, consumer = _create_routing_manager(monkeypatch, BlockingConsumer())
+
+    async def dispatch(message):
+        if message.get("message") == "stop_all":
+            physical_stop_started.set()
+        return True
+
+    def stop_all():
+        stop_result["completion"] = manager.stop_all()
+        stop_returned.set()
+
+    manager.controller.dispatch = dispatch
+    routing_thread = threading.Thread(
+        target=manager._emit_to_client,
+        args=("on_data", _routing_sample()),
+    )
+    stop_thread = threading.Thread(target=stop_all)
+
+    try:
+        routing_thread.start()
+        assert routing_started.wait(timeout=2)
+
+        stop_thread.start()
+        assert stop_returned.wait(timeout=0.5)
+        assert not stop_result["completion"].done()
+        assert not physical_stop_started.is_set()
+
+        release_routing.set()
+        routing_thread.join(timeout=2)
+        stop_thread.join(timeout=2)
+
+        stop_result["completion"].result(timeout=2)
+        assert not routing_thread.is_alive()
+        assert not stop_thread.is_alive()
+        assert physical_stop_started.is_set()
+        assert len(consumer.consumed) == 1
+    finally:
+        release_routing.set()
+        routing_thread.join(timeout=2)
+        stop_thread.join(timeout=2)
+        manager.stop_manager()
+
+
+def test_phase5_stop_specific_sensors_quiesces_routing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    manager, consumer = _create_routing_manager(monkeypatch)
+    dispatched = {}
+
+    async def dispatch(message):
+        dispatched.update(message)
+        return True
+
+    manager.controller.dispatch = dispatch
+
+    try:
+        manager.stop_specific_sensors(["consumer-1"]).result(timeout=2)
+        manager._emit_to_client("on_data", _routing_sample())
+
+        assert consumer.consumed == []
+        assert dispatched["message"] == "stop_specific_sensors"
+        assert dispatched["addresses"] == ["consumer-1"]
+    finally:
+        manager.stop_manager()
+
+
+@pytest.mark.parametrize(
+    ("start_method", "args", "command"),
+    [
+        ("start_all", (), "start_all"),
+        (
+            "start_specific_sensors",
+            (["consumer-1"],),
+            "start_specific_sensors",
+        ),
+    ],
+)
+def test_phase5_start_reenables_sensor_routing(
+    monkeypatch: pytest.MonkeyPatch,
+    start_method,
+    args,
+    command,
+):
+    manager, consumer = _create_routing_manager(monkeypatch)
+    start_dispatched = threading.Event()
+
+    async def dispatch(message):
+        if message.get("message") == command:
+            start_dispatched.set()
+        return True
+
+    manager.controller.dispatch = dispatch
+
+    try:
+        manager.stop_all().result(timeout=2)
+        manager._emit_to_client("on_data", _routing_sample())
+        assert consumer.consumed == []
+
+        getattr(manager, start_method)(*args)
+        assert start_dispatched.wait(timeout=2)
+
+        manager._emit_to_client("on_data", _routing_sample())
+        assert len(consumer.consumed) == 1
+    finally:
+        manager.stop_manager()
 
 
 def test_phase5_routes_builtin_sensor_output_to_host_backed_consumer(

@@ -37,8 +37,12 @@ class HostAdapterProxy:
         self._connection = connection
         self._callbacks: dict[str, Any] = {}
         self._callbacks_by_uuid: dict[str, str] = {}
-        self._connection.register_handler("adapter.notification", self._handle_notification)
-        self._notification_lock = threading.Lock()
+        self._connection.register_handler(
+            "adapter.notification",
+            self._handle_notification,
+            ordered=True,
+        )
+        #self._notification_lock = threading.Lock()
         self._notification_context = threading.local()
 
     async def read(self, transport_client, uuid):
@@ -86,16 +90,16 @@ class HostAdapterProxy:
             self._callbacks.pop(callback_id, None)
 
     def _handle_notification(self, params: dict[str, Any]) -> dict[str, Any]:
-        with self._notification_lock:
-            callback = self._callbacks[str(params["callback_id"])]
-            sender = params.get("sender")
-            data = base64.b64decode(params["data_b64"].encode("ascii"))
-            self._notification_context.timing = dict(params.get("timing") or {})
-            try:
-                result = callback(sender, data)
-                return {"awaited": bool(_run_maybe_async(result) is not None)}
-            finally:
-                self._notification_context.timing = None
+        callback = self._callbacks[str(params["callback_id"])]
+        sender = params.get("sender")
+        data = base64.b64decode(params["data_b64"].encode("ascii"))
+        self._notification_context.timing = dict(params.get("timing") or {})
+
+        try:
+            result = callback(sender, data)
+            return {"awaited": bool(_run_maybe_async(result) is not None)}
+        finally:
+            self._notification_context.timing = None
 
     def current_notification_timing(self) -> dict[str, Any]:
         return dict(getattr(self._notification_context, "timing", None) or {})

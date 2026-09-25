@@ -107,11 +107,14 @@ class GatewaySerialClient:
         self.write_lock = threading.Lock()
         self.state_lock = threading.Lock()
         self.pending_requests: dict[str, queue.Queue] = {}
+        self._request_id_lock = threading.Lock()
+        self._request_id_counter = 0
         self.event_handlers: dict[str, list[Callable[[Any], None]]] = defaultdict(list)
         self.disconnected_addresses: set[str] = set()
         self.notification_drop_count: int = 0
         self.gateway_transport_stats: dict[str, Any] = {}
         self.gateway_ble_rx_stats: dict[str, dict[str, Any]] = {}
+        self.gateway_order_trace: list[dict[str, Any]] = []
         self.stream_checksum_failures: int = 0
         self.stream_resync_drop_bytes: int = 0
         self.stream_resync_events: int = 0
@@ -187,7 +190,11 @@ class GatewaySerialClient:
         self.active_serial_port = None
 
     def request_id(self, prefix: str) -> str:
-        return f"{prefix}_{int(time.time() * 1000)}"
+        with self._request_id_lock:
+            self._request_id_counter += 1
+            counter = self._request_id_counter
+
+        return f"{prefix}_{counter}"
 
     def register_event_handler(self, event_type: str, callback: Callable[[Any], None]) -> None:
         """Register a callback for a gateway JSON event type or parsed stream frame."""
@@ -655,6 +662,7 @@ class GatewaySerialClient:
             saw_ble_stats_complete = False
             self.gateway_transport_stats = {}
             self.gateway_ble_rx_stats = {}
+            self.gateway_order_trace = []
             try:
                 self.send({"type": "get_status", "request_id": request_id})
                 deadline = time.time() + timeout_s
@@ -671,6 +679,7 @@ class GatewaySerialClient:
                         return {
                             "transport": dict(self.gateway_transport_stats),
                             "ble_rx": dict(self.gateway_ble_rx_stats),
+                            "order_trace": list(self.gateway_order_trace),
                         }
                 raise TimeoutError(
                     "Timed out waiting for complete status snapshot: "
@@ -710,17 +719,35 @@ class GatewaySerialClient:
                 time.sleep(0.1)
 
     def _route_json(self, msg: dict[str, Any]) -> None:
+        msg_type = str(msg.get("type", ""))
+
+        if msg_type == "gatt_debug":
+            logger.info(
+                "Gateway GATT debug phase=%s address=%s uuid=%s "
+                "handle=%s mtu=%s data_len=%s without_response=%s rc=%s",
+                msg.get("phase"),
+                msg.get("address"),
+                msg.get("characteristic_uuid"),
+                msg.get("handle"),
+                msg.get("mtu"),
+                msg.get("data_len"),
+                msg.get("without_response"),
+                msg.get("rc"),
+            )
+
         request_id = msg.get("request_id")
+
         if request_id and request_id in self.pending_requests:
             self.pending_requests[request_id].put(msg)
-        elif msg.get("type") in {
+        elif msg_type in {
             "gateway_transport_stats",
             "ble_notification_rx_stats",
             "ble_notification_rx_stats_complete",
         }:
             for pending_queue in self.pending_requests.values():
                 pending_queue.put(msg)
-        self._dispatch_event(str(msg.get("type", "")), msg)
+
+        self._dispatch_event(msg_type, msg)
 
     def _dispatch_event(self, event_type: str, payload: Any) -> None:
         for callback in list(self.event_handlers.get(event_type, [])):
@@ -761,12 +788,34 @@ class GatewaySerialClient:
                     self._record_partial_block("frame")
                     return None
                 payload = bytes(self.buf[13 : 13 + payload_len])
+                ##
                 checksum = self.buf[13 + payload_len]
                 computed = sum(self.buf[2 : 13 + payload_len]) & 0xFF
+
                 if checksum != computed:
                     self.stream_checksum_failures += 1
+
+                    after_magic = self.buf[1:]
+                    next_json = after_magic.find(b"{")
+                    next_frame = after_magic.find(STREAM_FRAME_MAGIC)
+
+                    logger.warning(
+                        "GATEWAY PARSER CHECKSUM FAILURE "
+                        "sensor_id=%s payload_len=%s total_len=%s "
+                        "buffer_len=%s next_json=%s next_frame=%s "
+                        "head_hex=%s",
+                        sensor_id,
+                        payload_len,
+                        total_len,
+                        len(self.buf),
+                        next_json,
+                        next_frame,
+                        bytes(self.buf[:80]).hex(),
+                    )
+
                     self._drop_and_resync(1)
                     continue
+                ## 
                 del self.buf[:total_len]
                 self._clear_partial_block()
                 return ("stream_frame", StreamFrame(sensor_id, gateway_timestamp_us, payload))
@@ -800,6 +849,9 @@ class GatewaySerialClient:
         if msg_type == "gateway_transport_stats":
             self.gateway_transport_stats = dict(msg)
             return
+        if msg_type == "gateway_order_trace":
+            self.gateway_order_trace.append(dict(msg))
+            return
         if msg_type == "ble_notification_rx_stats":
             address = self._normalize_address(str(msg.get("address", "")))
             if address:
@@ -809,6 +861,12 @@ class GatewaySerialClient:
 
     def _register_request(self, request_id: str) -> queue.Queue:
         request_queue: queue.Queue = queue.Queue()
+
+        if request_id in self.pending_requests:
+            raise RuntimeError(
+                f"Duplicate gateway request_id: {request_id}"
+            )
+
         self.pending_requests[request_id] = request_queue
         return request_queue
 

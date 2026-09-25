@@ -8,10 +8,23 @@ from nexus_n3_tests.core.test_4f_movesense_core_hr_integration_30s import (
 )
 
 
+class DiagnosticClient(Client):
+    def handle_event(self, event):
+        if event.get("type") == "sensor_diagnostics":
+            print(
+                "SENSOR DIAGNOSTICS:",
+                event.get("payload", {}),
+                flush=True,
+            )
+
+        super().handle_event(event)
+
+
 DEFAULT_SUBJECTS = [
     {
         "subject_id": "subject1",
         "sensors": [
+            
             {
                 "local_name": "Movella DOT",
                 "number_of": 2,
@@ -35,6 +48,8 @@ DEFAULT_SUBJECTS = [
                 "compute_algorithm": {},
                 "locations": ["CHEST"],
             },
+            
+      
         ],
     }
 ]
@@ -63,7 +78,7 @@ if __name__ == "__main__":
     if args.timeout_seconds <= args.stream_seconds:
         raise SystemExit("--timeout-seconds must be greater than --stream-seconds")
 
-    client = Client(
+    client = DiagnosticClient(
         cmd_pub_addr=args.cmd_pub_addr,
         evt_sub_addr=args.evt_sub_addr,
         stream_seconds=args.stream_seconds,

@@ -302,7 +302,7 @@ class Core:
     def _is_sensor_startup_stable(self, stats: StartupGateSensorStats) -> bool:
         if stats.first_packet_time is None:
             return False
-        
+
         required_packets = self._required_startup_packets(stats)
 
         if stats.startup_packets_received < required_packets:
@@ -350,90 +350,170 @@ class Core:
         return float(stats.expected_rate_hz) * float(self._startup_min_rate_ratio)
 
     def _evaluate_startup_gate(self, token: int) -> None:
-        settle_deadline = time.monotonic() + self._startup_post_connect_settle_seconds
+        settle_deadline = (
+            time.monotonic()
+            + self._startup_post_connect_settle_seconds
+        )
+
         while time.monotonic() < settle_deadline:
             with self._startup_lock:
                 if token != self._startup_gate_token:
                     return
                 if self.stream_phase != "warming_up":
                     return
+
             time.sleep(0.1)
 
-        deadline = time.monotonic() + self._startup_stability_window_seconds
-        while time.monotonic() < deadline:
-            with self._startup_lock:
-                if token != self._startup_gate_token:
-                    return
-                if self.stream_phase != "warming_up":
-                    return
-            time.sleep(0.1)
+        deadline = (
+            time.monotonic()
+            + self._startup_stability_window_seconds
+        )
 
         coordinated_prepare = False
-        with self._startup_lock:
-            if token != self._startup_gate_token or self.stream_phase != "warming_up":
-                return
-            stable = bool(self._startup_addresses) and all(
-                self._is_sensor_startup_stable(self._startup_stats_by_address[address])
-                for address in self._startup_addresses
-                if address in self._startup_stats_by_address
-            )
-            if stable:
-                if self._official_start_mode == "coordinated":
-                    self.stream_phase = "preparing_official"
-                    coordinated_prepare = True
-                else:
-                    self.stream_phase = "activating_official"
-                    self._activate_official_streaming()
-                    payload = self._startup_status_payload(phase="official_streaming")
-                    self._emit_startup_event(mt.EVT_STREAM_OFFICIAL_STARTED, payload)
-                    self.stream_phase = "official_streaming"
-                    self._official_outputs_active = True
+
+        while time.monotonic() < deadline:
+            with self._startup_lock:
+                if (
+                    token != self._startup_gate_token
+                    or self.stream_phase != "warming_up"
+                ):
                     return
-                # Persistence preflight runs below without holding the startup
-                # lock, so physical sample callbacks remain non-blocking.
-            reason = "startup gate stability window elapsed before all sensors became stable"
-            if not stable and self._startup_attempt < self._startup_max_attempts:
-                self.stream_phase = "retrying_startup"
-                self._startup_retry_pending = True
-                payload = self._startup_status_payload(phase=self.stream_phase, reason=reason)
-                self._emit_startup_event(mt.EVT_STREAM_STARTUP_RETRY, payload)
-                self.sensor_orch.stop_specific(self._startup_addresses)
-                return
-            if not stable:
-                self.stream_phase = "startup_failed"
-                self._startup_retry_pending = False
-                self._startup_last_failure_reason = reason
-                payload = self._startup_status_payload(phase=self.stream_phase, reason=reason)
-                self._emit_startup_event(mt.EVT_STREAM_STARTUP_FAILED, payload)
-                self.sensor_orch.stop_specific(self._startup_addresses)
-                return
+
+                stable = bool(self._startup_addresses) and all(
+                    self._is_sensor_startup_stable(
+                        self._startup_stats_by_address[address]
+                    )
+                    for address in self._startup_addresses
+                    if address in self._startup_stats_by_address
+                )
+
+                if stable:
+                    if self._official_start_mode == "coordinated":
+                        self.stream_phase = "preparing_official"
+                        coordinated_prepare = True
+                    else:
+                        self.stream_phase = "activating_official"
+
+                        self._activate_official_streaming()
+
+                        payload = self._startup_status_payload(
+                            phase="official_streaming"
+                        )
+
+                        self._emit_startup_event(
+                            mt.EVT_STREAM_OFFICIAL_STARTED,
+                            payload,
+                        )
+
+                        self.stream_phase = "official_streaming"
+                        self._official_outputs_active = True
+                        return
+
+                    # Persistence preflight runs below without holding the startup
+                    # lock, so physical sample callbacks remain non-blocking.
+                    break
+
+            time.sleep(0.1)
 
         if not coordinated_prepare:
-            return
-        try:
-            self._prepare_official_persistence()
-        except Exception as exc:
-            reason = f"official persistence preparation failed: {exc}"
             with self._startup_lock:
-                if token != self._startup_gate_token or self.stream_phase != "preparing_official":
+                if (
+                    token != self._startup_gate_token
+                    or self.stream_phase != "warming_up"
+                ):
                     return
+
+                reason = (
+                    "startup gate timeout elapsed before all sensors "
+                    "became stable"
+                )
+
+                if self._startup_attempt < self._startup_max_attempts:
+                    self.stream_phase = "retrying_startup"
+                    self._startup_retry_pending = True
+
+                    payload = self._startup_status_payload(
+                        phase=self.stream_phase,
+                        reason=reason,
+                    )
+
+                    self._emit_startup_event(
+                        mt.EVT_STREAM_STARTUP_RETRY,
+                        payload,
+                    )
+
+                    self.sensor_orch.stop_specific(
+                        self._startup_addresses
+                    )
+                    return
+
                 self.stream_phase = "startup_failed"
                 self._startup_retry_pending = False
                 self._startup_last_failure_reason = reason
+
                 payload = self._startup_status_payload(
                     phase=self.stream_phase,
                     reason=reason,
                 )
-            self._emit_startup_event(mt.EVT_STREAM_STARTUP_FAILED, payload)
-            self.sensor_orch.stop_specific(self._startup_addresses)
+
+                self._emit_startup_event(
+                    mt.EVT_STREAM_STARTUP_FAILED,
+                    payload,
+                )
+
+                self.sensor_orch.stop_specific(
+                    self._startup_addresses
+                )
+                return
+
+        try:
+            self._prepare_official_persistence()
+
+        except Exception as exc:
+            reason = f"official persistence preparation failed: {exc}"
+
+            with self._startup_lock:
+                if (
+                    token != self._startup_gate_token
+                    or self.stream_phase != "preparing_official"
+                ):
+                    return
+
+                self.stream_phase = "startup_failed"
+                self._startup_retry_pending = False
+                self._startup_last_failure_reason = reason
+
+                payload = self._startup_status_payload(
+                    phase=self.stream_phase,
+                    reason=reason,
+                )
+
+            self._emit_startup_event(
+                mt.EVT_STREAM_STARTUP_FAILED,
+                payload,
+            )
+
+            self.sensor_orch.stop_specific(
+                self._startup_addresses
+            )
             return
 
         with self._startup_lock:
-            if token != self._startup_gate_token or self.stream_phase != "preparing_official":
+            if (
+                token != self._startup_gate_token
+                or self.stream_phase != "preparing_official"
+            ):
                 return
+
             self.stream_phase = "ready_for_official"
-            payload = self._startup_status_payload(phase=self.stream_phase)
-        self._emit_startup_event(mt.EVT_STREAM_READY_FOR_OFFICIAL, payload)
+            payload = self._startup_status_payload(
+                phase=self.stream_phase
+            )
+
+        self._emit_startup_event(
+            mt.EVT_STREAM_READY_FOR_OFFICIAL,
+            payload,
+        )
 
     def _schedule_startup_retry(self, token: int) -> None:
         time.sleep(self._startup_retry_delay_seconds)
@@ -693,7 +773,7 @@ class Core:
 
     def _init_sensor_manager(self):
         """Initialize the SensorManager with all sensors from all subjects."""
-        # this is the sensor object on subject. 
+        # this is the sensor object on subject.
         all_sensors = [entry for sub in self.subjects for entry in sub.sensors]
         self.sensor_orch.init_sensor_manager(all_sensors)
 
@@ -1020,7 +1100,7 @@ class Core:
     def stop_stream(self, stop_context=None):
         """Stop streaming data for all subjects and print sample counts."""
         self._stop_stream_impl(self.subjects, stop_specific=False, stop_context=stop_context)
-    
+
     def stop_stream_for_subjects(self, subject_ids, stop_context=None):
         """Stop streaming sensors for specific subjects."""
         subjects = self._get_subjects_by_ids(subject_ids)
@@ -1045,20 +1125,38 @@ class Core:
                 self.stream_phase = "stopping"
             self._startup_gate_token += 1
         try:
+            addresses = [
+                entry["sensor"].address
+                for sub in subjects
+                for entry in sub.sensors
+                if entry["sensor"].address
+            ]
+
+            stop_completion = None
+
             if stop_specific:
                 self.active_subject_ids = subject_ids
-                addresses = [
-                    entry["sensor"].address
-                    for sub in subjects
-                    for entry in sub.sensors
-                    if entry["sensor"].address
-                ]
-                if addresses:
-                    self.sensor_orch.stop_specific(addresses)
-            else:
-                self.sensor_orch.stop_all()
 
-            # Allow in-flight sample/compute callbacks to drain before paths are cleared.
+                if addresses:
+                    stop_completion = self.sensor_orch.stop_specific(addresses)
+            else:
+                stop_completion = self.sensor_orch.stop_all()
+
+            # Do not finalize the session until the SensorManager has actually
+            # completed the physical/plugin stop sequence.
+            stop_error = None
+
+            if stop_completion is not None:
+                try:
+                    stop_completion.result()
+                except Exception as exc:
+                    stop_error = exc
+                    logger.exception(
+                        "Physical sensor stop failed; finalizing captured session data"
+                    )
+
+            # Now allow any samples/events already in flight after physical stop
+            # to reach persistence before paths are cleared.
             time.sleep(2)
             self._flush_pending_samples(subjects)
             self.storage.file_manager.flush()
@@ -1095,11 +1193,30 @@ class Core:
                         #print(f"{sub.subject_id} {entry['meta']['location']}: {count} samples")
                 self.storage.file_manager.stop_stream(sub)
                 sub.is_streaming = False
-            status = "error" if raw_write_failures else "ok"
-            reason = None
+
+            physical_stop_complete = stop_error is None
+
+            status = "error" if stop_error or raw_write_failures else "ok"
+
+            reasons = []
+
+            if stop_error:
+                reasons.append(
+                    "physical sensor stop failed: "
+                    f"{type(stop_error).__name__}: {stop_error}"
+                )
+
             if raw_write_failures:
-                failed_subjects = ", ".join(sorted(raw_write_failures.keys()))
-                reason = f"raw write failures recorded for subject(s): {failed_subjects}"
+                failed_subjects = ", ".join(
+                    sorted(raw_write_failures.keys())
+                )
+                reasons.append(
+                    "raw write failures recorded for subject(s): "
+                    f"{failed_subjects}"
+                )
+
+            reason = "; ".join(reasons) or None
+
             all_streams_stopped = not self.has_active_streams()
             drain_payload = self._build_stream_drained_payload(
                 stop_context,
@@ -1109,12 +1226,23 @@ class Core:
                 reason=reason,
                 session_info=self.storage.file_manager.describe_session(self.session_timestamp),
             )
+
+            drain_payload["physical_stop_complete"] = physical_stop_complete
+            drain_payload["partial"] = bool(
+                stop_error or raw_write_failures
+            )
             diagnostics_updates = {
                 "official_stream": (
                     "passed"
-                    if getattr(self, "_official_stream_origin_monotonic_ns", None) is not None
+                    if getattr(
+                        self,
+                        "_official_stream_origin_monotonic_ns",
+                        None,
+                    ) is not None
                     else "failed"
                 ),
+                "physical_stop_complete": physical_stop_complete,
+                "partial": bool(stop_error or raw_write_failures),
                 "raw_write_failures": raw_write_failures,
                 "partial_markers": partial_markers,
                 "stop_summary": {
@@ -1123,6 +1251,8 @@ class Core:
                     "status": status,
                     "reason": reason,
                     "all_local_streams_stopped": all_streams_stopped,
+                    "physical_stop_complete": physical_stop_complete,
+                    "partial": bool(stop_error or raw_write_failures),
                 },
                 "drain_summary": drain_payload,
             }
@@ -1159,11 +1289,26 @@ class Core:
                     )
                 else:
                     archive_info = self._finalize_session_archive()
-            if raw_write_failures:
-                archive_info = archive_info or self.storage.file_manager.describe_session(self.session_timestamp)
+            if stop_error or raw_write_failures:
+                archive_info = (
+                    archive_info
+                    or self.storage.file_manager.describe_session(
+                        self.session_timestamp
+                    )
+                )
+
                 archive_info["partial"] = True
-                archive_info["raw_write_failures"] = raw_write_failures
-                archive_info["partial_markers"] = partial_markers
+                archive_info["physical_stop_complete"] = (
+                    physical_stop_complete
+                )
+
+                if raw_write_failures:
+                    archive_info["raw_write_failures"] = (
+                        raw_write_failures
+                    )
+                    archive_info["partial_markers"] = (
+                        partial_markers
+                    )
             self._set_stream_stop_finalization_pending(False)
             drain_payload.update(
                 archive_info or self.storage.file_manager.describe_session(self.session_timestamp)
@@ -1347,7 +1492,7 @@ class Core:
                         "payload": f"Not enough devices found: {missing}"
                     })
                 return
-        
+
         """Callback invoked when sensors are discovered."""
         discovered = []
 
@@ -1424,7 +1569,7 @@ class Core:
                     },
                 }
             )
-        
+
         self.active_subject_ids = None # reset the subject ids
         self.pending_correlation_id = None
 
@@ -1458,7 +1603,6 @@ class Core:
                 "starting",
                 "warming_up",
                 "retrying_startup",
-                "official_streaming",
             } and sampling_rate is not None:
                 self._startup_stats_by_address[address].record_sample(payload, time.monotonic())
             official_streaming = (
@@ -1495,7 +1639,7 @@ class Core:
 
     # this is the callback that is registered with the compute manager
     def _on_intermediate_result(self, result: dict):
-        
+
         """
         Called when an intermediate result is ready (per-sensor averages).
         Adds location metadata for each sensor and emits to the system event bus.
@@ -1679,7 +1823,7 @@ class Core:
             ]
         else:
             subjects_to_process = self.subjects  # all subjects
-        
+
         streaming_sensors = []
         for sub in subjects_to_process:
             sensor_addresses = [
@@ -1691,7 +1835,7 @@ class Core:
                 "subject_id": sub.subject_id,
                 "streaming_sensors": sensor_addresses
             })
-            
+
         logger.info(f"started streaming for sensors {sensor_addresses}")
         if self.system_event_bus:
             self.system_event_bus.emit(
@@ -1730,7 +1874,7 @@ class Core:
             ).start()
         self.active_subject_ids = None # reset the subject ids
         self.pending_correlation_id = None
-    
+
     def _on_stream_stopped(self, addresses):
         """Callback invoked when streaming is started"""
         # Determine which subjects to process
@@ -1740,7 +1884,7 @@ class Core:
             ]
         else:
             subjects_to_process = self.subjects  # all subjects
-        
+
         streaming_sensors = []
         for sub in subjects_to_process:
             sensor_addresses = [
@@ -1752,7 +1896,7 @@ class Core:
                 "subject_id": sub.subject_id,
                 "discovered_sensors": sensor_addresses
             })
-            
+
         #logger.info(f"stopped streaming for sensors {sensor_addresses}")
         if self.system_event_bus:
             self.system_event_bus.emit(

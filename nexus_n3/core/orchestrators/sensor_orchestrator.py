@@ -68,10 +68,10 @@ class SensorOrchestrator:
         self.manager.start_specific_sensors(addresses)
 
     def stop_all(self):
-        self.manager.stop_all()
+        return self.manager.stop_all()
 
     def stop_specific(self, addresses):
-        self.manager.stop_specific_sensors(addresses)
+        return self.manager.stop_specific_sensors(addresses)
 
     def identify(self, address):
         self.manager.identify(address)

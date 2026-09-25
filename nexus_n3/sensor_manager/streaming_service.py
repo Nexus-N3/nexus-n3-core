@@ -57,17 +57,67 @@ class StreamingService:
         await self.polling_stream_service.stop_all()
 
     async def _start_sensor_stream(self, sensor, adapter):
-        pipeline_diagnostics.mark_stream_start_command(
-            getattr(sensor, "address", None),
-            location=getattr(sensor, "location", None),
+        address = getattr(sensor, "address", None)
+        sensor_name = getattr(sensor, "name", type(sensor).__name__)
+        location = getattr(sensor, "location", None)
+        started_ns = time.monotonic_ns()
+
+        self.logger.info(
+            "sensor start starting address=%s name=%s location=%s adapter=%s",
+            address,
+            sensor_name,
+            location,
+            type(adapter).__name__,
         )
-        if hasattr(sensor, "start_stream") and callable(getattr(sensor, "start_stream")):
-            await sensor.start_stream(adapter)
-            return
-        if hasattr(sensor, "request_sample") and callable(getattr(sensor, "request_sample")):
-            await self.polling_stream_service.start(sensor, adapter)
-            return
-        self.logger.warning("Sensor %s does not implement streaming hooks", sensor.name)
+
+        pipeline_diagnostics.mark_stream_start_command(
+            address,
+            location=location,
+        )
+
+        try:
+            if hasattr(sensor, "start_stream") and callable(
+                getattr(sensor, "start_stream")
+            ):
+                await sensor.start_stream(adapter)
+
+            elif hasattr(sensor, "request_sample") and callable(
+                getattr(sensor, "request_sample")
+            ):
+                await self.polling_stream_service.start(
+                    sensor,
+                    adapter,
+                )
+
+            else:
+                self.logger.warning(
+                    "Sensor %s does not implement streaming hooks",
+                    sensor_name,
+                )
+
+        except Exception as exc:
+            self.logger.error(
+                "sensor start failed address=%s name=%s "
+                "location=%s duration_ms=%.3f error=%s: %s",
+                address,
+                sensor_name,
+                location,
+                (time.monotonic_ns() - started_ns)
+                / 1_000_000.0,
+                type(exc).__name__,
+                exc,
+            )
+            raise
+
+        self.logger.info(
+            "sensor start completed address=%s name=%s "
+            "location=%s duration_ms=%.3f",
+            address,
+            sensor_name,
+            location,
+            (time.monotonic_ns() - started_ns)
+            / 1_000_000.0,
+        )
 
     async def _stop_sensor_stream(self, sensor, adapter):
         address = getattr(sensor, "address", None)

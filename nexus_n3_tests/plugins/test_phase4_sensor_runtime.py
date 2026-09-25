@@ -254,7 +254,14 @@ class FakeBLEAdapter:
         transport_client.is_connected = False
         return True
 
-    async def set_notify_callback(self, transport_client, uuid, callback_func):
+    async def set_notify_callback(
+        self,
+        transport_client,
+        uuid,
+        callback_func,
+        *,
+        indicate: bool = False,
+    ):
         transport_client.notify_callbacks[str(uuid)] = callback_func
         return True
 

@@ -503,6 +503,7 @@ class GatewayBLEAdapter:
             },
             "transport": dict(self.gateway_client.gateway_transport_stats),
             "ble_rx": dict(self.gateway_client.gateway_ble_rx_stats),
+            "order_trace": list(self.gateway_client.gateway_order_trace),
             "sensors": sensors,
         }
         if extra:
