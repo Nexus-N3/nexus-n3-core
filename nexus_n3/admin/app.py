@@ -65,7 +65,8 @@ class AdminState:
         bridge_scopes: dict[str, str] | None = None,
         node_status_provider: Callable[[], list[dict]] | None = None,
         server_status_provider: Callable[[], dict] | None = None,
-        restart_handler: Callable[[str | None], None] | None = None,
+        restart_handler: Callable[[str | None, str | None], None] | None = None,
+        idle_provider: Callable[[], bool] | None = None,
         usb_disk_action_handler: Callable[[str], bool] | None = None,
         azure_bridge_control_handler: Callable[[bool], None] | None = None,
     ):
@@ -79,6 +80,7 @@ class AdminState:
         self.node_status_provider = node_status_provider
         self.server_status_provider = server_status_provider
         self.restart_handler = restart_handler
+        self.idle_provider = idle_provider
         self.usb_disk_action_handler = usb_disk_action_handler
         self.azure_bridge_control_handler = azure_bridge_control_handler
         self.start_time = time.monotonic()
@@ -133,6 +135,10 @@ class AdminState:
     def can_restart(self) -> bool:
         """Return True if restart is available."""
         return self.restart_handler is not None
+
+    def is_idle(self) -> bool:
+        """Return whether changing the Core role is currently safe."""
+        return self.idle_provider() if self.idle_provider else False
 
     def can_manage_usb_disk(self) -> bool:
         """Return True if manual USB mount/unmount actions are available."""
@@ -607,9 +613,24 @@ def create_app(state: AdminState) -> FastAPI:
         """Trigger a restart via the registered handler."""
         if not state.restart_handler:
             raise HTTPException(status_code=400, detail="Restart unavailable")
-        state.restart_handler(state.bridge_name)
+        state.restart_handler(state.bridge_name, None)
         return RedirectResponse(url="/", status_code=303)
 
+
+    @app.put("/api/server/role")
+    def switch_role(payload: dict):
+        """Persist a selectable local role and restart through the safe-stop path."""
+        role = payload.get("role") if isinstance(payload, dict) else None
+        if role not in {"standalone", "master"}:
+            raise HTTPException(status_code=400, detail="Role must be standalone or master")
+        if role == state.role:
+            return {"role": state.role, "restarting": False}
+        if not state.restart_handler:
+            raise HTTPException(status_code=400, detail="Restart unavailable")
+        if not state.is_idle():
+            raise HTTPException(status_code=409, detail="Core must be idle before changing mode")
+        state.restart_handler(state.bridge_name, role)
+        return {"role": role, "restarting": True}
     @app.post("/server/usb")
     def manage_usb_from_dashboard(action: str = Form(...)):
         """Manually mount or unmount the USB disk from the dashboard."""
@@ -633,7 +654,7 @@ def create_app(state: AdminState) -> FastAPI:
         normalized = None if bridge == "__none__" else bridge
         if normalized is not None and normalized not in state.available_bridges:
             raise HTTPException(status_code=400, detail="Unknown bridge")
-        state.restart_handler(normalized)
+        state.restart_handler(normalized, None)
         return RedirectResponse(url="/", status_code=303)
 
     @app.post("/plugins/install")

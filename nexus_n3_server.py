@@ -25,6 +25,7 @@ from urllib.error import URLError, HTTPError
 from nexus_n3.bridge.bridge_registry import create_bridge, discover_bridges
 from nexus_n3.core.pipeline_diagnostics import pipeline_diagnostics
 from nexus_n3.core.runtime_env import load_runtime_env
+from nexus_n3.core.role_state import resolve_role, save_role_override
 from nexus_n3.core.version import get_core_version
 from nexus_n3.gateway.server import Server
 from nexus_n3.gateway.gateways.gateway_registry import discover_gateways
@@ -507,21 +508,24 @@ async def run_async_server(
         from nexus_n3.admin.app import AdminState, create_app
         import uvicorn
 
-        def _restart(bridge_name: str | None = None):
+        def _restart(bridge_name: str | None = None, target_role: str | None = None):
             nonlocal restart_argv
+            if target_role:
+                save_role_override(target_role)
             args = []
             skip_next = False
             for arg in sys.argv[1:]:
                 if skip_next:
                     skip_next = False
                     continue
-                if arg in {"--gateway", "--bridge"}:
+                if arg in {"--gateway", "--bridge", "--role"}:
                     skip_next = True
                     continue
                 if arg == "--azure-bridge":
                     continue
                 args.append(arg)
             args.extend(["--gateway", gateway_name])
+            args.extend(["--role", target_role or role])
             if bridge_name:
                 args.extend(["--bridge", bridge_name])
             restart_argv = [sys.executable, sys.argv[0], *args]
@@ -552,6 +556,13 @@ async def run_async_server(
                 ble_runtime_config,
             ),
             restart_handler=_restart,
+            idle_provider=lambda: bool(
+                server
+                and server.handler.si
+                and not server.handler.si.has_active_streams()
+                and server.handler.si.stream_phase in {"idle", "startup_failed"}
+                and not server.handler.si.active_subject_ids
+            ),
             usb_disk_action_handler=(
                 server.admin_usb_disk_action
                 if server and usb_disk_manager and usb_disk_manager.supports_hotdisk
@@ -750,6 +761,9 @@ def main():
     args = parser.parse_args()
     
     load_runtime_env()  # loads the source of truth environment
+
+    if args.role in {"standalone", "master"}:
+        args.role = resolve_role(args.role)
 
     if args.site:
         os.environ["AZURE_IOT_SITE"] = args.site
