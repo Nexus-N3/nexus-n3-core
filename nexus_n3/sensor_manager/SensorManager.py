@@ -7,7 +7,7 @@ import time
 from collections import defaultdict
 from types import SimpleNamespace
 from typing import List
-from concurrent.futures import Future
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from nexus_n3.sensor_manager.types.connections import ConnectionStatus
 from nexus_n3.sensor_manager.utils import utils as utils
@@ -53,8 +53,12 @@ class SensorManager:
         self.routing_table = {}
 
         self._routing_condition = threading.Condition()
-        self._routing_enabled = True
+        self._routing_enabled = False
         self._active_routed_calls = 0
+        self._routing_executor = ThreadPoolExecutor(
+            max_workers=1,
+            thread_name_prefix="nexus-routing",
+        )
 
         self.listeners = {
             "on_discover": None,
@@ -407,8 +411,14 @@ class SensorManager:
             {"message": "identify", "address": address},
         )
 
-    def start_all(self):
+    def enable_routing(self):
         self._enable_routing()
+
+    def disable_routing(self):
+        self._quiesce_routing()
+
+    def start_all(self):
+        #self._enable_routing()
         self.loop.call_soon_threadsafe(self.queue.put_nowait, {"message": "start_all"})
 
     def reset_session_diagnostics(self):
@@ -418,7 +428,7 @@ class SensorManager:
         )
 
     def start_specific_sensors(self, addresses: List):
-        self._enable_routing()
+        #self._enable_routing()
         self.loop.call_soon_threadsafe(
             self.queue.put_nowait,
             {"message": "start_specific_sensors", "addresses": addresses},
@@ -480,10 +490,18 @@ class SensorManager:
         """Stop streaming and adapters before stopping the manager loop."""
         if not self.running:
             return
+
+        self._quiesce_routing()
+        self._wait_for_routing_to_drain()
+
         try:
-            asyncio.run_coroutine_threadsafe(self.streaming_service.shutdown(), self.loop).result(timeout=3)
+            asyncio.run_coroutine_threadsafe(
+                self.streaming_service.shutdown(),
+                self.loop,
+            ).result(timeout=3)
         except Exception:
             pass
+
         if self.adapter_pool.requires_async_shutdown():
             try:
                 asyncio.run_coroutine_threadsafe(
@@ -491,20 +509,29 @@ class SensorManager:
                     self.loop,
                 ).result(timeout=30)
             except Exception:
-                self.adapter_pool.close_all()
+                pass
+
         self.running = False
+
         try:
-            self.loop.call_soon_threadsafe(self.queue.put_nowait, {"message": "__stop__"})
+            self.loop.call_soon_threadsafe(
+                self.queue.put_nowait,
+                {"message": "__stop__"},
+            )
         except Exception:
             pass
+
         self.thread.join(timeout=3)
+
         for sensor in list(self.sensors):
             if hasattr(sensor, "close_host") and callable(getattr(sensor, "close_host")):
                 try:
                     sensor.close_host()
                 except Exception:
                     pass
+
         self.adapter_pool.close_all()
+        self._routing_executor.shutdown(wait=True)
 
     def _build_routing_table(self):
         """Pre-compute compatible source->target plugin routes.
@@ -533,6 +560,54 @@ class SensorManager:
                 routing[source] = routes
         return routing
 
+    def _execute_routed_call(
+        self,
+        *,
+        source,
+        target,
+        source_plugin_id: str,
+        envelope,
+        payload,
+    ) -> None:
+        try:
+            started = time.monotonic()
+
+            print(
+                "[ROUTE_BEGIN]",
+                "source=", getattr(source, "name", source),
+                "target=", getattr(target, "name", target),
+                "sample_type=", getattr(payload, "sample_type", None),
+                "address=", getattr(payload, "address", None),
+                "timestamp=", getattr(payload, "timestamp", None),
+                flush=True,
+            )
+
+            result = target.consume_input(source_plugin_id, envelope)
+
+            elapsed = time.monotonic() - started
+
+            print(
+                "[ROUTE_END]",
+                "source=", getattr(source, "name", source),
+                "target=", getattr(target, "name", target),
+                "sample_type=", getattr(payload, "sample_type", None),
+                "elapsed_ms=", round(elapsed * 1000.0, 3),
+                flush=True,
+            )
+
+            if asyncio.iscoroutine(result):
+                asyncio.run(result)
+
+        except Exception as exc:
+            self.logger.exception(
+                "Error routing output from %s to %s: %s",
+                getattr(source, "name", source),
+                getattr(target, "name", target),
+                exc,
+            )
+        finally:
+            self._end_routed_call()
+
     def _route_sensor_output(self, payload):
         """Forward one emitted sensor payload to compatible downstream plugins.
 
@@ -552,65 +627,27 @@ class SensorManager:
         envelope = self._build_routing_envelope(source, payload, payload_outputs[0])
         source_plugin_id = envelope.source_plugin_id
         for target in routes:
-            if not self._routes_compatible(payload_outputs, self._routing_inputs_for_sensor(target)):
+            if not self._routes_compatible(
+                payload_outputs,
+                self._routing_inputs_for_sensor(target),
+            ):
                 continue
+
             if not self._begin_routed_call():
                 return
 
             try:
-                started = time.monotonic()
-
-                print(
-                    "[ROUTE_BEGIN]",
-                    "source=", getattr(source, "name", source),
-                    "target=", getattr(target, "name", target),
-                    "sample_type=", getattr(payload, "sample_type", None),
-                    "address=", getattr(payload, "address", None),
-                    "timestamp=", getattr(payload, "timestamp", None),
-                    flush=True,
+                self._routing_executor.submit(
+                    self._execute_routed_call,
+                    source=source,
+                    target=target,
+                    source_plugin_id=source_plugin_id,
+                    envelope=envelope,
+                    payload=payload,
                 )
-
-                result = target.consume_input(source_plugin_id, envelope)
-
-                elapsed = time.monotonic() - started
-
-                print(
-                    "[ROUTE_END]",
-                    "source=", getattr(source, "name", source),
-                    "target=", getattr(target, "name", target),
-                    "sample_type=", getattr(payload, "sample_type", None),
-                    "elapsed_ms=", round(elapsed * 1000.0, 3),
-                    flush=True,
-                )
-
-                if asyncio.iscoroutine(result):
-                    print(
-                        "[ROUTING_ASYNC]",
-                        "source=", getattr(source, "name", source),
-                        "target=", getattr(target, "name", target),
-                        "address=", getattr(payload, "address", None),
-                        "timestamp=", getattr(payload, "timestamp", None),
-                        flush=True,
-                    )
-
-                    try:
-                        running_loop = asyncio.get_running_loop()
-                    except RuntimeError:
-                        running_loop = None
-
-                    if running_loop is self.loop:
-                        running_loop.create_task(result)
-                    else:
-                        asyncio.run_coroutine_threadsafe(result, self.loop).result(timeout=30.0)
-            except Exception as exc:    
-                self.logger.exception(
-                    "Error routing output from %s to %s: %s",
-                    getattr(source, "name", source),
-                    getattr(target, "name", target),
-                    exc,
-                )
-            finally:
+            except Exception:
                 self._end_routed_call()
+                raise
 
     def _find_sensor_for_payload(self, payload):
         """Resolve the originating sensor instance from a routed payload."""

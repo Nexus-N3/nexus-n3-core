@@ -235,7 +235,11 @@ class SensorHostClient:
         return {"ok": True}
     
     def _handle_adapter_unsubscribe(self, params: dict[str, Any]) -> dict[str, Any]:
-        self.proxy._adapter_request("unsubscribe", str(params["uuid"]))
+        callback_id = params.get("callback_id")
+        self.proxy._unregister_host_callback(
+            callback_id=str(callback_id) if callback_id is not None else None,
+            notify_uuid=str(params["uuid"]),
+        )
         return {"ok": True}
 
     def _handle_sensor_event(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -397,6 +401,21 @@ class InstalledSensorProxy(SensorBase):
         self._adapter_callbacks[callback_id] = notify_uuid
         coro = adapter.set_notify_callback(self.transport_client, notify_uuid, _notify, indicate=indicate)
         asyncio.run_coroutine_threadsafe(coro, self._manager_loop).result(timeout=30.0)
+
+    def _unregister_host_callback(
+        self,
+        *,
+        callback_id: str | None,
+        notify_uuid: str,
+    ) -> None:
+        self._adapter_request("unsubscribe", notify_uuid)
+
+        if callback_id is not None:
+            self._adapter_callbacks.pop(callback_id, None)
+
+        for existing_id, existing_uuid in list(self._adapter_callbacks.items()):
+            if existing_uuid == notify_uuid:
+                self._adapter_callbacks.pop(existing_id, None)
 
     def _handle_host_event(self, event_name: str, payload: Any, timing=None) -> None:
         if event_name == "on_data":

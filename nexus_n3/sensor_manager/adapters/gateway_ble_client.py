@@ -15,7 +15,7 @@ for:
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 import json
 import queue
@@ -32,6 +32,7 @@ from nexus_n3.sensor_manager.gateway_serial import resolve_gateway_serial_port
 logger = get_module_logger("Gateway BLE Client")
 
 STREAM_FRAME_MAGIC = b"\xA5\x5A"
+SERIAL_READ_HISTORY_SIZE = 12
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,15 @@ class StreamFrame:
     sensor_id: int
     gateway_timestamp_us: int
     payload: bytes
+
+
+@dataclass(frozen=True)
+class SerialReadCapture:
+    monotonic_ns: int
+    read_len: int
+    buffer_len_before: int
+    buffer_len_after: int
+    chunk: bytes
 
 
 @dataclass(frozen=True)
@@ -122,6 +132,11 @@ class GatewaySerialClient:
         self.stream_partial_frame_waits: int = 0
         self._partial_block_kind: str | None = None
         self._partial_block_len: int = -1
+        self._serial_read_history: deque[SerialReadCapture] = deque(
+            maxlen=SERIAL_READ_HISTORY_SIZE
+        )
+        self._serial_read_sequence = 0
+        self._last_dumped_serial_read_sequence = -1
         self.phase = "idle"
         self._transport_reset_lock = threading.Lock()
         self.active_serial_port: str | None = None
@@ -147,6 +162,9 @@ class GatewaySerialClient:
             self.ser.setRTS(True)
             time.sleep(0.5)
             self.ser.reset_input_buffer()
+            self._serial_read_history.clear()
+            self._serial_read_sequence = 0
+            self._last_dumped_serial_read_sequence = -1
 
             self.running = True
             self.read_thread = threading.Thread(
@@ -270,6 +288,9 @@ class GatewaySerialClient:
         self.stream_partial_json_waits = 0
         self.stream_partial_frame_waits = 0
         self._clear_partial_block()
+        self._serial_read_history.clear()
+        self._serial_read_sequence = 0
+        self._last_dumped_serial_read_sequence = -1
 
     def scan(
         self,
@@ -403,9 +424,23 @@ class GatewaySerialClient:
         indicate: bool = False,
     ) -> None:
         """Subscribe to notifications for a characteristic through the gateway."""
+
         def _subscribe_once() -> None:
             request_id = self.request_id("subscribe")
             request_queue = self._register_request(request_id)
+
+            logger.info(
+                "Gateway subscribe request starting "
+                "request_id=%s address=%s uuid=%s indicate=%s "
+                "binary_notifications=%s timeout_s=%.3f",
+                request_id,
+                address,
+                characteristic_uuid,
+                indicate,
+                binary_notifications,
+                timeout_s,
+            )
+
             try:
                 self.send(
                     {
@@ -417,7 +452,39 @@ class GatewaySerialClient:
                         "indicate": indicate,
                     }
                 )
-                self._wait_for_success(request_id, request_queue, "subscribe_complete", timeout_s)
+
+                self._wait_for_success(
+                    request_id,
+                    request_queue,
+                    "subscribe_complete",
+                    timeout_s,
+                )
+
+                logger.info(
+                    "Gateway subscribe request completed "
+                    "request_id=%s address=%s uuid=%s indicate=%s "
+                    "binary_notifications=%s",
+                    request_id,
+                    address,
+                    characteristic_uuid,
+                    indicate,
+                    binary_notifications,
+                )
+
+            except Exception as exc:
+                logger.error(
+                    "Gateway subscribe request failed "
+                    "request_id=%s address=%s uuid=%s indicate=%s "
+                    "binary_notifications=%s error=%s",
+                    request_id,
+                    address,
+                    characteristic_uuid,
+                    indicate,
+                    binary_notifications,
+                    exc,
+                )
+                raise
+
             finally:
                 self._unregister_request(request_id)
 
@@ -694,21 +761,51 @@ class GatewaySerialClient:
     def _read_loop(self) -> None:
         """Read serial bytes continuously and route parsed JSON or stream frames."""
         assert self.ser is not None
+
+        last_read_time = time.monotonic()
+
         while self.running:
             try:
                 chunk = self.ser.read(256)
+
                 if chunk:
+                    buffer_len_before = len(self.buf)
                     self.buf.extend(chunk)
+                    self._serial_read_sequence += 1
+                    self._serial_read_history.append(
+                        SerialReadCapture(
+                            monotonic_ns=time.monotonic_ns(),
+                            read_len=len(chunk),
+                            buffer_len_before=buffer_len_before,
+                            buffer_len_after=len(self.buf),
+                            chunk=bytes(chunk),
+                        )
+                    )
+
+                now = time.monotonic()
+                read_gap = now - last_read_time
+                last_read_time = now
+
+                if read_gap >= 0.250:
+                    logger.warning(
+                        "GATEWAY SERIAL READ GAP elapsed_ms=%.3f bytes=%d",
+                        read_gap * 1000.0,
+                        len(chunk),
+                    )
+
                 while True:
                     item = self._extract_item()
                     if item is None:
                         break
+
                     item_type, payload = item
+
                     if item_type == "json":
                         self._observe_json(payload)
                         self._route_json(payload)
                     else:
                         self._dispatch_event("stream_frame", payload)
+
             except Exception as exc:
                 if self.running:
                     self._handle_transport_failure(
@@ -716,6 +813,7 @@ class GatewaySerialClient:
                         recover=False,
                     )
                     logger.exception("Gateway serial read loop failed: %s", exc)
+
                 time.sleep(0.1)
 
     def _route_json(self, msg: dict[str, Any]) -> None:
@@ -751,10 +849,27 @@ class GatewaySerialClient:
 
     def _dispatch_event(self, event_type: str, payload: Any) -> None:
         for callback in list(self.event_handlers.get(event_type, [])):
+            started = time.monotonic()
+
             try:
                 callback(payload)
             except Exception as exc:
-                logger.exception("Gateway event handler failed for %s: %s", event_type, exc)
+                logger.exception(
+                    "Gateway event handler failed for %s: %s",
+                    event_type,
+                    exc,
+                )
+            finally:
+                elapsed = time.monotonic() - started
+
+                if elapsed >= 0.010:
+                    logger.warning(
+                        "GATEWAY EVENT HANDLER SLOW "
+                        "event_type=%s callback=%r elapsed_ms=%.3f",
+                        event_type,
+                        callback,
+                        elapsed * 1000.0,
+                )
 
     def _extract_item(self):
         while self.buf:
@@ -812,8 +927,9 @@ class GatewaySerialClient:
                         next_frame,
                         bytes(self.buf[:80]).hex(),
                     )
+                    self._dump_serial_read_history("checksum_failure")
 
-                    self._drop_and_resync(1)
+                    self._drop_and_resync(1, dump_read_history=False)
                     continue
                 ## 
                 del self.buf[:total_len]
@@ -848,6 +964,10 @@ class GatewaySerialClient:
             return
         if msg_type == "gateway_transport_stats":
             self.gateway_transport_stats = dict(msg)
+            logger.info(
+                "GATEWAY TRANSPORT STATS %s",
+                msg,
+            )
             return
         if msg_type == "gateway_order_trace":
             self.gateway_order_trace.append(dict(msg))
@@ -947,14 +1067,57 @@ class GatewaySerialClient:
         if msg.get("type") == "error" and msg.get("request_id") == request_id:
             raise RuntimeError(f"{prefix}: {msg.get('message')} ({msg.get('error_code')})")
 
-    def _drop_and_resync(self, drop_len: int) -> None:
+    def _drop_and_resync(
+        self,
+        drop_len: int,
+        *,
+        dump_read_history: bool = True,
+    ) -> None:
         if drop_len <= 0:
             self._clear_partial_block()
             return
+        buffer_len = len(self.buf)
+        dropped_hex = bytes(self.buf[:drop_len]).hex()
+        remaining_head_hex = bytes(self.buf[drop_len : drop_len + 64]).hex()
+        logger.warning(
+            "GATEWAY PARSER RESYNC drop_len=%s buffer_len=%s dropped_hex=%s "
+            "remaining_head_hex=%s monotonic_ns=%s",
+            drop_len,
+            buffer_len,
+            dropped_hex,
+            remaining_head_hex,
+            time.monotonic_ns(),
+        )
+        if dump_read_history:
+            self._dump_serial_read_history("resync")
         self.stream_resync_drop_bytes += drop_len
         self.stream_resync_events += 1
         del self.buf[:drop_len]
         self._clear_partial_block()
+
+    def _dump_serial_read_history(self, trigger: str) -> None:
+        """Log recent non-empty reads only when the parser detects corruption."""
+        if not self._serial_read_history:
+            return
+        if self._last_dumped_serial_read_sequence == self._serial_read_sequence:
+            return
+        captures = [
+            {
+                "monotonic_ns": capture.monotonic_ns,
+                "read_len": capture.read_len,
+                "buffer_len_before": capture.buffer_len_before,
+                "buffer_len_after": capture.buffer_len_after,
+                "chunk_hex": capture.chunk.hex(),
+            }
+            for capture in self._serial_read_history
+        ]
+        logger.warning(
+            "GATEWAY SERIAL READ HISTORY trigger=%s capture_count=%s captures=%s",
+            trigger,
+            len(captures),
+            json.dumps(captures, separators=(",", ":")),
+        )
+        self._last_dumped_serial_read_sequence = self._serial_read_sequence
 
     def _record_partial_block(self, kind: str) -> None:
         current_len = len(self.buf)

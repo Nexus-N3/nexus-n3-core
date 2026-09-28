@@ -616,6 +616,8 @@ class Core:
     def _activate_official_streaming(self) -> None:
         if self._official_start_mode == "coordinated" and not self._official_commit_received:
             raise RuntimeError("Coordinated official persistence requires the global commit")
+
+        self.compute_orch.reset_session()
         self._prepare_official_persistence()
         official_origin_ns = time.monotonic_ns()
         active_subject_ids = set(self._startup_subject_ids)
@@ -625,6 +627,7 @@ class Core:
             if not sub.is_streaming:
                 sub.is_streaming = True
         self._official_stream_origin_monotonic_ns = official_origin_ns
+        self.sensor_orch.manager.enable_routing()
 
     def start_official_stream(self, payload: dict) -> None:
         """Commit a locally-ready distributed stream to official acquisition."""

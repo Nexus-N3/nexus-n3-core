@@ -37,6 +37,10 @@ class ComputeOrchestrator:
         self._registered_executors.clear()
         self._registered_consolidation_executors.clear()
 
+    def reset_session(self):
+        self._plugin_runtime.reset_session()
+        self.compute_manager.reset_session()
+
     def ingest_sample(self, sample, timing_metadata=None):
         self.compute_manager.ingest_sample(sample, timing_metadata=timing_metadata)
 

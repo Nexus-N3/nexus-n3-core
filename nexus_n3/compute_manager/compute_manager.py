@@ -169,6 +169,21 @@ class ComputeManager:
                 self._queue.get_nowait()
         except Empty:
             pass
+
+    def reset_session(self):
+        """Clear per-session compute state while keeping algorithms registered."""
+        self._intermediate_stage.reset()
+        self._consolidation_stage.reset()
+
+        with self._timing_lock:
+            self._last_result_monotonic_ns.clear()
+            self._samples_since_result.clear()
+
+        try:
+            while True:
+                self._queue.get_nowait()
+        except Empty:
+            pass
     # ------------------------
     # Ingestion
     # ------------------------

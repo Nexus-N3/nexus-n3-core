@@ -201,9 +201,7 @@ class AlgorithmHost:
 
     def shutdown(self) -> dict[str, Any]:
         self._instances.clear()
-        self._instance_configs.clear()
         self._execution_timings_ms.clear()
-        self._emitted_results.clear()
         return {"ok": True}
 
     def _install_execution_timer(self, address: str, algorithm: Any) -> None:
@@ -265,7 +263,6 @@ def main(argv: list[str] | None = None) -> int:
         "describe": lambda _params: host.describe(),
         "healthcheck": lambda _params: host.healthcheck(),
         "start_algorithm": host.start_algorithm,
-        "reset_session": lambda _params: host.reset_session(),
         "ingest_sample": host.ingest_sample,
         "should_run_intermediate": host.should_run_intermediate,
         "run_intermediate": host.run_intermediate,

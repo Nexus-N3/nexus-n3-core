@@ -85,6 +85,8 @@ class AlgorithmHostClient:
                 "location": location,
             },
         )
+    def reset_session(self) -> None:
+        self.transport.request("reset_session", {})
 
     def ingest_sample(self, address: str, sample: Any) -> list[RemoteComputeResult]:
         payload = object_to_mapping(sample)
@@ -172,6 +174,10 @@ class AlgorithmRuntimeManager:
         client = AlgorithmHostClient(plugin)
         self._algorithm_clients[normalized] = client
         return client
+
+    def reset_session(self) -> None:
+        for client in self._algorithm_clients.values():
+            client.reset_session()
 
     def close(self) -> None:
         for client in self._algorithm_clients.values():
