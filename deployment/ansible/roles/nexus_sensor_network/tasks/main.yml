@@ -110,7 +110,7 @@
       - ufw
       - allow
       - in
-      - on
+      - "on"
       - "{{ nexus_sensor_bridge_interface }}"
       - proto
       - udp

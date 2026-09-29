@@ -658,7 +658,7 @@ You can also target a specific host:
 
 ```bash
 cd deployment/ansible
-ansible-playbook -i inventory.ini playbooks/deploy_workers.yml -e nexus_deploy_hosts=nexus-n3-worker-02
+ansible-playbook -i inventory.ini playbooks/deploy_workers.yml -e nexus_deploy_hosts=nexus-n3-worker-01
 ```
 
 That is the standard path for cases like adding a new worker to an existing

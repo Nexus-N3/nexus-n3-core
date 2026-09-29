@@ -60,7 +60,7 @@ class WifiRuntimeConfig:
             raise ValueError("Wi-Fi AP SSID must not be empty")
         if backend != "fake":
             required = {
-                "Wi-Fi interface": self.wifi_interface,
+                #"Wi-Fi interface": self.wifi_interface,
                 "sensor bridge interface": self.bridge_interface,
                 "sensor bridge profile": self.bridge_profile,
                 "sensor VLAN interface": self.vlan_interface,
