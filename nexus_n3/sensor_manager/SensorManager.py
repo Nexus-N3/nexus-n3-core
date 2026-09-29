@@ -248,11 +248,63 @@ class SensorManager:
 
     # ----------------- Initialization ----------------- #
     def init_sensor_manager(self, sensors_to_init: list):
-        """Initialize manager with pre-instantiated sensors and adapters."""
+        """Install a sensor configuration, retiring any previous one first.
 
-        # Dispose of plugin-host processes belonging to the previous
-        # sensor configuration before replacing those sensor instances.
-        for sensor in list(self.sensors):
+        Reconfiguration is serialized on the manager loop so that queued
+        stop/disconnect work finishes before the live sensor and adapter
+        references are replaced. The first configuration can be installed
+        directly because there is no previous runtime state to retire.
+        """
+
+        if self.sensors or self.adapter_pool.adapters:
+            if threading.current_thread() is self.thread:
+                raise RuntimeError(
+                    "Sensor manager reinitialization cannot block its event-loop thread"
+                )
+
+            self._quiesce_routing()
+            completion = Future()
+            self.loop.call_soon_threadsafe(
+                self.queue.put_nowait,
+                {
+                    "message": "__reinitialize_sensors__",
+                    "sensors": list(sensors_to_init),
+                    "_completion": completion,
+                },
+            )
+            completion.result(timeout=60)
+            return
+
+        self._install_sensor_configuration(sensors_to_init)
+        self._queue_adapter_initialization_if_needed()
+
+    async def _reinitialize_sensor_manager(self, sensors_to_init: list):
+        """Dispose the old runtime in transport-safe order, then install new sensors."""
+
+        previous_sensors = list(self.sensors)
+        await asyncio.to_thread(self._wait_for_routing_to_drain)
+        await self.streaming_service.shutdown()
+
+        connected_sensors = [
+            sensor
+            for sensor in previous_sensors
+            if getattr(getattr(sensor, "connection_status", None), "name", None)
+            == ConnectionStatus.CONNECTED.name
+        ]
+        if connected_sensors:
+            await self.connection_service.disconnect(
+                sensors_to_disconnect=connected_sensors,
+                emit_to_client=lambda _event, _payload: None,
+                disconnected_status=ConnectionStatus.DISCONNECTED,
+            )
+
+        for sensor in previous_sensors:
+            for event_name in list(getattr(sensor, "listeners", {})):
+                try:
+                    sensor.unregister_listener(event_name)
+                except Exception:
+                    pass
+
             if hasattr(sensor, "close_host") and callable(getattr(sensor, "close_host")):
                 try:
                     sensor.close_host()
@@ -261,10 +313,28 @@ class SensorManager:
                         "Failed to close plugin host for sensor %s",
                         getattr(sensor, "name", type(sensor).__name__),
                     )
+
+            callbacks = getattr(sensor, "_adapter_callbacks", None)
+            if isinstance(callbacks, dict):
+                callbacks.clear()
+            sensor.set_transport_client(None)
+            if hasattr(sensor, "_runtime_adapter"):
+                sensor._runtime_adapter = None
+            if hasattr(sensor, "_manager_loop"):
+                sensor._manager_loop = None
+
         self.sensors = []
         self.sensor_meta = {}
         self.routing_table = {}
         self.adapter_pool.reset()
+
+        self._install_sensor_configuration(sensors_to_init)
+        # Await cleanup/initialization here instead of merely queueing it. The
+        # completion returned to Core is the reconfiguration barrier.
+        await self.adapter_pool.initialize_all()
+
+    def _install_sensor_configuration(self, sensors_to_init: list):
+        """Populate manager state from pre-instantiated sensors."""
 
         for entry in sensors_to_init:
             if isinstance(entry, dict):
@@ -293,6 +363,10 @@ class SensorManager:
 
         self.adapters = self.adapter_pool.adapters
         self.routing_table = self._build_routing_table()
+
+    def _queue_adapter_initialization_if_needed(self):
+        """Queue first-use adapter initialization behind earlier manager work."""
+
         if (
             self.adapter_pool.requires_initialization()
             or self.adapter_pool.requires_async_shutdown()
@@ -320,7 +394,10 @@ class SensorManager:
                     break
 
                 try:
-                    if msg.get("message") == "__initialize_adapters__":
+                    if msg.get("message") == "__reinitialize_sensors__":
+                        await self._reinitialize_sensor_manager(msg.get("sensors", []))
+                        handled = True
+                    elif msg.get("message") == "__initialize_adapters__":
                         await self.adapter_pool.initialize_all()
                         handled = True
                     else:

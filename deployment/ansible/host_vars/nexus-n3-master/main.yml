@@ -24,8 +24,8 @@ nexus_site_name: "Lunar Cologne"
 nexus_customer_id: "customer-dlr"
 
 # Runtime feature flags
-nexus_azure_bridge_enabled: true
-nexus_azure_bridge_remote_control: true
+nexus_azure_bridge_enabled: false
+nexus_azure_bridge_remote_control: false
 nexus_admin_enabled: true
 nexus_admin_display_profile: ""
 nexus_perf_log: false

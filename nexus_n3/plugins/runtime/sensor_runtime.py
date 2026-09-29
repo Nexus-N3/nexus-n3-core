@@ -342,10 +342,12 @@ class InstalledSensorProxy(SensorBase):
         return client.consume_input(source_plugin_id=source_plugin_id, payload=payload)
 
     def close_host(self) -> None:
-        if self._plugin_client is None:
-            return
-        self._plugin_client.close()
-        self._plugin_client = None
+        try:
+            if self._plugin_client is not None:
+                self._plugin_client.close()
+        finally:
+            self._plugin_client = None
+            self._adapter_callbacks.clear()
 
     def _ensure_client(self) -> SensorHostClient:
         if self._plugin_client is None:

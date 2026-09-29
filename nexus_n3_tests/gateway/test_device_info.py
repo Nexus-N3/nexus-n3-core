@@ -132,6 +132,14 @@ def test_server_ready_now_includes_supported_algorithms():
         "download_path": "/api/outputs/download",
     }
     handler.set_archive_service(archive_service)
+    handler.set_device_info_provider(
+        lambda: {
+            "role": "master",
+            "device_type": "master",
+            "ble_backend": "gateway",
+            "ble_backend_label": "nexus_ble_gateway",
+        }
+    )
     handler.si = FakeSystemInterface()
     handler.is_ready = True
 
@@ -142,6 +150,8 @@ def test_server_ready_now_includes_supported_algorithms():
     assert event["type"] == mt.EVT_SERVER_READY
     assert event["payload"]["correlation_id"] == "abc"
     assert event["payload"]["archive_service"] == archive_service
+    assert event["payload"]["role"] == "master"
+    assert event["payload"]["device_type"] == "master"
     assert event["payload"]["supported_algorithms"] == [
         "standard_loading_intensity",
         "gait_asymmetry",

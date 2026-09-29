@@ -586,6 +586,7 @@ class MasterNode:
             mt.CMD_USB_MOUNT,
             mt.CMD_USB_SAFE_UNMOUNT,
             mt.CMD_GET_USB_STATUS,
+            mt.CMD_GET_DEVICE_INFO,
             mt.CMD_ROBOT_MOTION,
             mt.CMD_ROBOT_STOP,
         }

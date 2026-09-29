@@ -266,6 +266,8 @@ class MessageHandler:
                 response_payload = {
                     "msg": "System Server Ready",
                     "site": self.site,
+                    "role": runtime.get("role"),
+                    "device_type": runtime.get("device_type"),
                     "ble": {
                         "backend": runtime.get("ble_backend"),
                         "backend_label": runtime.get("ble_backend_label"),

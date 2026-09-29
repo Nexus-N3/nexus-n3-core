@@ -65,6 +65,20 @@ def _master():
     return master
 
 
+def test_device_info_is_handled_locally_in_master_mode():
+    master = _master()
+    handler = _Handler()
+    payload = {"correlation_id": "status-refresh"}
+
+    master.dispatch_command(
+        {"type": mt.CMD_GET_DEVICE_INFO, "payload": payload},
+        message_handler=handler,
+    )
+
+    assert handler.calls == [(mt.CMD_GET_DEVICE_INFO, payload)]
+    assert master.sent == []
+
+
 def test_official_commit_waits_for_every_expected_node():
     master = _master()
     handler = _Handler()
