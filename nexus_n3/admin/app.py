@@ -710,4 +710,10 @@ def create_app(state: AdminState) -> FastAPI:
             if temp_path is not None and temp_path.exists():
                 temp_path.unlink(missing_ok=True)
 
+    @app.get("/api/nodes")
+    def get_nodes():
+        return {
+            "nodes": state.node_status(),
+        }
+
     return app
