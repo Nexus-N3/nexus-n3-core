@@ -27,8 +27,14 @@ class DiscoveryService:
         pending_sensors = [
             s for s in sensors if s.connection_status != ConnectionStatus.CONNECTED
         ]
+        connected_addresses = {
+            str(s.address).upper()
+            for s in sensors
+            if s.connection_status == ConnectionStatus.CONNECTED and s.address
+        }
         return await self._discover_pending(
             pending_sensors=pending_sensors,
+            excluded_addresses=connected_addresses,
             loop=loop,
             register_listeners_with_sensor=register_listeners_with_sensor,
             emit_to_client=emit_to_client,
@@ -42,18 +48,22 @@ class DiscoveryService:
         register_listeners_with_sensor,
         emit_to_client,
     ):
-        pending_sensors = []
-        for req in requested_sensors:
-            matching = [
-                s
-                for s in sensors
-                if s.name == req["local_name"]
-                and s.connection_status != ConnectionStatus.CONNECTED
-            ]
-            pending_sensors.extend(matching[:req.get("number_of", len(matching))])
+        requested_sensor_ids = {id(sensor) for sensor in requested_sensors}
+        pending_sensors = [
+            sensor
+            for sensor in sensors
+            if id(sensor) in requested_sensor_ids
+            and sensor.connection_status != ConnectionStatus.CONNECTED
+        ]
+        connected_addresses = {
+            str(sensor.address).upper()
+            for sensor in sensors
+            if sensor.connection_status == ConnectionStatus.CONNECTED and sensor.address
+        }
 
         return await self._discover_pending(
             pending_sensors=pending_sensors,
+            excluded_addresses=connected_addresses,
             loop=loop,
             register_listeners_with_sensor=register_listeners_with_sensor,
             emit_to_client=emit_to_client,
@@ -62,6 +72,7 @@ class DiscoveryService:
     async def _discover_pending(
         self,
         pending_sensors,
+        excluded_addresses,
         loop,
         register_listeners_with_sensor,
         emit_to_client,
@@ -81,6 +92,11 @@ class DiscoveryService:
             validation = None
             for attempt in range(1, 3):
                 devices = await adapter.discover_devices(sensors_for_adapter)
+                devices = {
+                    address: device
+                    for address, device in devices.items()
+                    if str(address).upper() not in excluded_addresses
+                }
                 matched = utils.match_devices(sensors_for_adapter, devices)
                 validation = utils.validate_matched_devices(sensors_for_adapter, matched)
                 if validation.valid:

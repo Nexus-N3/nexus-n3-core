@@ -839,18 +839,24 @@ class Core:
     def discover_sensors(self):
         """Discover all sensors in the system via SensorManager."""
         logger.info("Discovering sensors")
+        self.active_subject_ids = None
         self.sensor_orch.discover()
 
     def discover_sensors_for_subjects(self, subject_ids):
         """Discover sensors for specific subjects."""
         subjects = self._get_subjects_by_ids(subject_ids)
         self.active_subject_ids = [sub.subject_id for sub in subjects]
-        for sub in subjects:
-            logger.info(f"Discovering sensors for subject {sub.subject_id}")
-            self.sensor_orch.discover_for_subject(sensors=sub.sensor_configs)
+        sensors = [
+            entry["sensor"]
+            for sub in subjects
+            for entry in sub.sensors
+        ]
+        logger.info("Discovering sensors for subjects %s", self.active_subject_ids)
+        self.sensor_orch.discover_for_subject(sensors=sensors)
 
     def connect_all(self):
         """Connect all sensors in the system."""
+        self.active_subject_ids = None
         self.sensor_orch.connect_all()
 
     def connect_subjects(self, subject_ids):
@@ -1489,6 +1495,8 @@ class Core:
             if payload.get("valid") is False:
                 missing = payload.get("missing", [])
                 logger.error(f"Not enough devices found: {missing}")
+                self.active_subject_ids = None
+                self.pending_correlation_id = None
                 if self.system_event_bus:
                     self.system_event_bus.emit({
                         "type": mt.EVT_ERROR,
