@@ -403,7 +403,14 @@ async def run_async_server(
                 after_stream_stop=None,
             )
         
-        server.handler.set_dispatcher(lambda msg: master_node.dispatch_command(msg, message_handler=server.handler))
+        def master_dispatch(msg):
+            master_node.dispatch_command(
+                msg,
+                message_handler=server.handler,
+            )
+
+        server.handler.set_dispatcher(master_dispatch)
+        master_node.set_dispatcher(master_dispatch)
         print(f"[MASTER] Node registry initialized and command router started for site '{site}'.")
         
     

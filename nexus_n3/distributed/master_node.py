@@ -77,6 +77,7 @@ class MasterNode:
         self._official_start_tracking = {}
         self._active_stream_subjects = set()
         self._after_all_streams_drained = None
+        self._dispatcher = None # new internal handler
         self._local_capabilities = local_capabilities or build_node_capabilities(
             include_sensors=True,
             include_algorithms=True,
@@ -93,6 +94,10 @@ class MasterNode:
         )
         print(f"[MASTER] Registered master node with ID '{self.node_id}' in NodeRegistry")
         logger.info(f"[MASTER] Registered master node with ID '{self.node_id}' in NodeRegistry")
+
+    def set_dispatcher(self, dispatcher):
+        """Register the master's command dispatch callback."""
+        self._dispatcher = dispatcher
 
     def set_after_all_streams_drained(self, callback):
         """Register a callback to run after the final active stream has drained."""
@@ -188,6 +193,17 @@ class MasterNode:
                     "payload": ready_payload,
                 }
             )
+
+            if self._dispatcher:
+                self._dispatcher(
+                    {
+                        "type": mt.CMD_START_OFFICIAL_STREAM,
+                        "payload": {
+                            "start_session_id": ready_payload["start_session_id"],
+                            "session_timestamp": ready_payload["session_timestamp"],
+                        },
+                    }
+                )
 
     def _emit_dispatch_error(self, message: str, payload: dict | None = None) -> None:
         if not self.system_event_bus:
