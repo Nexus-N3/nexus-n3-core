@@ -297,13 +297,16 @@ class WorkerNode:
             )
             return True
         except Exception as exc:
-            with self._dealer_lock:
-                if new_dealer is not None and new_dealer is not self.dealer:
-                    try:
-                        new_dealer.setsockopt(zmq.LINGER, 0)
-                        new_dealer.close()
-                    except Exception:
-                        pass
+            self.dealer = old_dealer
+            self.master_ip = old_master_ip
+            self.master_port = old_master_port
+
+            if new_dealer is not None:
+                try:
+                    new_dealer.setsockopt(zmq.LINGER, 0)
+                    new_dealer.close()
+                except Exception:
+                    pass
 
             logger.error(f"[WORKER {self.node_id}] Reconnect failed: {exc}")
             return False
@@ -349,10 +352,8 @@ class WorkerNode:
                         and now - self._last_reconnect_attempt
                         >= self._reconnect_retry_interval
                     ):
-                        reconnected = self._reconnect_to_master()
-                        self._last_reconnect_attempt = time.time()
-
-                        if reconnected:
+                        self._last_reconnect_attempt = now
+                        if self._reconnect_to_master():
                             poller = zmq.Poller()
                             poller.register(self.dealer, zmq.POLLIN)
             #except zmq.error.Again:
@@ -362,17 +363,18 @@ class WorkerNode:
 
     # ------------------- Sending events/results -------------------
     def send_event(self, event: dict):
+        """
+        Send a system event back to the master.
+
+        Args:
+            event: Event dictionary with type and payload.
+        """
         if not self._running:
             return
-
+    
         event["node_id"] = self.node_id
         logger.info(f"emiting system event from {self.node_id}:  {event}")
         msg_bytes = json.dumps(event).encode()
-
-        with self._dealer_lock:
-            if not self._running or not self.dealer or self.dealer.closed:
-                return
-            self.dealer.send(msg_bytes)
-            self._record_sent()
-
+        self.dealer.send(msg_bytes)
+        self._record_sent()
         logger.info(f"[WORKER {self.node_id}] Sent event to master: {event}")

@@ -35,6 +35,16 @@
     enabled: true
     state: started
 
+- name: Allow Nexus N3 Core to close SMB share sessions
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/nexus-n3-smb
+    owner: root
+    group: root
+    mode: "0440"
+    content: |
+      {{ nexus_smb_share_user }} ALL=(root) NOPASSWD: /usr/bin/smbcontrol smbd close-share {{ nexus_smb_share_name }}
+    validate: "/usr/sbin/visudo -cf %s"
+
 - name: Check ufw status for SMB
   ansible.builtin.command: ufw status
   register: nexus_smb_ufw_status

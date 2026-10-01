@@ -6,6 +6,7 @@ import json
 import socket
 import time
 import uuid
+import subprocess
 from copy import deepcopy
 from datetime import datetime
 from zeroconf import Zeroconf, ServiceInfo
@@ -17,6 +18,9 @@ from nexus_n3.distributed.shared_utils import get_local_ip
 from nexus_n3.logger.logger import get_module_logger
 
 logger = get_module_logger("Master Node")
+
+SMB_CONTROL = "/usr/bin/smbcontrol"
+SMB_SHARE_NAME = "nexus_n3_data"
 
 class MasterNode:
     """
@@ -96,6 +100,31 @@ class MasterNode:
         print(f"[MASTER] Registered master node with ID '{self.node_id}' in NodeRegistry")
         logger.info(f"[MASTER] Registered master node with ID '{self.node_id}' in NodeRegistry")
 
+    def _close_smb_share(self) -> None:
+        """Best-effort release of worker SMB sessions for the master data share."""
+        try:
+            subprocess.run(
+                [
+                    "sudo",
+                    "-n",
+                    SMB_CONTROL,
+                    "smbd",
+                    "close-share",
+                    SMB_SHARE_NAME,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            logger.info(f"Closed SMB share {SMB_SHARE_NAME}")
+        except FileNotFoundError as exc:
+            logger.warning(f"SMB cleanup unavailable: {exc}")
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or str(exc)).strip()
+            logger.warning(
+                f"Failed to close SMB share {SMB_SHARE_NAME}: {detail}"
+            )
+    
     def set_dispatcher(self, dispatcher):
         """Register the master's command dispatch callback."""
         self._dispatcher = dispatcher
@@ -356,6 +385,8 @@ class MasterNode:
     def stop(self):
         """Stop the master node: ROUTER loop + mDNS cleanup."""
         self._running = False
+
+        self._close_smb_share()
 
         # Close ZeroMQ ROUTER
         self.router.close(0)
