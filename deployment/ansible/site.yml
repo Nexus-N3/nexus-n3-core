@@ -12,6 +12,9 @@
           Windows hosts as development environments only.
   roles:
     - nexus_dependencies
+    - role: nexus_control_network
+      tags:
+        - nexus_control_network
     - role: nexus_usb_hotplug
       tags:
         - nexus_usb_hotplug
@@ -46,6 +49,9 @@
           Windows hosts as development environments only.
   roles:
     - nexus_dependencies
+    - role: nexus_control_network
+      tags:
+        - nexus_control_network
     - role: nexus_sensor_network
       when: nexus_sensor_network_enabled | default(false) | bool
       tags:

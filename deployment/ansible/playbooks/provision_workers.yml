@@ -16,6 +16,10 @@
   roles:
     - nexus_dependencies
 
+    - role: nexus_control_network
+      tags:
+        - nexus_control_network
+
     - role: nexus_sensor_network
       when: nexus_sensor_network_enabled | default(false) | bool
       tags:

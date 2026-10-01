@@ -1,0 +1,11 @@
+network:
+  version: 2
+  renderer: NetworkManager
+
+  ethernets:
+    {{ nexus_control_network_interface }}:
+      # Keep DHCP enabled so its lease, gateway, and default route are retained.
+      dhcp4: true
+      addresses:
+        - "{{ nexus_control_network_address }}"
+

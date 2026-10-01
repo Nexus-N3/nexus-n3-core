@@ -1,0 +1,8 @@
+---
+- name: Apply control network Netplan configuration
+  ansible.builtin.command:
+    argv:
+      - netplan
+      - apply
+  changed_when: true
+

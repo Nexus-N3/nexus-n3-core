@@ -15,6 +15,9 @@
     - role: nexus_dependencies
       tags:
         - nexus_dependencies
+    - role: nexus_control_network
+      tags:
+        - nexus_control_network
     - role: nexus_usb_hotplug
       tags:
         - nexus_usb_hotplug

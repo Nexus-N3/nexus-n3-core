@@ -1,4 +1,7 @@
 ---
+# Native eth0 control plane. DHCP remains enabled for the existing uplink.
+nexus_control_network_address: 192.168.60.4/24
+
 # Common sensor network. br-sensor owns the node IP; eth0.20 and the
 # USB Wi-Fi AP are Layer-2 members of this bridge.
 nexus_sensor_network_enabled: true
@@ -8,4 +11,3 @@ nexus_sensor_vlan_enabled: true
 nexus_sensor_vlan_id: 20
 nexus_sensor_vlan_parent_interface: eth0
 nexus_sensor_vlan_interface: eth0.20
-

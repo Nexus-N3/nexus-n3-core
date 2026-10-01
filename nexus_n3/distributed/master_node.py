@@ -85,9 +85,10 @@ class MasterNode:
 
         # In MasterNode.__init__ or start()
         self.node_id = "master"  # fixed ID for the master node
+        self.ip = get_local_ip()
         self.registry.register_node(
             node_id=self.node_id,
-            ip=get_local_ip(),
+            ip=self.ip,
             role="master",
             identity=None,  # no ZMQ identity needed if master doesn't route internally
             capabilities=self._local_capabilities,
@@ -947,7 +948,7 @@ class MasterNode:
         if self.usb_disk_manager.network_path:
             properties["usb_path"] = str(self.usb_disk_manager.network_path)
 
-        local_ip = socket.inet_aton(get_local_ip())
+        local_ip = socket.inet_aton(self.ip)
         hostname = self.mdns_hostname or socket.gethostname()
         if not hostname.endswith(".local."):
             hostname = f"{hostname}.local."
@@ -964,7 +965,7 @@ class MasterNode:
 
         self.zeroconf = Zeroconf()
         self.zeroconf.register_service(self.service_info)
-        print(f"[MASTER] mDNS advertised on {get_local_ip()}:{self.router_port} as {hostname}")
+        print(f"[MASTER] mDNS advertised on {self.ip}:{self.router_port} as {hostname}")
 
     
     
