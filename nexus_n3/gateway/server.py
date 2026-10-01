@@ -72,6 +72,9 @@ class Server:
                     status_provider=self.usb_status_payload,
                 )
 
+
+        self._usb_pre_unmount_handler = None  # Optional callback before USB unmount
+
         # robot service if this node is acting as a robot.
         # the robot service is a means to control the robot itself.
         # a node can be mounted on a robot and not control it if desired.
@@ -80,6 +83,9 @@ class Server:
         self.handler.set_robot_service(self.robot_service)
         self._robot_loop_stop = threading.Event()
         self._robot_loop_thread = None
+
+    def set_usb_pre_unmount_handler(self, handler) -> None:
+        self._usb_pre_unmount_handler = handler
 
     # runs scripts associated to usb (mainly for the disk)
     def _run_usb_script(self, script_path: Path, *args: str) -> bool:
@@ -144,8 +150,10 @@ class Server:
         """Safely unmount the USB disk after a full local stop completes."""
         if not self._usb_hotdisk_enabled:
             return
-        if self._run_usb_script(self.SAFE_UNPLUG_SCRIPT):
-            self._sync_core_file_path()
+        
+        self.safe_unmount_usb_disk()
+        #if self._run_usb_script(self.SAFE_UNPLUG_SCRIPT):
+        #    self._sync_core_file_path()
 
     def mount_usb_disk(self) -> bool:
         """Manually mount/remount the USB disk and emit status."""
@@ -168,6 +176,21 @@ class Server:
         if self.handler.si and self.handler.si.has_active_streams():
             self.emit_usb_status(action="unmount", ok=False, error="Cannot unmount while streaming is active")
             return False
+
+        if self._usb_pre_unmount_handler:
+            try:
+                # try and call the callback to do any cleanup before unmounting the disk
+                # currently to close the smb share if it is open (i.e in distributed mode)
+                self._usb_pre_unmount_handler()
+            except Exception as exc:
+                logger.error(f"USB pre-unmount cleanup failed: {exc}")
+                self.emit_usb_status(
+                    action="unmount",
+                    ok=False,
+                    error="USB pre-unmount cleanup failed",
+                )
+                return False
+        
         if self._run_usb_script(self.SAFE_UNPLUG_SCRIPT):
             self._sync_core_file_path()
             ok = self.usb_disk_manager.usb_path is None
