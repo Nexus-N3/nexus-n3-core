@@ -373,8 +373,8 @@ async def run_async_server(
             mdns_hostname=mdns_hostname,
         )
         master_node.set_system_event_bus(server.system_event_bus)
-        # set the pre-unmount handler to the master node so it can handle USB unmount events
-        server.set_usb_pre_unmount_handler(master_node.handle_usb_pre_unmount)
+        # set the pre-unmount handler to the master node close smb share. 
+        server.set_usb_pre_unmount_handler(master_node._close_smb_share)
 
         def _finalize_distributed_session(drain_result: dict):
             """Finalize the shared session after every distributed node has drained."""
