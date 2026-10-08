@@ -208,3 +208,43 @@ def test_disconnect_is_blocked_while_stream_finalization_is_pending() -> None:
         raise AssertionError("disconnect_all should be blocked while finalization is pending")
     except RuntimeError as exc:
         assert "finalization is still in progress" in str(exc)
+
+
+def test_lost_sensor_does_not_invalidate_archive_or_clear_cleanup_obligation(monkeypatch):
+    from concurrent.futures import Future
+    from nexus_n3.sensor_manager.types.connections import ConnectionStatus
+    monkeypatch.setattr(core_module.time, "sleep", lambda _: None)
+    monkeypatch.setattr(core_module.pipeline_diagnostics, "record_event", lambda *args, **kwargs: None)
+    monkeypatch.setattr(core_module.pipeline_diagnostics, "flush", lambda: None)
+    subject = _make_subject("Subject_1", "LOST")
+    lost = subject.sensors[0]["sensor"]
+    lost.connection_status = ConnectionStatus.DISCONNECTED
+    lost.measurement_cleanup_pending = True
+    core, file_manager, event_bus = _make_core([subject])
+    completion = Future()
+    completion.set_result(True)
+    core.sensor_orch.stop_specific = lambda _: completion
+    core._stop_stream_impl([subject], stop_specific=True)
+    assert file_manager.archive_calls == 1
+    assert lost.measurement_cleanup_pending
+    assert event_bus.events[-1]["type"] == mt.EVT_STREAM_DRAINED
+    assert file_manager.finalized_summaries[-1]["drain_summary"]["status"] == "ok"
+
+
+def test_unexpected_loss_reports_assignment_without_stopping_session():
+    subject = _make_subject("Subject_1", "DOT")
+    sensor = subject.sensors[0]["sensor"]
+    sensor.name = "Movella DOT"
+    sensor.location = "RIGHT_ANKLE"
+    sensor.last_disconnect_was_connected = True
+    sensor.measurement_cleanup_pending = True
+    core, file_manager, event_bus = _make_core([subject])
+    core._on_disconnected(["DOT"])
+    payload = event_bus.events[-1]["payload"]
+    assert payload["unexpected"]
+    assert payload["sensors"] == [{"subject_id": "Subject_1", "address": "DOT", "name": "Movella DOT", "location": "RIGHT_ANKLE"}]
+    assert core.stream_phase == "official_streaming" and subject.is_streaming
+    assert sensor.measurement_cleanup_pending and file_manager.archive_calls == 0
+    sensor.cleanup_in_progress = True
+    core._on_disconnected(["DOT"])
+    assert not event_bus.events[-1]["payload"]["unexpected"]

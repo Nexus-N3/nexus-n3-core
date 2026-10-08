@@ -786,6 +786,7 @@ class Core:
             "on_discover": self._on_discover,
             "on_connected": self._on_connected,
             "on_disconnected": self._on_disconnected,
+            "on_cleanup_complete": self._on_cleanup_complete,
             "on_data": self._on_data,
             "on_identify": self._on_identify,
             "on_battery": self._on_battery,
@@ -873,11 +874,11 @@ class Core:
             self.sensor_orch.connect_specific(addresses)
             time.sleep(2)
 
-    def disconnect_all(self):
+    def disconnect_all(self, cleanup_context=None):
         """Disconnect all sensors."""
         self._ensure_disconnect_allowed()
-        self.sensor_orch.disconnect_all()
-        time.sleep(2)
+        cleanup_context = self._announce_cleanup(cleanup_context)
+        self.sensor_orch.disconnect_all(cleanup_context)
 
     def check_battery(self, scan_timeout: float = 5.0, read_timeout: float = 10.0):
         """
@@ -996,7 +997,7 @@ class Core:
         threading.Thread(target=_emit_results, daemon=True).start()
         return []
 
-    def disconnect_subjects(self, subject_ids):
+    def disconnect_subjects(self, subject_ids, cleanup_context=None):
         """Disconnect sensors for specific subjects."""
         self._ensure_disconnect_allowed()
         subjects = self._get_subjects_by_ids(subject_ids)
@@ -1006,9 +1007,8 @@ class Core:
             for entry in sub.sensors
             if entry["sensor"].address
         ]
-        if addresses:
-            self.sensor_orch.disconnect_addresses(addresses)
-            time.sleep(2)
+        cleanup_context = self._announce_cleanup(cleanup_context)
+        self.sensor_orch.disconnect_addresses(addresses, cleanup_context)
 
     def start_stream(self, payload):
         """Start streaming data for all subjects."""
@@ -1584,6 +1584,23 @@ class Core:
         self.active_subject_ids = None # reset the subject ids
         self.pending_correlation_id = None
 
+    def _announce_cleanup(self, context):
+        context = {**(context or {})}
+        context.setdefault("cleanup_deadline_unix_s", time.time() + 90)
+        if self.system_event_bus:
+            self.system_event_bus.emit({"type": mt.EVT_SENSOR_CLEANUP_STARTED, "payload": {
+                **context,
+                "expected_node_ids": context.get("expected_node_ids") or [self.node_id],
+            }})
+        return context
+
+    def _on_cleanup_complete(self, payload):
+        if self.system_event_bus:
+            self.system_event_bus.emit({"type": mt.EVT_SENSOR_CLEANUP_COMPLETE, "payload": {
+                **payload, "node_id": self.node_id,
+                "expected_node_ids": payload.get("expected_node_ids") or [self.node_id],
+            }})
+
     def _on_disconnected(self, disconnected_sensors):
         """Callback invoked when sensors disconnect."""
         if self.system_event_bus:
@@ -1592,6 +1609,22 @@ class Core:
                     "type": mt.EVT_SENSOR_DISCONNECTED,
                     "payload": {
                         "disconnected_sensors": disconnected_sensors,
+                        "unexpected": getattr(self, "stream_phase", None) == "official_streaming" and any(
+                            entry["sensor"].address in disconnected_sensors
+                            and getattr(entry["sensor"], "last_disconnect_was_connected", False)
+                            and not getattr(entry["sensor"], "cleanup_in_progress", False)
+                            for sub in self.subjects for entry in sub.sensors
+                        ),
+                        "lost_at": next((getattr(entry["sensor"], "last_link_loss_at", None)
+                                         for sub in self.subjects for entry in sub.sensors
+                                         if entry["sensor"].address in disconnected_sensors), None)
+                                   or datetime.now().astimezone().isoformat(),
+                        "sensors": [
+                            {"subject_id": sub.subject_id, "address": entry["sensor"].address,
+                             "name": entry["sensor"].name, "location": entry["sensor"].location}
+                            for sub in self.subjects for entry in sub.sensors
+                            if entry["sensor"].address in disconnected_sensors
+                        ],
                         **self._event_context(),
                     },
                 }

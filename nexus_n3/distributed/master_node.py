@@ -602,6 +602,34 @@ class MasterNode:
         payload = msg.get("payload", {})
         msg_type = msg.get("type")
 
+        if msg_type in (mt.CMD_DISCONNECT_ALL, mt.CMD_DISCONNECT_SUBJECTS):
+            # Snapshot ownership, not link status; every participant reports once.
+            nodes = {}
+            requested = payload.get("subject_ids") if msg_type == mt.CMD_DISCONNECT_SUBJECTS else None
+            for subject_id, subject in self.registry.get_subjects().items():
+                if requested is None or subject_id in requested:
+                    nodes.setdefault(subject.get("assigned_node", self.node_id), []).append(subject_id)
+            if not nodes:
+                nodes[self.node_id] = []
+            expected = sorted(nodes)
+            payload = {**payload, "cleanup_deadline_unix_s": time.time() + 90}
+            if getattr(self, "system_event_bus", None):
+                self.system_event_bus.emit({"type": mt.EVT_SENSOR_CLEANUP_STARTED, "payload": {
+                    "correlation_id": payload.get("correlation_id"),
+                    "expected_node_ids": expected,
+                    "cleanup_deadline_unix_s": payload["cleanup_deadline_unix_s"],
+                }})
+            for node_id in sorted(nodes, key=lambda n: n == self.node_id):
+                node_payload = {**payload, "expected_node_ids": expected}
+                if requested is not None:
+                    node_payload["subject_ids"] = nodes[node_id]
+                if node_id == self.node_id:
+                    if message_handler:
+                        message_handler._handle_local(msg_type, node_payload)
+                else:
+                    self.send_command({"type": msg_type, "payload": node_payload}, target_node_id=node_id)
+            return
+
         # Get list of worker IDs
         workers = [nid for nid, n in self.registry.get_nodes().items() if n["role"] == "worker"]
         #print("[MASTER] dispatch_command:", msg_type, payload)

@@ -1,6 +1,6 @@
 """Command routing/controller for sensor operations."""
 
-from nexus_n3.sensor_manager.types.connections import ConnectionStatus
+from nexus_n3.sensor_manager.cleanup_service import CleanupService
 
 
 class SensorController:
@@ -31,6 +31,7 @@ class SensorController:
         self.discovery_service = discovery_service
         self.connection_service = connection_service
         self.streaming_service = streaming_service
+        self.cleanup_service = CleanupService(adapter_pool, streaming_service.polling_stream_service)
 
         self.handlers = {
             "discover": (self.handle_discover, None),
@@ -56,6 +57,12 @@ class SensorController:
         handler_entry = self.handlers.get(message_type)
         if handler_entry is None:
             return False
+        if message_type == "disconnect_all":
+            await self.handle_disconnect_all(msg.get("cleanup_context"))
+            return True
+        if message_type == "disconnect_addresses":
+            await self.handle_disconnect_addresses(msg["addresses"], msg.get("cleanup_context"))
+            return True
         handler, arg_key = handler_entry
         if arg_key is None:
             await handler()
@@ -105,20 +112,23 @@ class SensorController:
             emit_to_client=self.emit_to_client,
         )
 
-    async def handle_disconnect_all(self):
-        return await self.connection_service.disconnect(
-            sensors_to_disconnect=self.get_connected_sensors(),
-            emit_to_client=self.emit_to_client,
-            disconnected_status=ConnectionStatus.DISCONNECTED,
-        )
+    async def _cleanup(self, sensors, cleanup_context=None):
+        targets = [sensor for sensor in sensors if sensor.address]
+        results = await self.cleanup_service.cleanup(targets, deadline=(cleanup_context or {}).get("cleanup_deadline_unix_s"))
+        for sensor in targets:
+            sensor.last_disconnect_was_connected = False
+        self.emit_to_client("on_disconnected", [r["address"] for r in results
+                            if r.get("link_connected") is False])
+        self.emit_to_client("on_cleanup_complete", {**(cleanup_context or {}), "results": results})
+        return results
 
-    async def handle_disconnect_addresses(self, addresses):
-        sensors_to_disconnect = [s for s in self._sensors() if s.address in addresses]
-        return await self.connection_service.disconnect(
-            sensors_to_disconnect=sensors_to_disconnect,
-            emit_to_client=self.emit_to_client,
-            disconnected_status=ConnectionStatus.DISCONNECTED,
-        )
+    async def handle_disconnect_all(self, cleanup_context=None):
+        return await self._cleanup(self._sensors(), cleanup_context)
+
+    async def handle_disconnect_addresses(self, addresses, cleanup_context=None):
+        requested = {str(address).upper() for address in addresses}
+        sensors = [s for s in self._sensors() if s.address and s.address.upper() in requested]
+        return await self._cleanup(sensors, cleanup_context)
 
     async def handle_reset_session_diagnostics(self):
         """Reset diagnostics for every active adapter before stream start."""

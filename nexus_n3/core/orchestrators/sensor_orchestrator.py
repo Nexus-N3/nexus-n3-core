@@ -52,11 +52,11 @@ class SensorOrchestrator:
     def connect_specific(self, addresses):
         self.manager.connect_specific_sensors(addresses)
 
-    def disconnect_all(self):
-        self.manager.disconnect_all()
+    def disconnect_all(self, cleanup_context=None):
+        self.manager.disconnect_all(cleanup_context)
 
-    def disconnect_addresses(self, addresses):
-        self.manager.disconnect_addresses(addresses)
+    def disconnect_addresses(self, addresses, cleanup_context=None):
+        self.manager.disconnect_addresses(addresses, cleanup_context)
 
     def start_all(self):
         self.manager.start_all()

@@ -16,6 +16,8 @@ for:
 from __future__ import annotations
 
 from collections import defaultdict, deque
+from contextvars import ContextVar
+from enum import Enum
 from dataclasses import dataclass, field
 import json
 import queue
@@ -90,6 +92,16 @@ def json_objects_from_line(line: str):
             yield obj
         except json.JSONDecodeError:
             continue
+
+
+class GatewayOperationPolicy(Enum):
+    """Cleanup never initializes or resets the shared transport, nor retries."""
+
+    NORMAL = "normal"
+    SENSOR_CLEANUP = "sensor_cleanup"
+
+
+_operation_policy = ContextVar("gateway_operation_policy", default=GatewayOperationPolicy.NORMAL)
 
 
 class GatewaySerialClient:
@@ -220,7 +232,12 @@ class GatewaySerialClient:
 
     def send(self, obj: dict[str, Any]) -> None:
         """Send a single JSON command to the gateway, starting the transport if needed."""
-        self.start()
+        cleanup = _operation_policy.get() == GatewayOperationPolicy.SENSOR_CLEANUP
+        if cleanup:
+            if not self.started or self.ser is None or not self.running:
+                raise serial.SerialException("Gateway transport unavailable for sensor cleanup")
+        else:
+            self.start()
         assert self.ser is not None
         line = json.dumps(obj, separators=(",", ":")) + "\n"
         with self.write_lock:
@@ -228,10 +245,11 @@ class GatewaySerialClient:
                 self.ser.write(line.encode("utf-8"))
                 self.ser.flush()
             except (serial.SerialException, OSError) as exc:
-                self._handle_transport_failure(
-                    f"serial write failed: {type(exc).__name__}: {exc}",
-                    recover=False,
-                )
+                if not cleanup:
+                    self._handle_transport_failure(
+                        f"serial write failed: {type(exc).__name__}: {exc}",
+                        recover=False,
+                    )
                 raise
 
     def hello(self, protocol_version: int = 1) -> None:
@@ -272,6 +290,11 @@ class GatewaySerialClient:
             )
             raise
         else:
+            # Recovery resets BLE links as well as the UART session. Reconcile
+            # host clients only after this request's reset acknowledgement.
+            self._dispatch_event("gateway_session_reset", {
+                "type": "gateway_session_reset", "request_id": request_id,
+            })
             logger.info(
                 "Gateway reset_session completed request_id=%s duration_ms=%.3f",
                 request_id,
@@ -375,8 +398,10 @@ class GatewaySerialClient:
 
         return self._execute_with_transport_retry("scan", _scan_once)
 
-    def connect(self, addresses: list[str], timeout_s: float) -> list[SensorConnection]:
+    def connect(self, addresses: list[str], timeout_s: float, *, policy=GatewayOperationPolicy.NORMAL) -> list[SensorConnection]:
         """Connect one or more BLE addresses through the gateway."""
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            timeout_s = min(timeout_s, 20.0)
         def _connect_once() -> list[SensorConnection]:
             request_id = self.request_id("connect")
             request_queue = self._register_request(request_id)
@@ -412,7 +437,7 @@ class GatewaySerialClient:
             finally:
                 self._unregister_request(request_id)
 
-        return self._execute_with_transport_retry("connect", _connect_once)
+        return self._execute_with_transport_retry("connect", _connect_once, policy=policy)
 
     def subscribe(
         self,
@@ -422,8 +447,12 @@ class GatewaySerialClient:
         *,
         binary_notifications: bool = False,
         indicate: bool = False,
+        policy=GatewayOperationPolicy.NORMAL,
     ) -> None:
         """Subscribe to notifications for a characteristic through the gateway."""
+
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            timeout_s = min(timeout_s, 3.0)
 
         def _subscribe_once() -> None:
             request_id = self.request_id("subscribe")
@@ -488,7 +517,7 @@ class GatewaySerialClient:
             finally:
                 self._unregister_request(request_id)
 
-        self._execute_with_transport_retry("subscribe", _subscribe_once)
+        self._execute_with_transport_retry("subscribe", _subscribe_once, policy=policy)
 
     def subscribe_with_retry(
         self,
@@ -498,10 +527,13 @@ class GatewaySerialClient:
         *,
         binary_notifications: bool = False,
         indicate: bool = False,
+        policy=GatewayOperationPolicy.NORMAL,
         attempts: int = 2,
         retry_delay_s: float = 0.3,
     ) -> None:
         """Subscribe with a small retry budget to match the tooling reference behavior."""
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            attempts = 1
         last_exc: Exception | None = None
         normalized_address = self._normalize_address(address)
         for attempt in range(1, max(attempts, 1) + 1):
@@ -513,6 +545,7 @@ class GatewaySerialClient:
                     timeout_s,
                     binary_notifications=binary_notifications,
                     indicate=indicate,
+                    policy=policy,
                 )
                 return
             except Exception as exc:
@@ -532,8 +565,11 @@ class GatewaySerialClient:
         address: str,
         characteristic_uuid: str,
         timeout_s: float,
+        *, policy=GatewayOperationPolicy.NORMAL,
     ) -> None:
         """Disable notifications for a characteristic through the gateway."""
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            timeout_s = min(timeout_s, 3.0)
         normalized_address = self._normalize_address(address)
         self.assert_connected(normalized_address, action="unsubscribe")
 
@@ -558,7 +594,7 @@ class GatewaySerialClient:
             finally:
                 self._unregister_request(request_id)
 
-        self._execute_with_transport_retry("unsubscribe", _unsubscribe_once)
+        self._execute_with_transport_retry("unsubscribe", _unsubscribe_once, policy=policy)
 
     def write_gatt(
         self,
@@ -569,8 +605,11 @@ class GatewaySerialClient:
         *,
         without_response: bool = False,
         allow_timeout: bool = False,
+        policy=GatewayOperationPolicy.NORMAL,
     ) -> float | None:
         """Perform a GATT write through the gateway."""
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            timeout_s = min(timeout_s, 3.0)
         attempt = 0
 
         def _write_once() -> float | None:
@@ -633,10 +672,12 @@ class GatewaySerialClient:
             finally:
                 self._unregister_request(request_id)
 
-        return self._execute_with_transport_retry("write_gatt", _write_once)
+        return self._execute_with_transport_retry("write_gatt", _write_once, policy=policy)
 
-    def read_gatt(self, address: str, characteristic_uuid: str, timeout_s: float) -> bytes:
+    def read_gatt(self, address: str, characteristic_uuid: str, timeout_s: float, *, policy=GatewayOperationPolicy.NORMAL) -> bytes:
         """Perform a GATT read through the gateway."""
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            timeout_s = min(timeout_s, 3.0)
         def _read_once() -> bytes:
             request_id = self.request_id("read")
             request_queue = self._register_request(request_id)
@@ -659,7 +700,7 @@ class GatewaySerialClient:
             finally:
                 self._unregister_request(request_id)
 
-        return self._execute_with_transport_retry("read_gatt", _read_once)
+        return self._execute_with_transport_retry("read_gatt", _read_once, policy=policy)
 
     def disconnect(
         self,
@@ -667,8 +708,11 @@ class GatewaySerialClient:
         timeout_s: float,
         *,
         allow_timeout: bool = False,
+        policy=GatewayOperationPolicy.NORMAL,
     ) -> list[str]:
         """Disconnect one or more addresses through the gateway."""
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            timeout_s = min(timeout_s, 5.0)
         def _disconnect_once() -> list[str]:
             request_id = self.request_id("disconnect")
             request_queue = self._register_request(request_id)
@@ -702,6 +746,19 @@ class GatewaySerialClient:
                         continue
                     if msg.get("type") == "error" and msg.get("request_id") == request_id:
                         if msg.get("error_code") == -3:
+                            # Firmware reports -3 when the requested address has no
+                            # active link, e.g. after a transport recovery reset.
+                            # A batch error doesn't identify which address is absent.
+                            if len(addresses) == 1:
+                                address = self._normalize_address(addresses[0])
+                                self.disconnected_addresses.add(address)
+                                disconnected.append(address)
+                                pending.clear()
+                                logger.info("Gateway confirmed sensor already disconnected: %s", address)
+                                self._dispatch_event("sensor_disconnected", {
+                                    "type": "sensor_disconnected", "address": address,
+                                    "request_id": request_id, "already_disconnected": True,
+                                })
                             break
                         self._raise_if_error(msg, request_id, "Gateway disconnect failed")
                 if pending and not allow_timeout:
@@ -710,7 +767,7 @@ class GatewaySerialClient:
             finally:
                 self._unregister_request(request_id)
 
-        return self._execute_with_transport_retry("disconnect", _disconnect_once)
+        return self._execute_with_transport_retry("disconnect", _disconnect_once, policy=policy)
 
     def is_disconnected(self, address: str) -> bool:
         return self._normalize_address(address) in self.disconnected_addresses
@@ -1036,20 +1093,27 @@ class GatewaySerialClient:
 
     @staticmethod
     def _is_transport_retryable(exc: Exception) -> bool:
-        if isinstance(exc, (serial.SerialException, OSError)):
-            return True
-        if not isinstance(exc, TimeoutError):
-            return False
-        text = str(exc)
-        return (
-            "gateway response" in text
-            or "scan_complete" in text
-            or "status snapshot" in text
-            or "gatt_read" in text
-        )
+        # TimeoutError is an OSError subclass: classify it before generic I/O failures.
+        if isinstance(exc, TimeoutError):
+            text = str(exc)
+            return (
+                "gateway response" in text
+                or "scan_complete" in text
+                or "status snapshot" in text
+                or "gatt_read" in text
+            )
+        return isinstance(exc, (serial.SerialException, OSError))
 
-    def _execute_with_transport_retry(self, operation: str, func: Callable[[], Any]) -> Any:
+    def _execute_with_transport_retry(self, operation: str, func: Callable[[], Any], *, policy=GatewayOperationPolicy.NORMAL) -> Any:
         """Retry one operation after resetting the transport for retryable failures."""
+        if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
+            token = _operation_policy.set(policy)
+            try:
+                # Peripheral timeouts and genuine serial errors propagate unchanged.
+                # Neither can initiate shared recovery from this operation.
+                return func()
+            finally:
+                _operation_policy.reset(token)
         try:
             return func()
         except (TimeoutError, serial.SerialException, OSError) as exc:

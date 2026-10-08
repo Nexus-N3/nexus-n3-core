@@ -25,6 +25,11 @@ class SensorBase:
         self.adapter = spec["sensor"]["adapter"]
         self.connection_status = ConnectionStatus.DISCONNECTED
         self.transport_client = None
+        # A start command may reach hardware even when its acknowledgement is lost.
+        self.measurement_cleanup_pending = False
+        self.cleanup_in_progress = False
+        self.last_disconnect_was_connected = False
+        self.last_link_loss_at = None
         self.location = str
         self.capabilities = set(spec.get("capabilities", []))
         self.attributes = {k: v.get("default") for k, v in spec.get("attributes", {}).items()}

@@ -222,8 +222,12 @@ class SensorHostClient:
 
     def _handle_adapter_write(self, params: dict[str, Any]) -> dict[str, Any]:
         payload = base64.b64decode(params["data_b64"].encode("ascii"))
-        self.proxy._adapter_request("write", str(params["uuid"]), payload)
-        return {"ok": True}
+        result = self.proxy._adapter_request(
+            "write", str(params["uuid"]), payload,
+            best_effort=params.get("best_effort", False),
+        )
+        # Legacy adapters may return None on successful writes.
+        return {"ok": result is not False}
 
     def _handle_adapter_subscribe(self, params: dict[str, Any]) -> dict[str, Any]:
         self.proxy._register_host_callback(
@@ -331,7 +335,10 @@ class InstalledSensorProxy(SensorBase):
 
     async def stop_stream(self, adapter):
         client = self._ensure_client()
-        await asyncio.to_thread(client.stop_stream)
+        result = await asyncio.to_thread(client.stop_stream)
+        if result.get("ok") is False or result.get("result") is False:
+            return False
+        return result.get("result")
 
     async def identify(self, adapter):
         client = self._ensure_client()
@@ -340,6 +347,34 @@ class InstalledSensorProxy(SensorBase):
     def consume_input(self, source_plugin_id: str, payload) -> bool:
         client = self._ensure_client()
         return client.consume_input(source_plugin_id=source_plugin_id, payload=payload)
+
+    def abort_cleanup(self) -> None:
+        """Cancel this sensor's adapter work and terminate its stalled host.
+
+        Retain the closed client and Core cleanup obligation: a new, empty plugin
+        instance must not turn an interrupted stop into a false success.
+        """
+        self._cleanup_aborted = True
+        for future in list(getattr(self, "_adapter_futures", set())):
+            future.cancel()
+        if self._plugin_client is not None:
+            self._plugin_client.transport.abort()
+
+    def _wait_for_adapter(self, coro):
+        if getattr(self, "_cleanup_aborted", False):
+            coro.close()
+            raise RuntimeError("Sensor cleanup was interrupted; plugin lifecycle state unavailable")
+        future = asyncio.run_coroutine_threadsafe(coro, self._manager_loop)
+        futures = getattr(self, "_adapter_futures", None)
+        if futures is None:
+            futures = self._adapter_futures = set()
+        futures.add(future)
+        try:
+            return future.result(timeout=30.0)
+        finally:
+            if not future.done():
+                future.cancel()
+            futures.discard(future)
 
     def close_host(self) -> None:
         try:
@@ -354,7 +389,10 @@ class InstalledSensorProxy(SensorBase):
             self._plugin_client = SensorHostClient(self._plugin, self)
         return self._plugin_client
 
-    def _adapter_request(self, method: str, uuid: str, payload: bytes | None = None) -> Any:
+    def _adapter_request(
+        self, method: str, uuid: str, payload: bytes | None = None,
+        *, best_effort: bool = False,
+    ) -> Any:
         adapter = getattr(self, "_runtime_adapter", None)
         if adapter is None:
             raise RuntimeError("sensor proxy adapter not bound")
@@ -365,12 +403,14 @@ class InstalledSensorProxy(SensorBase):
         if method == "read":
             coro = adapter.read(self.transport_client, uuid)
         elif method == "write":
-            coro = adapter.write(self.transport_client, uuid, payload)
+            coro = adapter.write(
+                self.transport_client, uuid, payload, best_effort=best_effort,
+            )
         elif method == "unsubscribe":
             coro = adapter.unset_notify_callback(self.transport_client, uuid)
         else:
             raise RuntimeError(f"unsupported adapter request: {method}")
-        return asyncio.run_coroutine_threadsafe(coro, self._manager_loop).result(timeout=30.0)
+        return self._wait_for_adapter(coro)
 
     def _register_host_callback(self, *, callback_id: str, notify_uuid: str, indicate: bool = False, transport: StdioJsonRpcTransport) -> None:
         adapter = getattr(self, "_runtime_adapter", None)
@@ -402,7 +442,7 @@ class InstalledSensorProxy(SensorBase):
 
         self._adapter_callbacks[callback_id] = notify_uuid
         coro = adapter.set_notify_callback(self.transport_client, notify_uuid, _notify, indicate=indicate)
-        asyncio.run_coroutine_threadsafe(coro, self._manager_loop).result(timeout=30.0)
+        self._wait_for_adapter(coro)
 
     def _unregister_host_callback(
         self,

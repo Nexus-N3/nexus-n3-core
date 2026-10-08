@@ -75,6 +75,7 @@ class StreamingService:
             location=location,
         )
 
+        sensor.measurement_cleanup_pending = True
         try:
             if hasattr(sensor, "start_stream") and callable(
                 getattr(sensor, "start_stream")
@@ -135,6 +136,7 @@ class StreamingService:
             await self.polling_stream_service.stop(sensor)
             if hasattr(sensor, "stop_stream") and callable(getattr(sensor, "stop_stream")):
                 await sensor.stop_stream(adapter)
+                sensor.measurement_cleanup_pending = False
             elif not (
                 hasattr(sensor, "request_sample")
                 and callable(getattr(sensor, "request_sample"))
@@ -151,6 +153,8 @@ class StreamingService:
                 exc,
             )
             raise
+        if hasattr(sensor, "request_sample") and not hasattr(sensor, "stop_stream"):
+            sensor.measurement_cleanup_pending = False
         self.logger.info(
             "sensor stop completed address=%s name=%s location=%s duration_ms=%.3f",
             address,

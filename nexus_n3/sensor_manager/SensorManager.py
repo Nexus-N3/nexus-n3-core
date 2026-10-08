@@ -64,6 +64,7 @@ class SensorManager:
             "on_discover": None,
             "on_connected": None,
             "on_disconnected": None,
+            "on_cleanup_complete": None,
             "on_data": None,
             "on_identify": None,
             "on_battery": None,
@@ -282,56 +283,66 @@ class SensorManager:
         """Dispose the old runtime in transport-safe order, then install new sensors."""
 
         previous_sensors = list(self.sensors)
-        await asyncio.to_thread(self._wait_for_routing_to_drain)
-        await self.streaming_service.shutdown()
-
-        connected_sensors = [
-            sensor
-            for sensor in previous_sensors
-            if getattr(getattr(sensor, "connection_status", None), "name", None)
-            == ConnectionStatus.CONNECTED.name
-        ]
-        if connected_sensors:
-            await self.connection_service.disconnect(
-                sensors_to_disconnect=connected_sensors,
-                emit_to_client=lambda _event, _payload: None,
-                disconnected_status=ConnectionStatus.DISCONNECTED,
-            )
-
+        previous_cleanup_flags = [sensor.cleanup_in_progress for sensor in previous_sensors]
         for sensor in previous_sensors:
-            for event_name in list(getattr(sensor, "listeners", {})):
-                try:
-                    sensor.unregister_listener(event_name)
-                except Exception:
-                    pass
+            sensor.cleanup_in_progress = True
+        try:
+            await asyncio.to_thread(self._wait_for_routing_to_drain)
+            await self.streaming_service.shutdown()
 
-            if hasattr(sensor, "close_host") and callable(getattr(sensor, "close_host")):
-                try:
-                    sensor.close_host()
-                except Exception:
-                    self.logger.exception(
-                        "Failed to close plugin host for sensor %s",
-                        getattr(sensor, "name", type(sensor).__name__),
-                    )
+            connected_sensors = [
+                sensor
+                for sensor in previous_sensors
+                if getattr(getattr(sensor, "connection_status", None), "name", None)
+                == ConnectionStatus.CONNECTED.name
+            ]
+            if connected_sensors:
+                await self.connection_service.disconnect(
+                    sensors_to_disconnect=connected_sensors,
+                    emit_to_client=lambda _event, _payload: None,
+                    disconnected_status=ConnectionStatus.DISCONNECTED,
+                )
 
-            callbacks = getattr(sensor, "_adapter_callbacks", None)
-            if isinstance(callbacks, dict):
-                callbacks.clear()
-            sensor.set_transport_client(None)
-            if hasattr(sensor, "_runtime_adapter"):
-                sensor._runtime_adapter = None
-            if hasattr(sensor, "_manager_loop"):
-                sensor._manager_loop = None
+            for sensor in previous_sensors:
+                for event_name in list(getattr(sensor, "listeners", {})):
+                    try:
+                        sensor.unregister_listener(event_name)
+                    except Exception:
+                        pass
 
-        self.sensors = []
-        self.sensor_meta = {}
-        self.routing_table = {}
-        self.adapter_pool.reset()
+                if hasattr(sensor, "close_host") and callable(getattr(sensor, "close_host")):
+                    try:
+                        sensor.close_host()
+                    except Exception:
+                        self.logger.exception(
+                            "Failed to close plugin host for sensor %s",
+                            getattr(sensor, "name", type(sensor).__name__),
+                        )
 
-        self._install_sensor_configuration(sensors_to_init)
-        # Await cleanup/initialization here instead of merely queueing it. The
-        # completion returned to Core is the reconfiguration barrier.
-        await self.adapter_pool.initialize_all()
+                callbacks = getattr(sensor, "_adapter_callbacks", None)
+                if isinstance(callbacks, dict):
+                    callbacks.clear()
+                sensor.set_transport_client(None)
+                if hasattr(sensor, "_runtime_adapter"):
+                    sensor._runtime_adapter = None
+                if hasattr(sensor, "_manager_loop"):
+                    sensor._manager_loop = None
+
+            self.sensors = []
+            self.sensor_meta = {}
+            self.routing_table = {}
+            self.adapter_pool.reset()
+
+            self._install_sensor_configuration(sensors_to_init)
+            # Await cleanup/initialization here instead of merely queueing it. The
+            # completion returned to Core is the reconfiguration barrier.
+            await self.adapter_pool.initialize_all()
+        finally:
+            # Failed retirement must not leave the old configuration permanently
+            # excluded from discovery, writes, or a subsequent cleanup attempt.
+            for sensor, previous_flag in zip(previous_sensors, previous_cleanup_flags):
+                sensor.cleanup_in_progress = previous_flag
+
 
     def _install_sensor_configuration(self, sensors_to_init: list):
         """Populate manager state from pre-instantiated sensors."""
@@ -347,6 +358,7 @@ class SensorManager:
             if sensor is None:
                 continue
 
+            sensor.cleanup_in_progress = False
             self.adapter_pool.get_or_create(sensor.adapter)
             self.register_listeners_with_sensor(sensor)
 
@@ -470,16 +482,16 @@ class SensorManager:
             {"message": "connect_specific_sensors", "addresses": addresses},
         )
 
-    def disconnect_all(self):
+    def disconnect_all(self, cleanup_context=None):
         self.loop.call_soon_threadsafe(
             self.queue.put_nowait,
-            {"message": "disconnect_all"},
+            {"message": "disconnect_all", "cleanup_context": cleanup_context or {}},
         )
 
-    def disconnect_addresses(self, addresses: List):
+    def disconnect_addresses(self, addresses: List, cleanup_context=None):
         self.loop.call_soon_threadsafe(
             self.queue.put_nowait,
-            {"message": "disconnect_addresses", "addresses": addresses},
+            {"message": "disconnect_addresses", "addresses": addresses, "cleanup_context": cleanup_context or {}},
         )
 
     def identify(self, address: str):
@@ -568,6 +580,8 @@ class SensorManager:
         if not self.running:
             return
 
+        for sensor in self.sensors:
+            sensor.cleanup_in_progress = True
         self._quiesce_routing()
         self._wait_for_routing_to_drain()
 

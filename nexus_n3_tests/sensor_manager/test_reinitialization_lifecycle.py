@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from concurrent.futures import Future
 from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
 
 from nexus_n3.sensor_manager.SensorManager import SensorManager
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 from nexus_n3.sensor_manager.sensor_handle import SensorBase
 from nexus_n3.sensor_manager.types.connections import ConnectionStatus
+from nexus_n3.sensor_manager.adapters.gateway_ble_client import GatewaySerialClient
 
 
 class _GatewayState:
@@ -178,5 +182,60 @@ def test_changed_sensor_set_reinitialization_removes_previous_runtime_state(monk
             added.address,
         }
         assert gateway_state.subscriptions == gateway_state.connected
+    finally:
+        manager.stop_manager()
+
+
+@pytest.mark.parametrize("initial_timeout", [False, True])
+def test_reinitialization_recovers_stale_connection_after_gateway_lost_link(monkeypatch, initial_timeout):
+    """An absent remote link is retired and the next acquisition can start."""
+    state = _GatewayState()
+    _LifecycleAdapter.state = state
+    gateway = GatewaySerialClient(BLERuntimeConfig(backend="gateway"))
+    gateway.send = Mock(side_effect=lambda msg: gateway._route_json({
+        "type": "error", "request_id": msg["request_id"],
+        "error_code": -3, "message": "disconnect_addresses_failed",
+    }))
+
+    class Adapter(_LifecycleAdapter):
+        fail_once = initial_timeout
+
+        async def disconnect(self, client):
+            if self.fail_once:
+                self.fail_once = False
+                raise TimeoutError("Timed out waiting for gateway response")
+            assert client.address in gateway.disconnect([client.address], .01)
+            return await super().disconnect(client)
+
+    monkeypatch.setattr("nexus_n3.sensor_manager.SensorManager.platform.system", lambda: "Darwin")
+    monkeypatch.setattr("nexus_n3.sensor_manager.adapter_pool.resolve_adapter_class", lambda *_args: Adapter)
+    manager = SensorManager(ble_runtime_config=BLERuntimeConfig(backend="bleak"))
+    try:
+        previous = _LifecycleSensor("AA:00:00:00:00:01")
+        manager.init_sensor_manager([previous])
+        _submit(manager, "discover_and_connect")
+        _submit(manager, "start_all")
+        manager.stop_all().result(timeout=3)
+        # Hardware lost its link without delivering a disconnect event to Core.
+        state.connected.clear()
+        state.subscriptions.clear()
+        assert previous.connection_status is ConnectionStatus.CONNECTED
+        replacement = _LifecycleSensor(previous.address)
+        if initial_timeout:
+            with pytest.raises(TimeoutError, match="gateway response"):
+                manager.init_sensor_manager([replacement])
+            assert manager.sensors == [previous]
+            assert not previous.cleanup_in_progress
+            assert not previous.host_closed
+
+        manager.init_sensor_manager([replacement])
+        assert previous.host_closed
+        assert previous.transport_client is None
+        assert manager.sensors == [replacement]
+        assert not gateway.pending_requests
+        _submit(manager, "discover_and_connect")
+        _submit(manager, "start_all")
+        assert replacement.connection_status is ConnectionStatus.CONNECTED
+        assert replacement.streaming
     finally:
         manager.stop_manager()

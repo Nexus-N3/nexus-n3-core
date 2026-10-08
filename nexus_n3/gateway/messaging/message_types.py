@@ -105,6 +105,8 @@ EVT_SENSOR_CONNECTED = "sensor_connected"
 
 #: Event: A sensor has disconnected
 EVT_SENSOR_DISCONNECTED = "sensor_disconnected"
+EVT_SENSOR_CLEANUP_COMPLETE = "sensor_cleanup_complete"
+EVT_SENSOR_CLEANUP_STARTED = "sensor_cleanup_started"
 
 #: Event: Streaming of sensor data started
 EVT_STREAM_STARTED = "stream_started"

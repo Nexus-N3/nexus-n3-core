@@ -434,7 +434,7 @@ class MessageHandler:
         elif msg_type == mt.CMD_DISCONNECT_SUBJECTS:
             self.si.pending_correlation_id = correlation_id
             try:
-                self.si.disconnect_subjects(payload["subject_ids"])
+                self.si.disconnect_subjects(payload["subject_ids"], cleanup_context=payload)
             except Exception as exc:
                 logger.exception("Failed to disconnect subjects")
                 self.si.pending_correlation_id = None
@@ -442,7 +442,7 @@ class MessageHandler:
         elif msg_type == mt.CMD_DISCONNECT_ALL:
             self.si.pending_correlation_id = correlation_id
             try:
-                self.si.disconnect_all()
+                self.si.disconnect_all(cleanup_context=payload)
             except Exception as exc:
                 logger.exception("Failed to disconnect all sensors")
                 self.si.pending_correlation_id = None

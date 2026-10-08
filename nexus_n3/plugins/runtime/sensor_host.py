@@ -50,14 +50,17 @@ class HostAdapterProxy:
         result = self._connection.request("adapter.read", {"uuid": str(uuid)})
         return base64.b64decode(result["data_b64"].encode("ascii"))
 
-    async def write(self, transport_client, uuid, char):
-        self._connection.request(
+    async def write(self, transport_client, uuid, char, *, best_effort: bool = False):
+        """Return whether the write succeeded, preserving its recovery policy."""
+        result = self._connection.request(
             "adapter.write",
             {
                 "uuid": str(uuid),
                 "data_b64": base64.b64encode(bytes(char)).decode("ascii"),
+                "best_effort": best_effort,
             },
         )
+        return bool(result["ok"])
 
     async def set_notify_callback(
         self,

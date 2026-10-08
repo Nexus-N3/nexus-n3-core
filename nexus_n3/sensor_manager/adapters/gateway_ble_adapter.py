@@ -25,6 +25,7 @@ from nexus_n3.core.pipeline_diagnostics import pipeline_diagnostics
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.sensor_manager.adapters.gateway_ble_client import (
     GatewaySerialClient,
+    GatewayOperationPolicy,
     SensorConnection,
     StreamFrame,
     discovered_devices_to_discovery_map,
@@ -47,6 +48,7 @@ class GatewayBLETransportClient:
     binary_notify_uuid: str | None = None
     suppress_disconnect_event: bool = False
     notify_callbacks: dict[str, Callable[[Any, bytes], Any]] = field(default_factory=dict)
+    operation_policy: GatewayOperationPolicy = GatewayOperationPolicy.NORMAL
 
 
 class GatewayBLEAdapter:
@@ -69,6 +71,7 @@ class GatewayBLEAdapter:
         self.diagnostics_callback: Callable[[dict[str, Any]], None] | None = None
         self.transport_clients: dict[str, GatewayBLETransportClient] = {}
         self.gateway_client.register_event_handler("sensor_disconnected", self._handle_sensor_disconnected)
+        self.gateway_client.register_event_handler("gateway_session_reset", self._handle_session_reset)
         self.gateway_client.register_event_handler("notification", self._handle_notification)
         self.gateway_client.register_event_handler("stream_frame", self._handle_stream_frame)
         self.gateway_client.register_event_handler("notification_drops", self._handle_notification_drops)
@@ -97,6 +100,21 @@ class GatewayBLEAdapter:
         if result is None:
             return not bool(getattr(ble_device, "is_connected", False))
         return result
+
+    async def connect_for_cleanup(self, client):
+        previous_policy = client.operation_policy
+        client.operation_policy = GatewayOperationPolicy.SENSOR_CLEANUP
+        try:
+            return await self.connect(client)
+        finally:
+            client.operation_policy = previous_policy
+
+    def release_transport_client(self, client):
+        client.sensor_id = None
+        client.binary_notify_uuid = None
+        client.notify_callbacks.clear()
+        client.disconnected_callback = None
+        self.transport_clients.pop(client.address.strip().upper(), None)
 
     def create_transport_client(self, address: str, loop=None, disconnected_callback=None):
         """Create a per-sensor proxy transport client for a gateway-managed device."""
@@ -239,6 +257,18 @@ class GatewayBLEAdapter:
             logger.error("Error during gateway BLE operation: %s", exc)
             raise
 
+    @staticmethod
+    def _operation_timeout(client, normal_timeout):
+        if client.operation_policy != GatewayOperationPolicy.SENSOR_CLEANUP:
+            return normal_timeout
+        deadline = getattr(client, "cleanup_deadline_unix_s", None)
+        if deadline is None:
+            return normal_timeout
+        remaining = deadline - time.time()
+        if remaining <= 0:
+            raise TimeoutError("Cleanup operation deadline reached")
+        return min(normal_timeout, remaining)
+
     async def set_notify_callback(self, ble_device, uuid, callback_func, *, indicate: bool = False,):
         """Register a notification callback for a remote BLE characteristic.
 
@@ -284,9 +314,10 @@ class GatewayBLEAdapter:
             self.gateway_client.subscribe_with_retry,
             ble_device.address,
             str(uuid),
-            self.ble_runtime_config.gateway_subscribe_timeout_s,
+            self._operation_timeout(ble_device, self.ble_runtime_config.gateway_subscribe_timeout_s),
             binary_notifications=subscribe_as_binary,
             indicate=indicate,
+            policy=ble_device.operation_policy,
         )
 
     async def unset_notify_callback(self, ble_device, uuid):
@@ -296,14 +327,19 @@ class GatewayBLEAdapter:
             self.gateway_client.unsubscribe,
             ble_device.address,
             characteristic_uuid,
-            self.ble_runtime_config.gateway_subscribe_timeout_s,
+            self._operation_timeout(ble_device, self.ble_runtime_config.gateway_subscribe_timeout_s),
+            policy=ble_device.operation_policy,
         )
         ble_device.notify_callbacks.pop(characteristic_uuid, None)
         if ble_device.binary_notify_uuid == characteristic_uuid:
             ble_device.binary_notify_uuid = None
 
-    async def write(self, ble_device, uuid, char):
-        """Write a GATT characteristic through the gateway."""
+    async def write(self, ble_device, uuid, char, *, best_effort: bool = False):
+        """Write through the gateway; best-effort response timeouts return False.
+
+        Strict writes retain transport recovery. Actual serial failures remain
+        recoverable for either policy; best effort only suppresses response timeout.
+        """
         address = str(ble_device.address)
         characteristic_uuid = str(uuid)
         payload_hex = bytes(char).hex()
@@ -321,8 +357,10 @@ class GatewayBLEAdapter:
                 address,
                 characteristic_uuid,
                 payload_hex,
-                self.ble_runtime_config.gateway_write_timeout_s,
+                self._operation_timeout(ble_device, self.ble_runtime_config.gateway_write_timeout_s),
                 without_response=False,
+                allow_timeout=best_effort,
+                policy=ble_device.operation_policy,
             )
         except Exception as exc:
             logger.error(
@@ -335,6 +373,12 @@ class GatewayBLEAdapter:
                 exc,
             )
             raise
+        if result is None and best_effort:
+            logger.warning(
+                "Best-effort GATT write timed out; discarding update address=%s uuid=%s",
+                address, characteristic_uuid,
+            )
+            return False
         logger.info(
             "GATT write completed address=%s uuid=%s payload_hex=%s duration_ms=%.3f",
             address,
@@ -350,7 +394,8 @@ class GatewayBLEAdapter:
             self.gateway_client.read_gatt,
             ble_device.address,
             str(uuid),
-            self.ble_runtime_config.gateway_read_timeout_s,
+            self._operation_timeout(ble_device, self.ble_runtime_config.gateway_read_timeout_s),
+            policy=ble_device.operation_policy,
         )
 
     async def get_diagnostics_snapshot(self):
@@ -372,7 +417,11 @@ class GatewayBLEAdapter:
     def _connect_sync(self, ble_device: GatewayBLETransportClient) -> bool:
         connections = self.gateway_client.connect(
             [ble_device.address],
-            timeout_s=self.ble_runtime_config.gateway_connect_timeout_s,
+            # Firmware cancels a peripheral connect at 15s; allow its outcome
+            # to arrive before abandoning the cleanup request.
+            timeout_s=self._operation_timeout(ble_device, (20.0 if ble_device.operation_policy == GatewayOperationPolicy.SENSOR_CLEANUP
+                       else self.ble_runtime_config.gateway_connect_timeout_s)),
+            policy=ble_device.operation_policy,
         )
         if not connections:
             return False
@@ -387,7 +436,8 @@ class GatewayBLEAdapter:
         try:
             disconnected = self.gateway_client.disconnect(
                 [ble_device.address],
-                timeout_s=self.ble_runtime_config.gateway_connect_timeout_s,
+                timeout_s=self._operation_timeout(ble_device, self.ble_runtime_config.gateway_connect_timeout_s),
+                policy=ble_device.operation_policy,
                 allow_timeout=False,
             )
             ok = ble_device.address.strip().upper() in disconnected
@@ -399,6 +449,18 @@ class GatewayBLEAdapter:
             return ok
         finally:
             ble_device.suppress_disconnect_event = False
+
+    def _handle_session_reset(self, _msg: dict[str, Any]) -> None:
+        """A confirmed reset retires every old remote link and subscription."""
+        for address, client in list(self.transport_clients.items()):
+            was_connected = client.is_connected
+            self.gateway_client.disconnected_addresses.add(address)
+            client.is_connected = False
+            client.sensor_id = None
+            client.binary_notify_uuid = None
+            client.notify_callbacks.clear()
+            if was_connected and not client.suppress_disconnect_event and client.disconnected_callback:
+                client.disconnected_callback(client)
 
     def _handle_sensor_disconnected(self, msg: dict[str, Any]) -> None:
         address = str(msg.get("address", "")).strip().upper()
