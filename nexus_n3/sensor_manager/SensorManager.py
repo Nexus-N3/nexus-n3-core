@@ -55,6 +55,9 @@ class SensorManager:
         self._routing_condition = threading.Condition()
         self._routing_enabled = False
         self._active_routed_calls = 0
+        # One scheduled/running job and one replaceable value per route.
+        # All access is protected by _routing_condition.
+        self._routing_pending = {}
         self._routing_executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="nexus-routing",
@@ -696,8 +699,51 @@ class SensorManager:
                 getattr(target, "name", target),
                 exc,
             )
+
+    def _submit_routed_value(self, source, target, call):
+        """Coalesce before submission, including jobs waiting for the worker."""
+        route = (source, target)
+        with self._routing_condition:
+            if not self._routing_enabled:
+                return
+            if route in self._routing_pending:
+                self._routing_pending[route] = call
+                return
+
+            self._routing_pending[route] = call
+            self._active_routed_calls += 1
+            try:
+                self._routing_executor.submit(self._run_routed_route, route)
+            except Exception:
+                self._finish_routed_route(route)
+                raise
+
+    def _run_routed_route(self, route):
+        """Consume the latest value, then yield the worker to other routes."""
+        with self._routing_condition:
+            call = self._routing_pending[route]
+            self._routing_pending[route] = None
+
+        try:
+            if call is not None:
+                self._execute_routed_call(**call)
         finally:
-            self._end_routed_call()
+            with self._routing_condition:
+                if self._routing_pending[route] is not None:
+                    try:
+                        self._routing_executor.submit(self._run_routed_route, route)
+                    except Exception:
+                        self._finish_routed_route(route)
+                        raise
+                else:
+                    self._finish_routed_route(route)
+
+    def _finish_routed_route(self, route):
+        """Retire a route job while holding _routing_condition."""
+        del self._routing_pending[route]
+        self._active_routed_calls -= 1
+        if not self._active_routed_calls:
+            self._routing_condition.notify_all()
 
     def _route_sensor_output(self, payload):
         """Forward one emitted sensor payload to compatible downstream plugins.
@@ -705,6 +751,8 @@ class SensorManager:
         Routing only occurs for `on_data` payloads that can be mapped back to a
         source sensor by address. Payloads are wrapped in a small envelope so
         downstream plugins receive consistent metadata about the producer.
+        Each source/target route keeps only the latest pending value before
+        executor submission; intermediate values are intentionally dropped.
         """
         source = self._find_sensor_for_payload(payload)
         if source is None:
@@ -724,21 +772,17 @@ class SensorManager:
             ):
                 continue
 
-            if not self._begin_routed_call():
-                return
-
-            try:
-                self._routing_executor.submit(
-                    self._execute_routed_call,
+            self._submit_routed_value(
+                source,
+                target,
+                dict(
                     source=source,
                     target=target,
                     source_plugin_id=source_plugin_id,
                     envelope=envelope,
                     payload=payload,
-                )
-            except Exception:
-                self._end_routed_call()
-                raise
+                ),
+            )
 
     def _find_sensor_for_payload(self, payload):
         """Resolve the originating sensor instance from a routed payload."""
@@ -750,9 +794,11 @@ class SensorManager:
         return next((sensor for sensor in self.sensors if getattr(sensor, "address", None) == address), None)
 
     def _quiesce_routing(self):
-        """Block new routed calls while allowing active calls to drain."""
+        """Discard pending values and block new calls; active calls may finish."""
         with self._routing_condition:
             self._routing_enabled = False
+            for route in self._routing_pending:
+                self._routing_pending[route] = None
 
     def _wait_for_routing_to_drain(self):
         with self._routing_condition:
@@ -762,19 +808,6 @@ class SensorManager:
     def _enable_routing(self):
         with self._routing_condition:
             self._routing_enabled = True
-
-    def _begin_routed_call(self):
-        with self._routing_condition:
-            if not self._routing_enabled:
-                return False
-            self._active_routed_calls += 1
-            return True
-
-    def _end_routed_call(self):
-        with self._routing_condition:
-            self._active_routed_calls -= 1
-            if not self._active_routed_calls:
-                self._routing_condition.notify_all()
 
     @staticmethod
     def _routes_compatible(outputs, inputs):

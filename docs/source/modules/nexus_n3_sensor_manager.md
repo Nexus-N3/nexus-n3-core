@@ -248,6 +248,38 @@ optional diagnostics hooks remain compatible.
 The manager remains transport-generic. Sensor protocol logic, parsing, and any
 optional `consume_input` behavior live inside the installed sensor plugins.
 
+## Plugin input routing contract
+
+Compatible `on_data` outputs are passed to downstream `consume_input` methods
+through the manager's single-worker routing executor. Routing starts disabled
+and is explicitly enabled with `enable_routing()`; starting physical streams
+does not enable it.
+
+Routing uses **latest-value-only coalescing per source/target sensor pair**.
+Each route has at most one scheduled or active executor job and one replaceable
+pending value. Incoming values replace that slot before executor submission,
+including while the route's job waits behind another consumer. When a job starts,
+it takes the latest value. When the consumer finishes, only the latest pending
+value is scheduled, yielding the worker to other queued routes. Intermediate
+values are intentionally dropped; plugins must not rely on receiving every
+sample or replaying a history. Multiple output streams on the same source/target
+pair share the slot. Separate sources and targets have independent slots.
+
+Both synchronous and coroutine consumers follow this contract. A coroutine is
+awaited to completion on the routing worker before its route advances. Consumer
+errors are logged and do not prevent delivery of the latest pending value.
+The envelope retains the source plugin ID, sensor name, address, output name,
+schema, and payload; no plugin-specific routing behavior is required.
+
+`disable_routing()`, Stop (all or specific sensors), manager shutdown, and
+reinitialisation immediately disable routing and discard all pending values.
+Queued jobs without a value exit without calling the consumer. Active consumer
+calls finish under the existing plugin timeout handling; Stop and
+reinitialisation wait for routing to drain before retiring the runtime.
+Re-enabling routing accepts fresh values and never restores discarded values.
+Coalescing affects downstream plugin inputs only; the client's `on_data`
+callback still receives every emitted payload.
+
 ## Key Files
 - `nexus_n3.sensor_manager/SensorManager.py`
 - `nexus_n3.sensor_manager/sensor_controller.py`

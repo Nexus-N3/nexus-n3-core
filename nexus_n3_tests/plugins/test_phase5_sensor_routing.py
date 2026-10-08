@@ -165,6 +165,14 @@ def _create_routing_manager(monkeypatch, consumer=None):
     return manager, consumer
 
 
+def _wait_for_routing(manager):
+    # Emission submits asynchronous work; wait before inspecting its effects.
+    with manager._routing_condition:
+        assert manager._routing_condition.wait_for(
+            lambda: manager._active_routed_calls == 0, timeout=2,
+        )
+
+
 def test_phase5_routing_starts_disabled(monkeypatch: pytest.MonkeyPatch):
 
     manager, consumer = _create_routing_manager(monkeypatch)
@@ -236,6 +244,8 @@ def test_phase5_routes_builtin_sensor_output_to_builtin_consumer(monkeypatch: py
     }
 
     manager._emit_to_client("on_data", sample)
+
+    _wait_for_routing(manager)
 
     assert len(consumer.consumed) == 1
 
@@ -469,6 +479,8 @@ def test_phase5_physical_start_does_not_enable_sensor_routing(
 
         manager._emit_to_client("on_data", _routing_sample())
 
+        _wait_for_routing(manager)
+
         assert len(consumer.consumed) == 1
 
     finally:
@@ -554,6 +566,8 @@ def test_phase5_routes_builtin_sensor_output_to_host_backed_consumer(
     }
 
     manager._emit_to_client("on_data", sample)
+
+    _wait_for_routing(manager)
 
     assert routed_errors == [
 
