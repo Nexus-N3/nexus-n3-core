@@ -62,7 +62,7 @@ def test_strict_timeout_recovers_and_retries(client, monkeypatch):
     assert client.write_gatt("CORE", "uuid", "1366", .001)
     assert len(sent) == 2
     assert sent[0]["request_id"] != sent[1]["request_id"]
-    client._handle_transport_failure.assert_called_once()
+    client._handle_transport_failure.assert_not_called()
     client._recover_transport.assert_called_once()
     assert client.pending_requests == {}
 

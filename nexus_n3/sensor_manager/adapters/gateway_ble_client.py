@@ -15,8 +15,11 @@ for:
 
 from __future__ import annotations
 
+from nexus_n3.plugins.common.operations import current_operation
+
 from collections import defaultdict, deque
 from contextvars import ContextVar
+from contextlib import contextmanager
 from enum import Enum
 from dataclasses import dataclass, field
 import json
@@ -132,6 +135,14 @@ class GatewaySerialClient:
         self._request_id_lock = threading.Lock()
         self._request_id_counter = 0
         self.event_handlers: dict[str, list[Callable[[Any], None]]] = defaultdict(list)
+        self.active_acquisition_addresses: set[str] = set()
+        self._startup_owner: int | None = None
+        self._reset_owner: int | None = None
+        self._reset_unconfirmed = False
+        self._pending_reset_ids: set[str] = set()
+        self._transport_generation = 0
+        self._uart_line_state = (True, True)
+        self._has_opened_uart = False
         self.disconnected_addresses: set[str] = set()
         self.notification_drop_count: int = 0
         self.gateway_transport_stats: dict[str, Any] = {}
@@ -155,13 +166,26 @@ class GatewaySerialClient:
 
     def start(self) -> None:
         """Open the serial port, start the reader, and complete the gateway handshake."""
-        if self.started:
+        owner = threading.get_ident()
+        with self.state_lock:
+            if self._startup_owner is not None:
+                if self._startup_owner == owner:
+                    return  # Handshake commands recurse through send().
+                raise RuntimeError("Gateway startup already in progress")
+            if self.started:
+                return
+            recovering = self._has_opened_uart
+            if not recovering and self.active_acquisition_addresses:
+                raise RuntimeError("Gateway startup/reset prohibited during active acquisition")
+            if not recovering:
+                self._startup_owner = owner
+        if recovering:
+            self.recover_uart()
             return
-        port = resolve_gateway_serial_port(self.config.gateway_serial_port)
-        self.active_serial_port = port
-        logger.info("Using Nexus BLE gateway serial interface %s", port)
-
         try:
+            port = resolve_gateway_serial_port(self.config.gateway_serial_port)
+            self.active_serial_port = port
+            logger.info("Using Nexus BLE gateway serial interface %s", port)
             self.ser = serial.Serial(
                 port=port,
                 baudrate=self.config.gateway_baudrate,
@@ -170,6 +194,7 @@ class GatewaySerialClient:
                 dsrdtr=False,
                 rtscts=False,
             )
+            self._has_opened_uart = True
             self.ser.setDTR(True)
             self.ser.setRTS(True)
             time.sleep(0.5)
@@ -192,6 +217,21 @@ class GatewaySerialClient:
         except Exception:
             self._close_transport()
             raise
+        finally:
+            with self.state_lock:
+                self._startup_owner = None
+
+    def set_acquisition_scope(self, addresses, *, append=False):
+        """Admit acquisition independently of serial I/O and reset completion."""
+        addresses = set(addresses)
+        with self.state_lock:
+            if addresses and (self._startup_owner is not None or self._reset_owner is not None
+                              or self._reset_unconfirmed):
+                raise RuntimeError("Gateway startup/reset must complete before acquisition")
+            if append:
+                self.active_acquisition_addresses.update(addresses)
+            else:
+                self.active_acquisition_addresses = addresses
 
     def close(self) -> None:
         """Stop the reader and fully tear down the gateway transport session."""
@@ -206,14 +246,18 @@ class GatewaySerialClient:
     def _close_transport(self) -> None:
         """Close serial transport resources without clearing all cached state."""
         self.running = False
-        if self.read_thread and self.read_thread.is_alive():
-            self.read_thread.join(timeout=1.0)
-        self.read_thread = None
+        self._transport_generation += 1
         if self.ser:
+            self._uart_line_state = (getattr(self.ser, "dtr", True), getattr(self.ser, "rts", True))
             try:
                 self.ser.close()
             except Exception:
                 pass
+        if self.read_thread and self.read_thread.is_alive() and self.read_thread is not threading.current_thread():
+            self.read_thread.join(timeout=1.0)
+            if self.read_thread.is_alive():
+                raise RuntimeError("Previous UART reader has not retired")
+        self.read_thread = None
         self.ser = None
         self.started = False
         self.phase = "idle"
@@ -232,7 +276,13 @@ class GatewaySerialClient:
 
     def send(self, obj: dict[str, Any]) -> None:
         """Send a single JSON command to the gateway, starting the transport if needed."""
-        cleanup = _operation_policy.get() == GatewayOperationPolicy.SENSOR_CLEANUP
+        operation = current_operation.get()
+        if operation is not None:
+            operation.check()
+        cleanup = operation is not None or _operation_policy.get() == GatewayOperationPolicy.SENSOR_CLEANUP
+        with self.state_lock:
+            if self._startup_owner not in (None, threading.get_ident()):
+                raise RuntimeError("Gateway communication recovery/startup in progress")
         if cleanup:
             if not self.started or self.ser is None or not self.running:
                 raise serial.SerialException("Gateway transport unavailable for sensor cleanup")
@@ -240,10 +290,25 @@ class GatewaySerialClient:
             self.start()
         assert self.ser is not None
         line = json.dumps(obj, separators=(",", ":")) + "\n"
-        with self.write_lock:
+        lock_timeout = 1.0
+        if operation is not None:
+            lock_timeout = min(lock_timeout, max(0, operation.deadline - time.monotonic()))
+        if not self.write_lock.acquire(timeout=lock_timeout):
+            raise TimeoutError("Gateway serial write lock deadline reached")
+        try:
+            if obj.get("type") == "reset_session":
+                with self.state_lock:
+                    if self.active_acquisition_addresses or self._reset_owner != threading.get_ident():
+                        raise RuntimeError("Gateway reset requires reset_session() admission without active acquisition")
+            if operation is not None:
+                operation.check()
             try:
-                self.ser.write(line.encode("utf-8"))
-                self.ser.flush()
+                payload = line.encode("utf-8")
+                written = self.ser.write(payload)
+                if written != len(payload):
+                    raise serial.SerialTimeoutException("Incomplete gateway command write")
+                # write_timeout bounds write(); tcdrain/flush is unbounded.
+                # A correlated gateway acknowledgement confirms completion.
             except (serial.SerialException, OSError) as exc:
                 if not cleanup:
                     self._handle_transport_failure(
@@ -251,6 +316,8 @@ class GatewaySerialClient:
                         recover=False,
                     )
                 raise
+        finally:
+            self.write_lock.release()
 
     def hello(self, protocol_version: int = 1) -> None:
         request_id = "hello_host_tool"
@@ -269,6 +336,24 @@ class GatewaySerialClient:
             self._unregister_request(request_id)
 
     def reset_session(self, timeout_s: float = 5.0) -> None:
+        with self.state_lock:
+            if self.active_acquisition_addresses:
+                raise RuntimeError("Gateway BLE session reset prohibited during active acquisition")
+            if self._reset_owner is not None:
+                raise RuntimeError("Gateway BLE session reset already in progress")
+            if self._startup_owner not in (None, threading.get_ident()):
+                raise RuntimeError("Gateway startup already in progress")
+        if not self.started:
+            previously_opened = self._has_opened_uart
+            self.start()  # Cold startup already performs reset and hello.
+            if not previously_opened:
+                return
+        with self.state_lock:
+            # Recheck after startup/readiness checks; acquisition may have won.
+            if self.active_acquisition_addresses or self._reset_owner is not None:
+                raise RuntimeError("Gateway BLE session reset prohibited during active acquisition or reset")
+            self._reset_owner = threading.get_ident()
+            self._reset_unconfirmed = True
         request_id = self.request_id("reset")
         request_queue = self._register_request(request_id)
         started_ns = time.monotonic_ns()
@@ -278,6 +363,7 @@ class GatewaySerialClient:
             timeout_s,
         )
         try:
+            self._pending_reset_ids.add(request_id)
             self.send({"type": "reset_session", "request_id": request_id})
             self._wait_for_success(request_id, request_queue, "reset_session_complete", timeout_s)
         except Exception as exc:
@@ -290,6 +376,9 @@ class GatewaySerialClient:
             )
             raise
         else:
+            with self.state_lock:
+                self._pending_reset_ids.clear()
+                self._reset_unconfirmed = False
             # Recovery resets BLE links as well as the UART session. Reconcile
             # host clients only after this request's reset acknowledgement.
             self._dispatch_event("gateway_session_reset", {
@@ -302,6 +391,8 @@ class GatewaySerialClient:
             )
         finally:
             self._unregister_request(request_id)
+            with self.state_lock:
+                self._reset_owner = None
 
     def reset_parser_diagnostics(self) -> None:
         """Reset host-side parser counters for a new recording session."""
@@ -815,15 +906,108 @@ class GatewaySerialClient:
 
         return self._execute_with_transport_retry("get_status", _status_once)
 
+    def get_connection_inventory(self, timeout_s: float = 5.0) -> dict[str, Any]:
+        """Read authoritative BLE identities without any automatic reset/retry."""
+        request_id = self.request_id("inventory")
+        pending = self._register_request(request_id)
+        token = _operation_policy.set(GatewayOperationPolicy.SENSOR_CLEANUP)
+        try:
+            self.send({"type": "get_status", "request_id": request_id})
+            message = self._wait_for_success(request_id, pending, "status", timeout_s)
+            inventory = message.get("gateway", {})
+            addresses = inventory.get("connected_addresses")
+            if (inventory.get("state") not in {"ready", "not_ready"} or not isinstance(addresses, list)
+                    or not all(isinstance(address, str) and address for address in addresses)
+                    or inventory.get("connected_count") != len(addresses)):
+                raise RuntimeError("Gateway connection inventory unavailable or invalid")
+            return {**inventory, "ble_ready": inventory["state"] == "ready",
+                    "connected_addresses": [self._normalize_address(a) for a in addresses],
+                    "reset_confirmed": not self._reset_unconfirmed}
+        finally:
+            _operation_policy.reset(token)
+            self._unregister_request(request_id)
+
+    def recover_uart(self, timeout_s: float = 5.0) -> dict[str, Any]:
+        """Verify/reopen UART only; preserve BLE links and modem-line state."""
+        with self._uart_recovery_lock():
+            owner = threading.get_ident()
+            with self.state_lock:
+                if self._startup_owner is not None or self._reset_owner is not None:
+                    raise RuntimeError("Gateway startup/reset already in progress")
+                self._startup_owner = owner
+            try:
+                if self.started and self.ser is not None and self.running:
+                    try:
+                        return self.get_connection_inventory(min(1.0, timeout_s))
+                    except (TimeoutError, serial.SerialException, OSError):
+                        pass
+                if not self.write_lock.acquire(timeout=1.0):
+                    raise TimeoutError("UART recovery waiting for previous write")
+                try:
+                    operation = current_operation.get()
+                    if operation is not None:
+                        operation.check()
+                    self._close_transport()
+                    if operation is not None:
+                        operation.check()
+                    self.buf.clear()
+                    for request_id, pending in list(self.pending_requests.items()):
+                        pending.put({"type": "error", "request_id": request_id,
+                                     "message": "UART transport generation retired"})
+                    port = resolve_gateway_serial_port(self.config.gateway_serial_port)
+                    # Set line state before opening: no startup DTR/RTS toggles,
+                    # settle sleep, input-buffer flush, or BLE reset command.
+                    self.ser = serial.Serial(port=None, baudrate=self.config.gateway_baudrate,
+                                             timeout=.1, write_timeout=1.0, dsrdtr=False, rtscts=False)
+                    self.ser.dtr, self.ser.rts = self._uart_line_state
+                    self.ser.port = port
+                    self.ser.open()
+                    self._has_opened_uart = True
+                    if operation is not None:
+                        operation.check()
+                    self.active_serial_port = port
+                    self.started = self.running = True
+                    self.read_thread = threading.Thread(target=self._read_loop, daemon=True,
+                                                        name="nexus-ble-gateway-read")
+                    self.read_thread.start()
+                finally:
+                    self.write_lock.release()
+                return self.get_connection_inventory(timeout_s)
+            except Exception:
+                self.phase = "unavailable"
+                raise
+            finally:
+                with self.state_lock:
+                    self._startup_owner = None
+
+    @contextmanager
+    def _uart_recovery_lock(self):
+        operation = current_operation.get()
+        if operation is not None:
+            operation.check()
+        timeout = min(1.0, max(0, operation.deadline - time.monotonic())) if operation is not None else 1.0
+        if not self._transport_reset_lock.acquire(timeout=timeout):
+            raise TimeoutError("Gateway UART recovery already in progress")
+        try:
+            if operation is not None:
+                operation.check()
+            yield
+        finally:
+            self._transport_reset_lock.release()
+
     def _read_loop(self) -> None:
         """Read serial bytes continuously and route parsed JSON or stream frames."""
         assert self.ser is not None
+        transport = self.ser
+        generation = self._transport_generation
 
         last_read_time = time.monotonic()
 
-        while self.running:
+        while self.running and generation == self._transport_generation:
             try:
-                chunk = self.ser.read(256)
+                chunk = transport.read(256)
+                if generation != self._transport_generation:
+                    return
 
                 if chunk:
                     buffer_len_before = len(self.buf)
@@ -864,7 +1048,7 @@ class GatewaySerialClient:
                         self._dispatch_event("stream_frame", payload)
 
             except Exception as exc:
-                if self.running:
+                if self.running and generation == self._transport_generation:
                     self._handle_transport_failure(
                         f"serial read loop failed: {type(exc).__name__}: {exc}",
                         recover=False,
@@ -891,6 +1075,10 @@ class GatewaySerialClient:
             )
 
         request_id = msg.get("request_id")
+        if msg_type == "reset_session_complete" and request_id in self._pending_reset_ids:
+            with self.state_lock:
+                self._pending_reset_ids.discard(request_id)
+                self._reset_unconfirmed = bool(self._pending_reset_ids)
 
         if request_id and request_id in self.pending_requests:
             self.pending_requests[request_id].put(msg)
@@ -1067,6 +1255,10 @@ class GatewaySerialClient:
 
     def _wait_for_message(self, request_queue: queue.Queue, deadline: float) -> dict[str, Any]:
         timeout = max(0.0, deadline - time.time())
+        operation = current_operation.get()
+        if operation is not None:
+            operation.check()
+            timeout = min(timeout, max(0, operation.deadline - time.monotonic()))
         if timeout <= 0:
             raise TimeoutError("Timed out waiting for gateway response")
         try:
@@ -1085,11 +1277,8 @@ class GatewaySerialClient:
 
     def _recover_transport(self, reason: str) -> None:
         """Reopen and re-handshake the gateway transport after a failure."""
-        with self._transport_reset_lock:
-            if self.started:
-                return
-            logger.info("Resetting gateway transport after failure: %s", reason)
-            self.start()
+        logger.info("Recovering gateway UART without BLE reset: %s", reason)
+        self.recover_uart()
 
     @staticmethod
     def _is_transport_retryable(exc: Exception) -> bool:
@@ -1106,6 +1295,10 @@ class GatewaySerialClient:
 
     def _execute_with_transport_retry(self, operation: str, func: Callable[[], Any], *, policy=GatewayOperationPolicy.NORMAL) -> Any:
         """Retry one operation after resetting the transport for retryable failures."""
+        stop_operation = current_operation.get()
+        if stop_operation is not None:
+            stop_operation.check()
+            policy = GatewayOperationPolicy.SENSOR_CLEANUP
         if policy == GatewayOperationPolicy.SENSOR_CLEANUP:
             token = _operation_policy.set(policy)
             try:
@@ -1117,13 +1310,13 @@ class GatewaySerialClient:
         try:
             return func()
         except (TimeoutError, serial.SerialException, OSError) as exc:
+            with self.state_lock:
+                if self.active_acquisition_addresses:
+                    raise
             if not self._is_transport_retryable(exc):
                 raise
-            self._handle_transport_failure(
-                f"{operation} failed: {type(exc).__name__}: {exc}",
-                recover=False,
-            )
-            logger.info("Retrying gateway operation after transport reset: %s", operation)
+            # Automatic retry repairs UART only. BLE destruction remains an
+            # explicit reset_session() operation protected by acquisition admission.
             self._recover_transport(f"{operation} retry")
             return func()
 

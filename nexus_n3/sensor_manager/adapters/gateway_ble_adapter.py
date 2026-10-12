@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from nexus_n3.plugins.common.operations import current_operation
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -48,6 +49,8 @@ class GatewayBLETransportClient:
     binary_notify_uuid: str | None = None
     suppress_disconnect_event: bool = False
     notify_callbacks: dict[str, Callable[[Any, bytes], Any]] = field(default_factory=dict)
+    notify_indications: dict[str, bool] = field(default_factory=dict)
+    retain_for_recovery: bool = False
     operation_policy: GatewayOperationPolicy = GatewayOperationPolicy.NORMAL
 
 
@@ -109,12 +112,53 @@ class GatewayBLEAdapter:
         finally:
             client.operation_policy = previous_policy
 
+    async def recover_connections(self):
+        inventory = await self.execute(self.gateway_client.recover_uart)
+        connected = set(inventory["connected_addresses"])
+        for address, client in self.transport_clients.items():
+            client.is_connected = address in connected
+            if client.is_connected:
+                self.gateway_client.disconnected_addresses.discard(address)
+            else:
+                self.gateway_client.disconnected_addresses.add(address)
+        return inventory
+
+    def adopt_recovery_client(self, sensor):
+        """Rebind retained context when a failed configuration made a new slot."""
+        if sensor.transport_client is not None:
+            client = sensor.transport_client
+            client.retain_for_recovery = bool(sensor.measurement_cleanup_pending)
+            self.transport_clients[str(sensor.address).upper()] = client
+
+    async def reconnect_for_recovery(self, sensor):
+        """Locate the retained identity; never substitute another sensor."""
+        client = sensor.transport_client
+        discovered = await self.discover_devices([sensor], timeout=3.0)
+        if not any(str(address).upper() == str(sensor.address).upper() for address in discovered):
+            return False
+        if not await self.connect_for_cleanup(client):
+            return False
+        # Restore callback channels without calling setup and replacing the
+        # original measurement/subscription context held in the plugin host.
+        for uuid in list(client.notify_callbacks):
+            await self.execute(
+                self.gateway_client.subscribe_with_retry, client.address, uuid,
+                self._operation_timeout(client, self.ble_runtime_config.gateway_subscribe_timeout_s),
+                binary_notifications=uuid == client.binary_notify_uuid,
+                indicate=client.notify_indications.get(uuid, False),
+                policy=GatewayOperationPolicy.SENSOR_CLEANUP,
+            )
+        return True
+
     def release_transport_client(self, client):
         client.sensor_id = None
         client.binary_notify_uuid = None
         client.notify_callbacks.clear()
+        client.notify_indications.clear()
         client.disconnected_callback = None
-        self.transport_clients.pop(client.address.strip().upper(), None)
+        address = client.address.strip().upper()
+        if self.transport_clients.get(address) is client:
+            self.transport_clients.pop(address)
 
     def create_transport_client(self, address: str, loop=None, disconnected_callback=None):
         """Create a per-sensor proxy transport client for a gateway-managed device."""
@@ -307,6 +351,7 @@ class GatewayBLEAdapter:
             and len(ble_device.notify_callbacks) == 0
         )
         ble_device.notify_callbacks[str(uuid)] = wrapped_callback
+        ble_device.notify_indications[str(uuid)] = indicate
         if subscribe_as_binary:
             ble_device.binary_notify_uuid = str(uuid)
             
@@ -330,7 +375,11 @@ class GatewayBLEAdapter:
             self._operation_timeout(ble_device, self.ble_runtime_config.gateway_subscribe_timeout_s),
             policy=ble_device.operation_policy,
         )
+        operation = current_operation.get()
+        if operation is not None:
+            operation.check()
         ble_device.notify_callbacks.pop(characteristic_uuid, None)
+        ble_device.notify_indications.pop(characteristic_uuid, None)
         if ble_device.binary_notify_uuid == characteristic_uuid:
             ble_device.binary_notify_uuid = None
 
@@ -425,6 +474,9 @@ class GatewayBLEAdapter:
         )
         if not connections:
             return False
+        operation = current_operation.get()
+        if operation is not None:
+            operation.check()
         connection: SensorConnection = connections[0]
         ble_device.sensor_id = connection.sensor_id
         ble_device.is_connected = True
@@ -440,12 +492,19 @@ class GatewayBLEAdapter:
                 policy=ble_device.operation_policy,
                 allow_timeout=False,
             )
+            operation = current_operation.get()
+            if operation is not None:
+                operation.check()
             ok = ble_device.address.strip().upper() in disconnected
             ble_device.is_connected = False
             ble_device.sensor_id = None
-            ble_device.binary_notify_uuid = None
-            ble_device.notify_callbacks.clear()
-            self.transport_clients.pop(ble_device.address.strip().upper(), None)
+            if not ble_device.retain_for_recovery:
+                ble_device.binary_notify_uuid = None
+                ble_device.notify_callbacks.clear()
+                ble_device.notify_indications.clear()
+            address = ble_device.address.strip().upper()
+            if self.transport_clients.get(address) is ble_device:
+                self.transport_clients.pop(address)
             return ok
         finally:
             ble_device.suppress_disconnect_event = False
@@ -457,8 +516,10 @@ class GatewayBLEAdapter:
             self.gateway_client.disconnected_addresses.add(address)
             client.is_connected = False
             client.sensor_id = None
-            client.binary_notify_uuid = None
-            client.notify_callbacks.clear()
+            if not client.retain_for_recovery:
+                client.binary_notify_uuid = None
+                client.notify_callbacks.clear()
+                client.notify_indications.clear()
             if was_connected and not client.suppress_disconnect_event and client.disconnected_callback:
                 client.disconnected_callback(client)
 

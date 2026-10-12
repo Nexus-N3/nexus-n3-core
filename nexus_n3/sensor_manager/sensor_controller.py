@@ -63,6 +63,10 @@ class SensorController:
         if message_type == "disconnect_addresses":
             await self.handle_disconnect_addresses(msg["addresses"], msg.get("cleanup_context"))
             return True
+        if message_type == "stop_all":
+            return await self.handle_stop_all(msg.get("stop_deadline"))
+        if message_type == "stop_specific_sensors":
+            return await self.handle_stop_specific_sensors(msg["addresses"], msg.get("stop_deadline"))
         handler, arg_key = handler_entry
         if arg_key is None:
             await handler()
@@ -147,17 +151,19 @@ class SensorController:
             emit_to_client=self.emit_to_client,
         )
 
-    async def handle_stop_all(self):
+    async def handle_stop_all(self, deadline=None):
         return await self.streaming_service.stop(
-            sensors=self.get_connected_sensors(),
+            sensors=self._sensors(),
             emit_to_client=self.emit_to_client,
+            deadline=deadline,
         )
 
-    async def handle_stop_specific_sensors(self, addresses):
-        filtered = [s for s in self.get_connected_sensors() if s.address in addresses]
+    async def handle_stop_specific_sensors(self, addresses, deadline=None):
+        filtered = [s for s in self._sensors() if s.address in addresses]
         return await self.streaming_service.stop(
             sensors=filtered,
             emit_to_client=self.emit_to_client,
+            deadline=deadline,
         )
 
     async def handle_identify(self, address):

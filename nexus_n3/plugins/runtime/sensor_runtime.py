@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+from nexus_n3.plugins.common.operations import SensorOperation, current_operation, operation_scope
 import base64
 import copy
 import os
@@ -76,8 +77,12 @@ class SensorHostClient:
         self.transport.register_handler("adapter.subscribe", self._handle_adapter_subscribe)
         self.transport.register_handler("adapter.unsubscribe", self._handle_adapter_unsubscribe)
         self.transport.register_handler("sensor.emit_event", self._handle_sensor_event)
-        description = self.transport.request("describe", {})
-        health = self.transport.request("healthcheck", {})
+        try:
+            description = self.transport.request("describe", {})
+            health = self.transport.request("healthcheck", {})
+        except Exception:
+            self.transport.abort()
+            raise
 
         if description.get("plugin_id") != plugin.plugin_id:
             raise PluginTransportError(
@@ -123,7 +128,8 @@ class SensorHostClient:
 
     def stop_stream(self) -> Any:
         self.bind_sensor()
-        return self.transport.request("stop_stream", {})
+        params = {"require_transport_confirmation": True} if getattr(self.proxy, "_recovery_requires_confirmation", False) else {}
+        return self.transport.request("stop_stream", params)
 
     def identify(self) -> Any:
         self.bind_sensor()
@@ -247,6 +253,9 @@ class SensorHostClient:
         return {"ok": True}
 
     def _handle_sensor_event(self, params: dict[str, Any]) -> dict[str, Any]:
+        if (getattr(self.proxy, "physical_stop_quarantined", False)
+                or getattr(self.proxy, "cleanup_in_progress", False)):
+            return {"ok": False}
         self.proxy._handle_host_event(
             str(params["event"]),
             params.get("payload"),
@@ -322,45 +331,128 @@ class InstalledSensorProxy(SensorBase):
     #    super().__init__(None)
 
     async def setup(self, adapter, enable_battery: bool = False, enable_button: bool = False):
-        client = self._ensure_client()
-        await asyncio.to_thread(
-            client.setup,
+        await self._call_lifecycle(
+            "setup",
             enable_battery=enable_battery,
             enable_button=enable_button,
         )
 
     async def start_stream(self, adapter):
-        client = self._ensure_client()
-        await asyncio.to_thread(client.start_stream)
+        self._recovery_requires_confirmation = False
+        await self._call_lifecycle("start_stream")
+
+    async def _call_lifecycle(self, method, **kwargs):
+        """Bound mutating RPC work without putting timers on sample traffic."""
+        previous = getattr(self, "_lifecycle_worker", None)
+        if previous is not None and not previous.done():
+            raise RuntimeError("Previous plugin lifecycle worker is still executing")
+        operation = current_operation.get()
+        owned = operation is None
+        operation = operation or SensorOperation(time.monotonic() + 30)
+        def invoke():
+            operation.check()
+            return getattr(self._ensure_client(), method)(**kwargs)
+        with operation_scope(operation):
+            worker = asyncio.create_task(asyncio.to_thread(invoke))
+        self._lifecycle_worker = worker
+        worker.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+        try:
+            done, _ = await asyncio.wait({worker}, timeout=max(0, operation.deadline - time.monotonic()))
+            if not done:
+                if method != "identify":
+                    self.physical_stop_quarantined = True
+                raise TimeoutError("Plugin lifecycle operation deadline reached")
+            operation.check()
+            return worker.result()
+        except (Exception, asyncio.CancelledError):
+            if method != "identify":
+                self.physical_stop_quarantined = True
+            raise
+        finally:
+            if owned:
+                operation.cancelled.set()
 
     async def stop_stream(self, adapter):
-        client = self._ensure_client()
-        result = await asyncio.to_thread(client.stop_stream)
+        if getattr(self, "physical_stop_quarantined", False):
+            raise RuntimeError("Sensor has an unresolved physical STOP operation")
+        previous = getattr(self, "_stop_worker", None)
+        if previous is not None and not previous.done():
+            raise RuntimeError("Sensor STOP is still running")
+        def invoke_stop():
+            return self._ensure_client().stop_stream()
+        worker = asyncio.create_task(asyncio.to_thread(invoke_stop))
+        self._stop_worker = worker
+        # Cancelling the caller must not hide a still-running RPC worker.
+        worker.add_done_callback(lambda task: task.exception() if not task.cancelled() else None)
+        result = await asyncio.shield(worker)
         if result.get("ok") is False or result.get("result") is False:
             return False
         return result.get("result")
 
+    async def prepare_recovery(self):
+        """Retire only completed STOP work; preserve the existing host's state."""
+        if getattr(self, "_plugin_state_lost", False):
+            raise RuntimeError("Plugin lifecycle state lost; physical STOP requires operator intervention")
+        previous = getattr(self, "_stop_worker", None)
+        if previous is not None and not previous.done():
+            raise RuntimeError("Previous plugin STOP worker is still executing; retry recovery later")
+        previous = getattr(self, "_lifecycle_worker", None)
+        if previous is not None and not previous.done():
+            raise RuntimeError("Previous plugin lifecycle worker is still executing; retry recovery later")
+        if self._plugin_client is not None:
+            state = await asyncio.to_thread(self._plugin_client.transport.request, "runtime_barrier", {})
+            if not state.get("idle"):
+                raise RuntimeError("Previous host operation is still executing; retry recovery later")
+            operation = current_operation.get()
+            if operation is not None:
+                operation.check()
+            if state.get("measurement_stop_confirmed") is True:
+                self.measurement_cleanup_pending = False
+        elif self.measurement_cleanup_pending:
+            raise RuntimeError("Plugin STOP context unavailable; physical STOP requires operator intervention")
+        self._stop_worker = None
+        self._cleanup_aborted = False
+        self._recovery_requires_confirmation = getattr(getattr(self, "_runtime_adapter", None), "gateway_client", None) is not None
+        self.physical_stop_quarantined = False
+
     async def identify(self, adapter):
-        client = self._ensure_client()
-        await asyncio.to_thread(client.identify)
+        await self._call_lifecycle("identify")
 
     def consume_input(self, source_plugin_id: str, payload) -> bool:
         client = self._ensure_client()
         return client.consume_input(source_plugin_id=source_plugin_id, payload=payload)
 
     def abort_cleanup(self) -> None:
-        """Cancel this sensor's adapter work and terminate its stalled host.
+        """Fence abandoned adapter work while retaining the host's STOP state."""
+        self._cleanup_aborted = True
+        self.physical_stop_quarantined = True
+        operation = current_operation.get()
+        if operation is not None:
+            operation.cancelled.set()
+        for future in list(getattr(self, "_adapter_futures", set())):
+            future.cancel()
 
-        Retain the closed client and Core cleanup obligation: a new, empty plugin
-        instance must not turn an interrupted stop into a false success.
-        """
+    def release_after_verified_stop(self):
+        """Retire unusable host state after an explicit external STOP confirmation."""
         self._cleanup_aborted = True
         for future in list(getattr(self, "_adapter_futures", set())):
             future.cancel()
         if self._plugin_client is not None:
             self._plugin_client.transport.abort()
+        self._plugin_client = None
+        self._adapter_callbacks.clear()
 
     def _wait_for_adapter(self, coro):
+        operation = current_operation.get()
+        if operation is not None:
+            try:
+                operation.check()
+            except Exception:
+                coro.close()
+                raise
+        if getattr(self, "physical_stop_quarantined", False):
+            coro.close()
+            raise RuntimeError("Sensor is isolated after physical STOP timeout")
         if getattr(self, "_cleanup_aborted", False):
             coro.close()
             raise RuntimeError("Sensor cleanup was interrupted; plugin lifecycle state unavailable")
@@ -370,7 +462,7 @@ class InstalledSensorProxy(SensorBase):
             futures = self._adapter_futures = set()
         futures.add(future)
         try:
-            return future.result(timeout=30.0)
+            return future.result(timeout=min(30.0, max(.001, operation.deadline - time.monotonic())) if operation is not None else 30.0)
         finally:
             if not future.done():
                 future.cancel()
@@ -385,6 +477,9 @@ class InstalledSensorProxy(SensorBase):
             self._adapter_callbacks.clear()
 
     def _ensure_client(self) -> SensorHostClient:
+        operation = current_operation.get()
+        if operation is not None:
+            operation.check()
         if self._plugin_client is None:
             self._plugin_client = SensorHostClient(self._plugin, self)
         return self._plugin_client

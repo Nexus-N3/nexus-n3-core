@@ -15,7 +15,8 @@ from nexus_n3.sensor_manager.adapter_pool import AdapterPool
 from nexus_n3.sensor_manager.discovery_service import DiscoveryService
 from nexus_n3.sensor_manager.connection_service import ConnectionService
 from nexus_n3.sensor_manager.polling_stream_service import PollingStreamService
-from nexus_n3.sensor_manager.streaming_service import StreamingService
+from nexus_n3.sensor_manager.streaming_service import StreamingService, PHYSICAL_STOP_TIMEOUT_S
+from nexus_n3.plugins.common.operations import SensorOperation, current_operation, operation_scope
 from nexus_n3.sensor_manager.battery_precheck_service import BatteryPrecheckService
 from nexus_n3.sensor_manager.sensor_controller import SensorController
 from nexus_n3.logger.logger import get_module_logger
@@ -58,6 +59,9 @@ class SensorManager:
         # One scheduled/running job and one replaceable value per route.
         # All access is protected by _routing_condition.
         self._routing_pending = {}
+        self._routing_blocked_addresses = set()
+        self._routing_executors = {}
+        self._routing_operations = {}
         self._routing_executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix="nexus-routing",
@@ -96,6 +100,10 @@ class SensorManager:
 
         self.discovery_service = DiscoveryService(self.adapter_pool, self.logger)
         self.connection_service = ConnectionService(self.adapter_pool, self.logger)
+        self.recovery_obligations = {}
+        self.connection_service.recovery_obligations = self.recovery_obligations
+        self._recovery_future = None
+        self._recovery_request_lock = threading.Lock()
         self.streaming_service = StreamingService(
             adapter_pool=self.adapter_pool,
             polling_stream_service=self.polling_stream_service,
@@ -140,10 +148,19 @@ class SensorManager:
             self.system_event_bus.emit({"type": msg_type, "payload": payload})
 
     def _emit_to_client(self, event_name, payload):
+        if event_name == "on_cleanup_complete":
+            for result in payload.get("results", []):
+                if result.get("status") in ("failed", "unconfirmed"):
+                    sensor = next((sensor for sensor in self.sensors if sensor.address == result.get("address")), None)
+                    if sensor is not None:
+                        self.recovery_obligations[str(sensor.address).upper()] = sensor
         if event_name == "on_data":
             address = getattr(payload, "address", None)
             if not address and isinstance(payload, dict):
                 address = payload.get("address")
+            sensor = self._find_sensor_for_payload(payload)
+            if sensor is not None and getattr(sensor, "physical_stop_quarantined", False):
+                return
             if address:
                 with self._rate_lock:
                     self._rate_counts[address] += 1
@@ -158,7 +175,11 @@ class SensorManager:
         elif event_name == "on_stream_stopped":
             self._log_sample_rates(force=True)
             with self._rate_lock:
-                self._rate_active = False
+                self._rate_active = self._routing_enabled and any(
+                    getattr(sensor, "measurement_cleanup_pending", False)
+                    and sensor.address not in self._routing_blocked_addresses
+                    for sensor in self.sensors
+                )
 
         cb = self.listeners.get(event_name)
         if cb:
@@ -216,6 +237,8 @@ class SensorManager:
             s
             for s in self.sensors
             if getattr(getattr(s, "connection_status", None), "name", None) == ConnectionStatus.CONNECTED.name
+            and not getattr(s, "physical_stop_quarantined", False)
+            and str(s.address).upper() not in self.recovery_obligations
         ]
 
     def get_connected_sensor_by_address(self, address):
@@ -273,19 +296,32 @@ class SensorManager:
                 {
                     "message": "__reinitialize_sensors__",
                     "sensors": list(sensors_to_init),
+                    "deadline": time.monotonic() + 55,
                     "_completion": completion,
                 },
             )
             completion.result(timeout=60)
             return
 
-        self._install_sensor_configuration(sensors_to_init)
-        self._queue_adapter_initialization_if_needed()
+        try:
+            self._install_sensor_configuration(sensors_to_init)
+            self._queue_adapter_initialization_if_needed()
+        except Exception:
+            self.sensors = []
+            self.sensor_meta = {}
+            self.routing_table = {}
+            raise
 
     async def _reinitialize_sensor_manager(self, sensors_to_init: list):
         """Dispose the old runtime in transport-safe order, then install new sensors."""
 
         previous_sensors = list(self.sensors)
+        for sensor in previous_sensors:
+            if sensor.address and (getattr(sensor, "measurement_cleanup_pending", False)
+                                   or getattr(sensor, "physical_stop_quarantined", False)):
+                self.recovery_obligations.setdefault(str(sensor.address).upper(), sensor)
+        previous_meta = self.sensor_meta
+        previous_routing = self.routing_table
         previous_cleanup_flags = [sensor.cleanup_in_progress for sensor in previous_sensors]
         for sensor in previous_sensors:
             sensor.cleanup_in_progress = True
@@ -298,6 +334,7 @@ class SensorManager:
                 for sensor in previous_sensors
                 if getattr(getattr(sensor, "connection_status", None), "name", None)
                 == ConnectionStatus.CONNECTED.name
+                and str(sensor.address).upper() not in self.recovery_obligations
             ]
             if connected_sensors:
                 await self.connection_service.disconnect(
@@ -313,9 +350,14 @@ class SensorManager:
                     except Exception:
                         pass
 
+                if str(sensor.address).upper() in self.recovery_obligations:
+                    # Detach recording listeners, retaining the original host,
+                    # transport identity and measurement STOP obligation.
+                    continue
+
                 if hasattr(sensor, "close_host") and callable(getattr(sensor, "close_host")):
                     try:
-                        sensor.close_host()
+                        await asyncio.to_thread(sensor.close_host)
                     except Exception:
                         self.logger.exception(
                             "Failed to close plugin host for sensor %s",
@@ -331,15 +373,33 @@ class SensorManager:
                 if hasattr(sensor, "_manager_loop"):
                     sensor._manager_loop = None
 
+            operation = current_operation.get()
+            if operation is not None:
+                operation.check()
             self.sensors = []
             self.sensor_meta = {}
             self.routing_table = {}
-            self.adapter_pool.reset()
+            for executor in set(self._routing_executors.values()) - {self._routing_executor}:
+                executor.shutdown(wait=True)
+            self._routing_executors.clear()
+            preserve = {key for key, adapter in self.adapter_pool.adapters.items()
+                        if getattr(adapter, "gateway_client", None) is not None}
+            preserve.update(str(sensor.adapter).upper() for sensor in self.recovery_obligations.values()
+                            if sensor is not None)
+            self.adapter_pool.reset(preserve_types=preserve)
 
             self._install_sensor_configuration(sensors_to_init)
             # Await cleanup/initialization here instead of merely queueing it. The
             # completion returned to Core is the reconfiguration barrier.
             await self.adapter_pool.initialize_all()
+            if operation is not None:
+                operation.check()
+        except (Exception, asyncio.CancelledError):
+            if current_operation.get() is None or not current_operation.get().cancelled.is_set():
+                self.sensors = previous_sensors
+                self.sensor_meta = previous_meta
+                self.routing_table = previous_routing
+            raise
         finally:
             # Failed retirement must not leave the old configuration permanently
             # excluded from discovery, writes, or a subsequent cleanup attempt.
@@ -410,19 +470,40 @@ class SensorManager:
 
                 try:
                     if msg.get("message") == "__reinitialize_sensors__":
-                        await self._reinitialize_sensor_manager(msg.get("sensors", []))
+                        operation = SensorOperation(msg.get("deadline", time.monotonic() + 55))
+                        previous = (self.sensors, self.sensor_meta, self.routing_table)
+                        try:
+                            await self.controller.cleanup_service._bounded(
+                                self._reinitialize_sensor_manager(msg.get("sensors", [])), operation,
+                            )
+                        except Exception:
+                            self.sensors, self.sensor_meta, self.routing_table = previous
+                            raise
                         handled = True
                     elif msg.get("message") == "__initialize_adapters__":
                         await self.adapter_pool.initialize_all()
                         handled = True
+                    elif msg.get("message") == "__recover_sensors__":
+                        handled = await self._recover_sensors(msg)
                     else:
-                        if msg.get("message") in (
-                            "stop_all",
-                            "stop_specific_sensors",
-                        ):
-                            await asyncio.to_thread(self._wait_for_routing_to_drain)
-
-                        handled = await self.controller.dispatch(msg)
+                        routing_error = None
+                        if msg.get("message") in ("stop_all", "stop_specific_sensors"):
+                            try:
+                                await asyncio.to_thread(
+                                    self._wait_for_routing_to_drain,
+                                    msg.get("addresses") if msg["message"] == "stop_specific_sensors" else None,
+                                )
+                            except TimeoutError as exc:
+                                routing_error = str(exc)
+                        if routing_error:
+                            targets = [sensor for sensor in self.sensors
+                                       if msg["message"] == "stop_all" or sensor.address in msg["addresses"]]
+                            for sensor in targets:
+                                sensor.physical_stop_quarantined = True
+                            handled = [{"address": sensor.address, "status": "not_attempted", "error": routing_error}
+                                       for sensor in targets]
+                        else:
+                            handled = await self.controller.dispatch(msg)
 
                 except Exception as exc:
                     command_name = msg.get("message", "unknown")
@@ -440,7 +521,14 @@ class SensorManager:
 
                     handled = True
 
-                if not handled:
+                if msg.get("message") in ("stop_all", "stop_specific_sensors") and isinstance(handled, list):
+                    for result in handled:
+                        if result["status"] != "stopped":
+                            sensor = next((sensor for sensor in self.sensors if sensor.address == result["address"]), None)
+                            if sensor is not None:
+                                self.recovery_obligations[str(sensor.address).upper()] = sensor
+
+                if handled is False:
                     command_name = msg.get("message", "unknown")
                     self.logger.warning(
                         "Unknown sensor manager message: %s",
@@ -455,7 +543,7 @@ class SensorManager:
                         )
 
                 elif completion is not None and not completion.done():
-                    completion.set_result(True)
+                    completion.set_result(handled if isinstance(handled, (list, dict)) else True)
 
             finally:
                 self.queue.task_done()
@@ -535,6 +623,7 @@ class SensorManager:
             self.queue.put_nowait,
             {
                 "message": "stop_all",
+                "stop_deadline": time.monotonic() + PHYSICAL_STOP_TIMEOUT_S,
                 "_completion": completion,
             },
         )
@@ -542,7 +631,7 @@ class SensorManager:
         return completion
 
     def stop_specific_sensors(self, addresses: List):
-        self._quiesce_routing()
+        self._quiesce_routing(addresses)
 
         completion = Future()
 
@@ -550,12 +639,89 @@ class SensorManager:
             self.queue.put_nowait,
             {
                 "message": "stop_specific_sensors",
+                "stop_deadline": time.monotonic() + PHYSICAL_STOP_TIMEOUT_S,
                 "addresses": addresses,
                 "_completion": completion,
             },
         )
 
         return completion
+
+    def recover_sensors(self, addresses=None, *, allow_ble_reset=False, deadline=None,
+                        confirmed_stopped_addresses=()):
+        """Serialize bounded recovery with manager commands; coalesce Reset."""
+        with self._recovery_request_lock:
+            if self._recovery_future is not None and not self._recovery_future.done():
+                if addresses != self._recovery_addresses:
+                    raise RuntimeError("Recovery for a different sensor scope is already in progress")
+                return self._recovery_future
+            requested = None if addresses is None else {str(a).upper() for a in addresses}
+            active = {str(address).upper() for adapter in self.adapter_pool.adapters.values()
+                      for address in getattr(getattr(adapter, "gateway_client", None), "active_acquisition_addresses", set())}
+            if active and (requested is None or active & requested):
+                raise RuntimeError("Stop targeted acquisition before sensor recovery")
+            self._quiesce_routing(addresses)
+            self._recovery_addresses = addresses
+            completion = self._recovery_future = Future()
+            self.loop.call_soon_threadsafe(self.queue.put_nowait, {
+                "message": "__recover_sensors__", "addresses": addresses,
+                "deadline": min(deadline or float("inf"), time.monotonic() + 80), "_completion": completion,
+                "allow_ble_reset": allow_ble_reset,
+                "confirmed_stopped_addresses": list(confirmed_stopped_addresses),
+            })
+            return completion
+
+    async def _recover_sensors(self, msg):
+        requested = None if msg["addresses"] is None else {str(a).upper() for a in msg["addresses"]}
+        targets = {str(sensor.address).upper(): sensor for sensor in self.sensors if sensor.address
+                   and (requested is None or str(sensor.address).upper() in requested)}
+        targets.update({address: sensor for address, sensor in self.recovery_obligations.items()
+                        if requested is None or address in requested})
+        active = {str(address).upper() for adapter in self.adapter_pool.adapters.values()
+                  for address in getattr(getattr(adapter, "gateway_client", None), "active_acquisition_addresses", set())}
+        payload = await self.controller.cleanup_service.reconcile(
+            [sensor for sensor in targets.values() if sensor is not None],
+            deadline=msg["deadline"], active_addresses=active,
+            allow_ble_reset=msg.get("allow_ble_reset", False),
+            confirmed_stopped_addresses=msg.get("confirmed_stopped_addresses", ()),
+        )
+        for result in payload["results"]:
+            address = str(result["address"]).upper()
+            if result["eligible_for_acquisition"]:
+                self.recovery_obligations.pop(address, None)
+                retired = targets[address]
+                if retired not in self.sensors and hasattr(retired, "close_host"):
+                    operation = SensorOperation(min(msg["deadline"], time.monotonic() + 5))
+                    try:
+                        await self.controller.cleanup_service._bounded(asyncio.to_thread(retired.close_host), operation)
+                    except Exception:
+                        self.logger.exception("Retired recovered host could not close: %s", address)
+            else:
+                self.recovery_obligations[address] = targets[address]
+        # Inventory links with no retained plugin context must not be silently
+        # reused as if a fresh, empty host had confirmed their physical STOP.
+        for gateway in payload["gateways"]:
+            for address in gateway.get("connected_addresses", []):
+                if address not in targets and address not in active:
+                    self.recovery_obligations.setdefault(address, None)
+        confirmed = {str(a).upper() for a in msg.get("confirmed_stopped_addresses", ())}
+        verified_reset = msg.get("allow_ble_reset") is True and any(
+            gateway.get("available") and gateway.get("reset_confirmed")
+            and not gateway.get("connected_addresses") for gateway in payload["gateways"])
+        for address, sensor in list(self.recovery_obligations.items()):
+            if sensor is None and (requested is None or address in requested):
+                if address in confirmed and verified_reset:
+                    self.recovery_obligations.pop(address)
+                    payload["results"].append({"address": address, "status": "cleaned",
+                        "measurement_stop_confirmed": True, "eligible_for_acquisition": True,
+                        "link_connected": False, "confirmation_source": "operator"})
+                    continue
+                payload["results"].append({"address": address, "status": "unconfirmed",
+                    "measurement_stop_confirmed": False, "eligible_for_acquisition": False,
+                    "error": "No retained plugin context; physical STOP requires operator intervention"})
+        return {**payload, "core_ready_for_configuration": not bool(active),
+                "gateway_communication_available": all(g["available"] for g in payload["gateways"]),
+                "recovery_complete": not self.recovery_obligations}
 
     async def check_battery_preinit(
         self,
@@ -625,7 +791,8 @@ class SensorManager:
                     pass
 
         self.adapter_pool.close_all()
-        self._routing_executor.shutdown(wait=True)
+        for executor in set(self._routing_executors.values()) | {self._routing_executor}:
+            executor.shutdown(wait=True)
 
     def _build_routing_table(self):
         """Pre-compute compatible source->target plugin routes.
@@ -676,7 +843,10 @@ class SensorManager:
                 flush=True,
             )
 
-            result = target.consume_input(source_plugin_id, envelope)
+            with operation_scope(self._routing_operations[(source, target)]):
+                result = target.consume_input(source_plugin_id, envelope)
+                if asyncio.iscoroutine(result):
+                    asyncio.run(result)
 
             elapsed = time.monotonic() - started
 
@@ -689,9 +859,6 @@ class SensorManager:
                 flush=True,
             )
 
-            if asyncio.iscoroutine(result):
-                asyncio.run(result)
-
         except Exception as exc:
             self.logger.exception(
                 "Error routing output from %s to %s: %s",
@@ -700,11 +867,23 @@ class SensorManager:
                 exc,
             )
 
+    def _executor_for_route(self, route):
+        # Independent recording subjects must not share a blocked consumer
+        # worker. Unlabelled graphs retain the existing single-worker ordering.
+        source, target = route
+        owner = (self.sensor_meta.get(target, {}).get("subject_id")
+                 or self.sensor_meta.get(source, {}).get("subject_id"))
+        if owner not in self._routing_executors:
+            self._routing_executors[owner] = (self._routing_executor if not self._routing_executors
+                                             else ThreadPoolExecutor(max_workers=1, thread_name_prefix="nexus-routing"))
+        return self._routing_executors[owner]
+
     def _submit_routed_value(self, source, target, call):
         """Coalesce before submission, including jobs waiting for the worker."""
         route = (source, target)
         with self._routing_condition:
-            if not self._routing_enabled:
+            if not self._routing_enabled or any(getattr(sensor, "address", None) in self._routing_blocked_addresses
+                                                for sensor in route):
                 return
             if route in self._routing_pending:
                 self._routing_pending[route] = call
@@ -713,7 +892,7 @@ class SensorManager:
             self._routing_pending[route] = call
             self._active_routed_calls += 1
             try:
-                self._routing_executor.submit(self._run_routed_route, route)
+                self._executor_for_route(route).submit(self._run_routed_route, route)
             except Exception:
                 self._finish_routed_route(route)
                 raise
@@ -723,15 +902,22 @@ class SensorManager:
         with self._routing_condition:
             call = self._routing_pending[route]
             self._routing_pending[route] = None
+            if any(getattr(sensor, "address", None) in self._routing_blocked_addresses for sensor in route):
+                call = None
+            if call is not None:
+                self._routing_operations[route] = SensorOperation(time.monotonic() + 30)
 
         try:
             if call is not None:
                 self._execute_routed_call(**call)
         finally:
             with self._routing_condition:
+                operation = self._routing_operations.pop(route, None)
+                if operation is not None:
+                    operation.cancelled.set()
                 if self._routing_pending[route] is not None:
                     try:
-                        self._routing_executor.submit(self._run_routed_route, route)
+                        self._executor_for_route(route).submit(self._run_routed_route, route)
                     except Exception:
                         self._finish_routed_route(route)
                         raise
@@ -742,8 +928,7 @@ class SensorManager:
         """Retire a route job while holding _routing_condition."""
         del self._routing_pending[route]
         self._active_routed_calls -= 1
-        if not self._active_routed_calls:
-            self._routing_condition.notify_all()
+        self._routing_condition.notify_all()
 
     def _route_sensor_output(self, payload):
         """Forward one emitted sensor payload to compatible downstream plugins.
@@ -793,21 +978,41 @@ class SensorManager:
             return None
         return next((sensor for sensor in self.sensors if getattr(sensor, "address", None) == address), None)
 
-    def _quiesce_routing(self):
-        """Discard pending values and block new calls; active calls may finish."""
+    def _quiesce_routing(self, addresses=None):
+        """Block only affected routes for subject STOP; all routes for full STOP."""
         with self._routing_condition:
-            self._routing_enabled = False
+            if addresses is None:
+                self._routing_enabled = False
+            else:
+                self._routing_blocked_addresses.update(addresses)
             for route in self._routing_pending:
-                self._routing_pending[route] = None
+                if addresses is None or any(getattr(sensor, "address", None) in self._routing_blocked_addresses
+                                            for sensor in route):
+                    self._routing_pending[route] = None
+                    operation = self._routing_operations.get(route)
+                    if operation is not None:
+                        operation.cancelled.set()
 
-    def _wait_for_routing_to_drain(self):
+    def _wait_for_routing_to_drain(self, addresses=None):
         with self._routing_condition:
-            while self._active_routed_calls:
-                self._routing_condition.wait()
+            def drained():
+                return not any(addresses is None or any(getattr(sensor, "address", None) in addresses
+                                                       for sensor in route)
+                               for route in self._routing_pending)
+            if not self._routing_condition.wait_for(drained, timeout=5):
+                raise TimeoutError("Targeted sensor routing did not drain")
 
     def _enable_routing(self):
         with self._routing_condition:
             self._routing_enabled = True
+            self._routing_blocked_addresses.clear()
+        self.update_acquisition_scope([sensor.address for sensor in self.get_connected_sensors()])
+
+    def update_acquisition_scope(self, addresses):
+        for adapter in self.adapter_pool.adapters.values():
+            client = getattr(adapter, "gateway_client", None)
+            if client is not None:
+                client.set_acquisition_scope(addresses)
 
     @staticmethod
     def _routes_compatible(outputs, inputs):

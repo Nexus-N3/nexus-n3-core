@@ -162,12 +162,13 @@ def test_stream_stop_excludes_lost_sensor_and_retains_obligation():
     from nexus_n3.sensor_manager.streaming_service import StreamingService
     _, lost, lost_trace = scenario(connected=False)
     _, healthy, trace = scenario()
-    # Ordinary stop uses the ordinary policy, unlike explicit cleanup.
+    # Lost targets are reported without clearing their physical STOP obligation.
     healthy.stop_stream = AsyncMock()
     pool = NS(group_sensors=lambda sensors: {'adapter': sensors}, collect_diagnostics=AsyncMock(return_value={}))
     stream = StreamingService(pool, NS(stop=AsyncMock()), Mock())
     controller = SensorController.__new__(SensorController)
     controller.get_connected_sensors = lambda: [healthy]
+    controller._sensors_ref = lambda: [lost, healthy]
     controller.streaming_service = stream
     controller.emit_to_client = Mock()
     asyncio.run(controller.handle_stop_all())
@@ -425,7 +426,7 @@ def test_hard_operation_deadline_stops_new_work_preserves_results_and_aborts_act
     assert never_started.transport_client.is_connected
 
 
-def test_abort_cancels_only_this_sensor_adapter_work_and_retains_closed_host():
+def test_abort_cancels_only_this_sensor_adapter_work_and_retains_host_state():
     from nexus_n3.plugins.runtime.sensor_runtime import InstalledSensorProxy
     proxy = InstalledSensorProxy.__new__(InstalledSensorProxy)
     future = Mock()
@@ -435,7 +436,7 @@ def test_abort_cancels_only_this_sensor_adapter_work_and_retains_closed_host():
     proxy._adapter_futures = {future}
     proxy.abort_cleanup()
     future.cancel.assert_called_once()
-    transport.abort.assert_called_once()
+    transport.abort.assert_not_called()
     assert proxy._plugin_client is client and proxy._cleanup_aborted
 
 

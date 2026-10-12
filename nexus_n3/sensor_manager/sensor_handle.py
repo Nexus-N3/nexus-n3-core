@@ -27,6 +27,7 @@ class SensorBase:
         self.transport_client = None
         # A start command may reach hardware even when its acknowledgement is lost.
         self.measurement_cleanup_pending = False
+        self.physical_stop_quarantined = False
         self.cleanup_in_progress = False
         self.last_disconnect_was_connected = False
         self.last_link_loss_at = None

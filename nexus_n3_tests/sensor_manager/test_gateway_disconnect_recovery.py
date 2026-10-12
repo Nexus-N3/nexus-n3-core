@@ -16,6 +16,7 @@ from types import SimpleNamespace
 def adapter(monkeypatch):
     adapter = GatewayBLEAdapter()
     client = adapter.gateway_client
+    client.started = True  # This fixture mocks commands on an established session.
     monkeypatch.setattr(client, "_handle_transport_failure", Mock())
     monkeypatch.setattr(client, "_recover_transport", Mock())
     return adapter

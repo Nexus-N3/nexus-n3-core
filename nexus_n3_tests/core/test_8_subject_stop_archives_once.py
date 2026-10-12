@@ -222,13 +222,14 @@ def test_lost_sensor_does_not_invalidate_archive_or_clear_cleanup_obligation(mon
     lost.measurement_cleanup_pending = True
     core, file_manager, event_bus = _make_core([subject])
     completion = Future()
-    completion.set_result(True)
+    completion.set_result([{"address": "LOST", "status": "not_attempted", "error": "Link unavailable"}])
     core.sensor_orch.stop_specific = lambda _: completion
     core._stop_stream_impl([subject], stop_specific=True)
     assert file_manager.archive_calls == 1
     assert lost.measurement_cleanup_pending
     assert event_bus.events[-1]["type"] == mt.EVT_STREAM_DRAINED
-    assert file_manager.finalized_summaries[-1]["drain_summary"]["status"] == "ok"
+    assert file_manager.finalized_summaries[-1]["drain_summary"]["status"] == "error"
+    assert not file_manager.finalized_summaries[-1]["physical_stop_complete"]
 
 
 def test_unexpected_loss_reports_assignment_without_stopping_session():
@@ -248,3 +249,25 @@ def test_unexpected_loss_reports_assignment_without_stopping_session():
     sensor.cleanup_in_progress = True
     core._on_disconnected(["DOT"])
     assert not event_bus.events[-1]["payload"]["unexpected"]
+
+
+def test_core_stop_wait_is_bounded_and_preserves_archive(monkeypatch):
+    monkeypatch.setattr(core_module.time, 'sleep', lambda _: None)
+    monkeypatch.setattr(core_module.pipeline_diagnostics, 'record_event', lambda *args, **kwargs: None)
+    monkeypatch.setattr(core_module.pipeline_diagnostics, 'flush', lambda: None)
+    subject = _make_subject('subject1', 'blocked')
+    sensor = subject.sensors[0]['sensor']
+    sensor.measurement_cleanup_pending = True
+    core, files, events = _make_core([subject])
+    waits = []
+    class BlockedCompletion:
+        def result(self, timeout=None):
+            waits.append(timeout)
+            raise TimeoutError('injected stalled manager command')
+    core.sensor_orch.stop_specific = lambda _: BlockedCompletion()
+    core._stop_stream_impl([subject], stop_specific=True)
+    assert len(waits) == 1 and 0 < waits[0] <= 95
+    assert sensor.physical_stop_quarantined and sensor.measurement_cleanup_pending
+    assert files.archive_calls == 1
+    assert events.events[-1]['payload']['session_archive_exists']
+    assert events.events[-1]['payload']['partial']

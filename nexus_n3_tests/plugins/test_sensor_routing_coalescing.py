@@ -143,7 +143,7 @@ def test_queued_routes_coalesce_independently_and_yield_worker(routing_manager):
 
 
 @pytest.mark.parametrize("action", [
-    "disable_routing", "stop_all", "stop_specific_sensors", "reinitialize", "stop_manager",
+    "disable_routing", "stop_all", "reinitialize", "stop_manager",
 ])
 def test_lifecycle_discards_pending_and_waits_for_active(routing_manager, monkeypatch, action):
     manager, source, target = routing_manager
@@ -179,8 +179,6 @@ def test_lifecycle_discards_pending_and_waits_for_active(routing_manager, monkey
     def transition():
         if action == "reinitialize":
             manager.init_sensor_manager([new_source, new_target])
-        elif action == "stop_specific_sensors":
-            manager.stop_specific_sensors([target.address]).result(timeout=5)
         elif action == "stop_all":
             manager.stop_all().result(timeout=5)
         else:
@@ -326,3 +324,89 @@ def test_resubmission_failure_retires_route(routing_manager):
         assert target.consumed == [("source", 0), ("source", 2)]
     finally:
         release.set()
+
+
+def test_subject_stop_preserves_other_subject_routes_even_with_blocked_consumer(routing_manager):
+    manager, source, target = routing_manager
+    source2, target2 = RoutingSensor('other-source'), RoutingSensor('other-target', consumer=True)
+    manager.init_sensor_manager([source, target, source2, target2])
+    manager.sensor_meta[source]['subject_id'] = 'subject1'
+    manager.sensor_meta[target]['subject_id'] = 'subject1'
+    manager.sensor_meta[source2]['subject_id'] = 'subject2'
+    manager.sensor_meta[target2]['subject_id'] = 'subject2'
+    manager.routing_table = {source: [target], source2: [target2]}
+    manager.enable_routing()
+    started, release, other_computed = threading.Event(), threading.Event(), threading.Event()
+    consume1, consume2 = target.consume_input, target2.consume_input
+    def blocked(plugin_id, envelope):
+        started.set()
+        assert release.wait(3)
+        consume1(plugin_id, envelope)
+    def independent(plugin_id, envelope):
+        consume2(plugin_id, envelope)
+        other_computed.set()
+    target.consume_input, target2.consume_input = blocked, independent
+    async def stopped(message): return []
+    manager.controller.dispatch = stopped
+    try:
+        emit(manager, source, 1)
+        assert started.wait(1)
+        completion = manager.stop_specific_sensors([source.address])
+        emit(manager, source, 99)
+        emit(manager, source2, 2)
+        assert other_computed.wait(1)
+        assert not completion.done()
+        assert manager._routing_enabled
+        release.set()
+        assert completion.result(timeout=2) == []
+        drain(manager)
+        assert target.consumed == [('source', 1)]
+        assert target2.consumed == [('other-source', 2)]
+    finally:
+        release.set()
+
+
+def test_subject_quiesce_revokes_late_routed_adapter_work(routing_manager):
+    from types import SimpleNamespace
+    from nexus_n3.sensor_manager.adapters.gateway_ble_client import GatewaySerialClient
+    from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
+    manager, source, target = routing_manager
+    gateway = GatewaySerialClient(BLERuntimeConfig(backend='gateway'))
+    gateway.started = gateway.running = True
+    wire = Mock()
+    gateway.ser = SimpleNamespace(write=wire, flush=Mock())
+    started, release = threading.Event(), threading.Event()
+    denied = []
+    def late_consumer(plugin_id, envelope):
+        started.set()
+        assert release.wait(2)
+        try: gateway.send({'type': 'gatt_write'})
+        except TimeoutError as exc: denied.append(str(exc))
+    target.consume_input = late_consumer
+    async def stopped(message): return []
+    manager.controller.dispatch = stopped
+    try:
+        emit(manager, source, 1)
+        assert started.wait(1)
+        completion = manager.stop_specific_sensors([source.address])
+        release.set()
+        assert completion.result(timeout=2) == []
+        assert denied
+        wire.assert_not_called()
+    finally:
+        release.set()
+
+
+def test_routing_drain_timeout_reports_unattempted_and_isolates_targets(routing_manager, monkeypatch):
+    from unittest.mock import AsyncMock
+    manager, source, target = routing_manager
+    source.measurement_cleanup_pending = True
+    def blocked(addresses=None): raise TimeoutError('injected blocked route')
+    manager.controller.dispatch = AsyncMock()
+    with monkeypatch.context() as patch:
+        patch.setattr(manager, '_wait_for_routing_to_drain', blocked)
+        results = manager.stop_specific_sensors([source.address]).result(timeout=2)
+    assert results == [{'address': source.address, 'status': 'not_attempted', 'error': 'injected blocked route'}]
+    assert source.physical_stop_quarantined and source.measurement_cleanup_pending
+    assert not target.physical_stop_quarantined
+    manager.controller.dispatch.assert_not_awaited()

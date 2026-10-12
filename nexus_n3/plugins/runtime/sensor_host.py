@@ -13,6 +13,7 @@ import threading
 
 from ..common.jsonio import read_json
 from ..common.jsonrpc import JsonRpcConnection
+from ..common.operations import current_operation
 from .serde import deep_namespace, to_jsonable
 
 
@@ -52,15 +53,24 @@ class HostAdapterProxy:
 
     async def write(self, transport_client, uuid, char, *, best_effort: bool = False):
         """Return whether the write succeeded, preserving its recovery policy."""
-        result = self._connection.request(
-            "adapter.write",
-            {
-                "uuid": str(uuid),
-                "data_b64": base64.b64encode(bytes(char)).decode("ascii"),
-                "best_effort": best_effort,
-            },
-        )
-        return bool(result["ok"])
+        try:
+            result = self._connection.request(
+                "adapter.write",
+                {"uuid": str(uuid), "data_b64": base64.b64encode(bytes(char)).decode("ascii"),
+                 "best_effort": best_effort},
+            )
+        except Exception:
+            operation = current_operation.get()
+            if operation is not None:
+                operation.adapter_write_unconfirmed = True
+            raise
+        confirmed = bool(result["ok"])
+        operation = current_operation.get()
+        if not confirmed and operation is not None:
+            operation.adapter_write_unconfirmed = True
+        if confirmed and operation is not None:
+            operation.adapter_operation_confirmed = True
+        return confirmed
 
     async def set_notify_callback(
         self,
@@ -90,13 +100,22 @@ class HostAdapterProxy:
     async def unset_notify_callback(self, transport_client, uuid):
         notify_uuid = str(uuid)
         callback_id = self._callbacks_by_uuid.get(notify_uuid)
-        self._connection.request(
-            "adapter.unsubscribe",
-            {
-                "uuid": notify_uuid,
-                "callback_id": callback_id,
-            },
-        )
+        try:
+            result = self._connection.request(
+                "adapter.unsubscribe", {"uuid": notify_uuid, "callback_id": callback_id},
+            )
+        except Exception:
+            operation = current_operation.get()
+            if operation is not None:
+                operation.adapter_write_unconfirmed = True
+            raise
+        operation = current_operation.get()
+        if isinstance(result, dict) and result.get("ok") is False:
+            if operation is not None:
+                operation.adapter_write_unconfirmed = True
+            return
+        if operation is not None:
+            operation.adapter_operation_confirmed = True
         self._callbacks_by_uuid.pop(notify_uuid, None)
         if callback_id is not None:
             self._callbacks.pop(callback_id, None)
@@ -128,6 +147,7 @@ class SensorHost:
             "{module}:{callable}".format(**self.manifest["entrypoint"])
         )
         self._sensor = self._sensor_cls(None)
+        self._lifecycle_lock = threading.Lock()
         self._adapter = HostAdapterProxy(connection)
         self._register_listeners()
 
@@ -140,6 +160,21 @@ class SensorHost:
 
     def healthcheck(self) -> dict[str, Any]:
         return {"ok": True}
+
+    def lifecycle_call(self, handler, params):
+        """Keep old timed-out lifecycle work from overlapping new host work."""
+        if not self._lifecycle_lock.acquire(blocking=False):
+            raise RuntimeError("Previous sensor lifecycle operation is still executing")
+        try:
+            return handler(params)
+        finally:
+            self._lifecycle_lock.release()
+
+    def runtime_barrier(self, _params):
+        idle = self._lifecycle_lock.acquire(blocking=False)
+        if idle:
+            self._lifecycle_lock.release()
+        return {"idle": idle, "measurement_stop_confirmed": getattr(self, "_last_stop_confirmed", False)}
 
     def bind_sensor(self, params: dict[str, Any]) -> dict[str, Any]:
         self._sensor.address = params.get("address")
@@ -168,12 +203,21 @@ class SensorHost:
         return {"ok": True, "result": to_jsonable(result)}
 
     def start_stream(self, params: dict[str, Any]) -> dict[str, Any]:
+        self._last_stop_confirmed = False
         result = _run_maybe_async(self._sensor.start_stream(self._adapter))
         return {"ok": True, "result": to_jsonable(result)}
 
     def stop_stream(self, params: dict[str, Any]) -> dict[str, Any]:
         result = _run_maybe_async(self._sensor.stop_stream(self._adapter))
-        return {"ok": True, "result": to_jsonable(result)}
+        operation = current_operation.get()
+        confirmed = operation is None or not getattr(operation, "adapter_write_unconfirmed", False)
+        transport_confirmed = operation is not None and operation.adapter_operation_confirmed
+        proof = confirmed and result is not False and (transport_confirmed or result is True)
+        if params.get("require_transport_confirmation") and not proof:
+            confirmed = False
+        if proof:
+            self._last_stop_confirmed = True
+        return {"ok": confirmed, "result": to_jsonable(result)}
 
     def identify(self, params: dict[str, Any]) -> dict[str, Any]:
         result = _run_maybe_async(self._sensor.identify(self._adapter))
@@ -339,8 +383,13 @@ def main(argv: list[str] | None = None) -> int:
         "get_diagnostics_snapshot": host.get_diagnostics_snapshot,
         "reset_session_diagnostics": host.reset_session_diagnostics,
         "shutdown": lambda _params: host.shutdown(),
+        "runtime_barrier": host.runtime_barrier,
     }
     for method_name, handler in methods.items():
+        if method_name in {"bind_sensor", "setup", "start_stream", "stop_stream", "identify", "consume_input",
+                           "wifi.connect_sensor", "wifi.disconnect_sensor"}:
+            original = handler
+            handler = lambda params, fn=original: host.lifecycle_call(fn, params)
         connection.register_handler(method_name, handler)
     connection.start()
     try:

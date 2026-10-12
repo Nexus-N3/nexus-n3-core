@@ -8,6 +8,9 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, TextIO
 import queue
+import time
+
+from .operations import SensorOperation, current_operation, operation_scope
 
 
 class JsonRpcError(RuntimeError):
@@ -39,6 +42,7 @@ class JsonRpcConnection:
         self._handler_lock = threading.Lock()
         self._closed = False
         self._pending: dict[str, _PendingRequest] = {}
+        self._operations: dict[str, SensorOperation] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], Any]] = {}
         self._ordered_handlers: set[str] = set()
         self._ordered_queue: queue.Queue[dict[str, Any] | None] = queue.Queue()
@@ -80,23 +84,24 @@ class JsonRpcConnection:
         pending = _PendingRequest(event=threading.Event())
         with self._pending_lock:
             self._pending[request_id] = pending
-        self._write_message(
-            {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": method,
-                "params": params or {},
-            }
-        )
-        if not pending.event.wait(timeout):
+        try:
+            self._write_message(
+                {"jsonrpc": "2.0", "id": request_id, "method": method,
+                 "params": params or {}}
+            )
+            operation = current_operation.get()
+            if operation is not None:
+                timeout = min(timeout, max(0.0, operation.deadline - time.monotonic()))
+            if not pending.event.wait(timeout):
+                raise JsonRpcError(f"{self._name} request timed out: {method}")
+            response = pending.response or {}
+            if "error" in response:
+                error = response["error"] or {}
+                raise JsonRpcError(error.get("message") or f"{self._name} request failed: {method}")
+            return response.get("result")
+        finally:
             with self._pending_lock:
                 self._pending.pop(request_id, None)
-            raise JsonRpcError(f"{self._name} request timed out: {method}")
-        response = pending.response or {}
-        if "error" in response:
-            error = response["error"] or {}
-            raise JsonRpcError(error.get("message") or f"{self._name} request failed: {method}")
-        return response.get("result")
 
     def notify(self, method: str, params: dict[str, Any] | None = None) -> None:
         """Send a JSON-RPC notification without waiting for a response."""
@@ -118,7 +123,17 @@ class JsonRpcConnection:
         self._ordered_queue.put(None)
 
     def _write_message(self, payload: dict[str, Any]) -> None:
+        operation = current_operation.get()
+        if operation is not None and "method" in payload:
+            operation.check()
+            payload = {**payload, "operation": operation.wire()}
+            with self._pending_lock:
+                self._operations = {key: value for key, value in self._operations.items()
+                                    if value.deadline > time.monotonic()}
+                self._operations[operation.operation_id] = operation
         with self._write_lock:
+            if operation is not None and "method" in payload:
+                operation.check()
             self._writer.write(json.dumps(payload, sort_keys=True) + "\n")
             self._writer.flush()
 
@@ -187,7 +202,19 @@ class JsonRpcConnection:
                 )
             return
         try:
-            result = handler(params)
+            metadata = message.get("operation")
+            operation = None
+            if metadata is not None:
+                with self._pending_lock:
+                    self._operations = {key: value for key, value in self._operations.items()
+                                        if value.deadline > time.monotonic()}
+                    operation = self._operations.get(metadata["id"])
+                    if operation is None:
+                        operation = SensorOperation(float(metadata["deadline"]), metadata["id"])
+                        self._operations[operation.operation_id] = operation
+                operation.check()
+            with operation_scope(operation):
+                result = handler(params)
             if request_id is not None:
                 self._write_message({"jsonrpc": "2.0", "id": request_id, "result": result})
         except Exception as exc:
