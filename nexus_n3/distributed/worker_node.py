@@ -80,7 +80,7 @@ class WorkerNode:
     """
     Worker node for Nexus N3 Core.
 
-    Sends periodic heartbeats to the master when idle so `last_seen` stays fresh.
+    Sends periodic heartbeats independently of event traffic to verify the link.
     """
 
     def __init__(
@@ -137,6 +137,7 @@ class WorkerNode:
         self._recv_thread = None
         self._heartbeat_thread = None
         self._last_sent = 0.0
+        self._last_heartbeat_sent = 0.0
         self._last_recv = 0.0
         self._heartbeat_interval = 30
         self._reconnect_timeout = 90
@@ -233,9 +234,9 @@ class WorkerNode:
             print("[WORKER] REGISTER sent", flush=True)
 
     def _heartbeat_loop(self):
-        """Send lightweight heartbeats when idle."""
+        """Probe the master even while streaming/events keep outbound traffic busy."""
         while self._running:
-            if time.time() - self._last_sent >= self._heartbeat_interval:
+            if time.time() - self._last_heartbeat_sent >= self._heartbeat_interval:
                 try:
                     with self._dealer_lock:
                         if self._running and self.dealer and not self.dealer.closed:
@@ -244,6 +245,7 @@ class WorkerNode:
                                 "node_id": self.node_id,
                                 "ts": time.time(),
                             })
+                            self._last_heartbeat_sent = time.time()
                             self._record_sent()
                 except Exception as exc:
                     logger.error(f"[WORKER {self.node_id}] Heartbeat failed: {exc}")
@@ -324,11 +326,19 @@ class WorkerNode:
                     msg = json.loads(msg_bytes.decode())
                     self._record_recv()
                     if msg.get("type") == "REGISTER_ACK":
-                        # we need to do the setup
-                        self.handler.handle({
-                            "type": mt.CMD_SYSTEM_SETUP,
-                            "payload": {"file_path": msg.get("usb_path")}
-                        })
+                        # Registration also follows a transport reconnect. Never
+                        # replace the Core that owns current subjects/BLE links.
+                        if self.handler.si is None:
+                            self.handler.handle({
+                                "type": mt.CMD_SYSTEM_SETUP,
+                                "payload": {"file_path": msg.get("usb_path")}
+                            })
+                        else:
+                            logger.info("[WORKER %s] Registered again; retaining existing Core/session", self.node_id)
+
+                    elif msg.get("type") == "HEARTBEAT_ACK":
+                        # _record_recv() above refreshes the reconnect watchdog.
+                        continue
 
                     elif msg.get("type") == AI_NODE_REGISTRY:
                         payload = msg.get("payload") or {}

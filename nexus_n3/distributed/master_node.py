@@ -317,18 +317,22 @@ class MasterNode:
                 if not all_streams_drained:
                     record["finalized"] = True
 
+        if should_finalize and not all_streams_drained:
+            self._emit_aggregate_drain(record, drain_result, all_streams_drained=False)
+
         if should_finalize and all_streams_drained and not self._after_all_streams_drained:
             with self._drain_lock:
                 record = self._drain_tracking.get(stop_session_id)
                 if record:
                     record["finalizing"] = False
                     record["finalized"] = True
+            self._emit_aggregate_drain(record, drain_result, all_streams_drained=True)
             return
 
         if should_finalize and all_streams_drained and self._after_all_streams_drained:
             try:
                 self._after_all_streams_drained(drain_result)
-            except Exception:
+            except Exception as exc:
                 with self._drain_lock:
                     record = self._drain_tracking.get(stop_session_id)
                     if record:
@@ -337,6 +341,9 @@ class MasterNode:
                     "Distributed session finalization failed for stop_session_id=%s",
                     stop_session_id,
                 )
+                self._emit_aggregate_drain(record, {
+                    **drain_result, "status": "error", "reason": str(exc),
+                }, all_streams_drained=True)
                 return
 
             with self._drain_lock:
@@ -344,6 +351,23 @@ class MasterNode:
                 if record:
                     record["finalizing"] = False
                     record["finalized"] = True
+            self._emit_aggregate_drain(record, drain_result, all_streams_drained=True)
+
+    def _emit_aggregate_drain(self, record, result, *, all_streams_drained):
+        """Publish the existing STOP barrier result, rather than a node-local drain."""
+        event_bus = getattr(self, "system_event_bus", None)
+        if not event_bus:
+            return
+        event_bus.emit({
+            "type": mt.EVT_STREAM_DRAINED,
+            # Prevent the local acknowledgement subscriber from counting this
+            # aggregate as another master-local drain acknowledgement.
+            "node_id": self.node_id,
+            "payload": {**result, "aggregate": True, "scope": record["scope"],
+                        "subject_ids": list(record["subject_ids"]),
+                        "expected_node_ids": sorted(record["expected_nodes"]),
+                        "all_streams_drained": all_streams_drained},
+        })
 
     def start(self):
         """Start the master node: ROUTER loop + mDNS advertisement."""
@@ -447,6 +471,10 @@ class MasterNode:
                     self.registry.heartbeat(node_id)
 
                 if msg_type == "HEARTBEAT":
+                    self.router.send_multipart([identity, b"", json.dumps({
+                        "type": "HEARTBEAT_ACK", "node_id": self.node_id,
+                        "ts": msg.get("ts"),
+                    }).encode()])
                     if node_id and self.registry.get_nodes().get(node_id, {}).get("role") == "ai":
                         self._broadcast_ai_registry()
                     continue
