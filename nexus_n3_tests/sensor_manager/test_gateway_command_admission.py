@@ -264,10 +264,10 @@ def test_normal_retry_reserves_acquisition_before_transport_close(monkeypatch):
     close_transport = client._close_transport
     errors, commands, results = [], [], []
 
-    def close():
+    def close(**kwargs):
         closing.set()
         assert release.wait(2)
-        close_transport()
+        close_transport(**kwargs)
 
     def write(data):
         msg = json.loads(data)
