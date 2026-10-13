@@ -18,6 +18,7 @@ def test_drop_and_resync_warns_with_bytes_captured_before_deletion(
     monkeypatch: pytest.MonkeyPatch,
 ):
     client = GatewaySerialClient(BLERuntimeConfig(backend="gateway"))
+    caplog.clear()  # The client now reports its TX diagnostic mode at initialization.
     dropped = b"\xde\xad\xbe\xef"
     remaining = bytes(range(80))
     client.buf.extend(dropped + remaining)

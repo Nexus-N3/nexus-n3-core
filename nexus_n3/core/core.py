@@ -4,6 +4,7 @@ import time
 import csv
 import threading
 import math
+from concurrent.futures import Future
 from datetime import datetime, timezone
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.gateway.messaging import message_types as mt
@@ -19,6 +20,7 @@ from nexus_n3.core.orchestrators.compute_orchestrator import ComputeOrchestrator
 from nexus_n3.core.orchestrators.event_assembler import EventAssembler
 from nexus_n3.core.pipeline_diagnostics import pipeline_diagnostics
 from nexus_n3.core.startup_gate import StartupGateSensorStats
+from nexus_n3.sensor_manager.streaming_service import PHYSICAL_STOP_TIMEOUT_S
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 
 logger = get_module_logger("Core Interface")
@@ -122,6 +124,7 @@ class Core:
         self._official_outputs_active = False
         self._official_persistence_prepared_subject_ids: set[str] = set()
         self._official_start_timing: dict = {}
+        self._recovery_in_progress = False
 
     def get_ble_runtime_config(self) -> dict:
         """Return the active BLE runtime backend configuration."""
@@ -741,14 +744,26 @@ class Core:
             app_id: Optional stable application identifier for event attribution.
             app_name: Optional human-readable application name for event attribution.
         """
-        self.compute_orch.reset()
+        self._ensure_recovery_idle()
+        if any(sub.is_streaming for sub in self.subjects) or getattr(self, "stream_phase", "idle") in {
+            "starting", "warming_up", "preparing_official", "activating_official",
+        }:
+            raise RuntimeError("Cannot reconfigure while a subject is acquiring")
+        previous_subjects = self.subjects
+        previous_graph_subjects = self.subject_graph.get_subjects()
         self.app_id = str(app_id).strip() if app_id else None
         self.app_name = str(app_name).strip() if app_name else None
         if init_label is not None:
             self.storage.set_session_label(init_label)
         success = self._init_subjects(subjects_config)
         if success:
-            self._init_sensor_manager()
+            try:
+                self._init_sensor_manager()
+            except Exception:
+                self.subjects = previous_subjects
+                self.subject_graph.subjects = previous_graph_subjects
+                raise
+            self.compute_orch.reset()
             self._register_callbacks()
             if self.system_event_bus:
                 self.system_event_bus.emit({
@@ -758,6 +773,9 @@ class Core:
                         **self._event_context(subject_ids=[sub.subject_id for sub in self.subjects]),
                     },
                 })
+        else:
+            self.subjects = previous_subjects
+            self.subject_graph.subjects = previous_graph_subjects
 
     def _init_subjects(self, subjects_config):
         """
@@ -777,7 +795,11 @@ class Core:
     def _init_sensor_manager(self):
         """Initialize the SensorManager with all sensors from all subjects."""
         # this is the sensor object on subject.
-        all_sensors = [entry for sub in self.subjects for entry in sub.sensors]
+        all_sensors = []
+        for sub in self.subjects:
+            for entry in sub.sensors:
+                entry["meta"]["subject_id"] = sub.subject_id
+                all_sensors.append(entry)
         self.sensor_orch.init_sensor_manager(all_sensors)
 
     def _register_callbacks(self):
@@ -786,6 +808,7 @@ class Core:
             "on_discover": self._on_discover,
             "on_connected": self._on_connected,
             "on_disconnected": self._on_disconnected,
+            "on_cleanup_complete": self._on_cleanup_complete,
             "on_data": self._on_data,
             "on_identify": self._on_identify,
             "on_battery": self._on_battery,
@@ -873,11 +896,68 @@ class Core:
             self.sensor_orch.connect_specific(addresses)
             time.sleep(2)
 
-    def disconnect_all(self):
+    def disconnect_all(self, cleanup_context=None):
         """Disconnect all sensors."""
         self._ensure_disconnect_allowed()
-        self.sensor_orch.disconnect_all()
-        time.sleep(2)
+        cleanup_context = self._announce_cleanup(cleanup_context)
+        if cleanup_context.get("recover_session"):
+            return self.reset_session(cleanup_context)
+        self.sensor_orch.disconnect_all(cleanup_context)
+
+    def reset_session(self, cleanup_context=None):
+        """Recover resources and retire configuration without finalising again."""
+        self._ensure_disconnect_allowed()
+        context = dict(cleanup_context or {})
+        with self._startup_lock:
+            if getattr(self, "_recovery_in_progress", False):
+                future = self._reset_future
+                future.add_done_callback(lambda done: self._on_cleanup_complete({**context, **done.result()}))
+                return future
+            if any(sub.is_streaming for sub in self.subjects) or self.stream_phase in {
+                "starting", "warming_up", "preparing_official", "activating_official",
+            }:
+                raise RuntimeError("Stop all subjects before resetting Core")
+            self._recovery_in_progress = True
+            completion = self._reset_future = Future()
+        try:
+            deadline = time.monotonic() + 80
+            # Retire completed-session compute state before physical recovery;
+            # the remaining sensor budget includes time spent in local cleanup.
+            self.compute_orch.reset()
+            future = self.sensor_orch.manager.recover_sensors(
+                allow_ble_reset=context.get("allow_ble_reset") is True, deadline=deadline,
+                confirmed_stopped_addresses=[address for address in context.get("confirmed_stopped_sensor_addresses", [])
+                                             if isinstance(address, str)],
+            )
+        except Exception:
+            self._recovery_in_progress = False
+            completion.set_result({"core_ready_for_configuration": False, "results": []})
+            raise
+
+        def finished(done):
+            try:
+                recovery = done.result()
+                self._clear_startup_gate_state()
+                self.subject_graph.subjects = []
+                self.subjects = []
+                self.session_timestamp = None
+                self.active_subject_ids = None
+                self._reset_report = recovery
+            except Exception as exc:
+                self._reset_report = {"core_ready_for_configuration": False,
+                    "gateway_communication_available": False, "recovery_complete": False,
+                    "results": [{"address": "core", "status": "failed", "error": str(exc)}]}
+            finally:
+                self._recovery_in_progress = False
+            self._on_cleanup_complete({**context, **self._reset_report})
+            completion.set_result(self._reset_report)
+
+        future.add_done_callback(finished)
+        return completion
+
+    def _ensure_recovery_idle(self):
+        if getattr(self, "_recovery_in_progress", False):
+            raise RuntimeError("Core recovery is still in progress; wait for Reset completion")
 
     def check_battery(self, scan_timeout: float = 5.0, read_timeout: float = 10.0):
         """
@@ -996,7 +1076,7 @@ class Core:
         threading.Thread(target=_emit_results, daemon=True).start()
         return []
 
-    def disconnect_subjects(self, subject_ids):
+    def disconnect_subjects(self, subject_ids, cleanup_context=None):
         """Disconnect sensors for specific subjects."""
         self._ensure_disconnect_allowed()
         subjects = self._get_subjects_by_ids(subject_ids)
@@ -1006,12 +1086,16 @@ class Core:
             for entry in sub.sensors
             if entry["sensor"].address
         ]
-        if addresses:
-            self.sensor_orch.disconnect_addresses(addresses)
-            time.sleep(2)
+        cleanup_context = self._announce_cleanup(cleanup_context)
+        self.sensor_orch.disconnect_addresses(addresses, cleanup_context)
 
     def start_stream(self, payload):
         """Start streaming data for all subjects."""
+        with self._startup_lock:
+            self._ensure_recovery_idle()
+            if not self.subjects:
+                raise RuntimeError("Configure a session before starting acquisition")
+            self.stream_phase = "starting"
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
         self._official_start_mode = payload.get("official_start_mode", "local")
         self._start_session_id = payload.get("start_session_id")
@@ -1056,6 +1140,11 @@ class Core:
 
     def start_stream_for_subjects(self, payload):
         """Start streaming sensors for specific subjects."""
+        with self._startup_lock:
+            self._ensure_recovery_idle()
+            if not self.subjects:
+                raise RuntimeError("Configure a session before starting acquisition")
+            self.stream_phase = "starting"
         subject_ids = payload["subject_ids"]
         self.session_timestamp = payload.get("session_timestamp", datetime.now().strftime("%Y%m%d_%H%M%S"))
         self._official_start_mode = payload.get("official_start_mode", "local")
@@ -1127,12 +1216,16 @@ class Core:
         distributed_stop = bool((stop_context or {}).get("stop_session_id"))
 
         self._set_stream_stop_finalization_pending(True)
+        other_subjects_active = any(sub.is_streaming and sub.subject_id not in subject_ids for sub in self.subjects)
         with self._startup_lock:
-            self._startup_manual_stop = True
-            self._startup_retry_pending = False
-            if self.stream_phase not in {"idle", "startup_failed"}:
-                self.stream_phase = "stopping"
-            self._startup_gate_token += 1
+            stopping = getattr(self, "_stopping_subject_ids", set())
+            self._stopping_subject_ids = stopping | set(subject_ids)
+            if not other_subjects_active:
+                self._startup_manual_stop = True
+                self._startup_retry_pending = False
+                if self.stream_phase not in {"idle", "startup_failed"}:
+                    self.stream_phase = "stopping"
+                self._startup_gate_token += 1
         try:
             addresses = [
                 entry["sensor"].address
@@ -1154,11 +1247,24 @@ class Core:
             # Do not finalize the session until the SensorManager has actually
             # completed the physical/plugin stop sequence.
             stop_error = None
+            stop_results = []
 
             if stop_completion is not None:
                 try:
-                    stop_completion.result()
+                    completion_result = stop_completion.result(timeout=PHYSICAL_STOP_TIMEOUT_S + 5)
+                    stop_results = completion_result if isinstance(completion_result, list) else []
+                    unresolved = [result for result in stop_results if result["status"] != "stopped"]
+                    if unresolved:
+                        stop_error = RuntimeError("; ".join(f"{result['address']}: {result.get('error', result['status'])}"
+                                                           for result in unresolved))
                 except Exception as exc:
+                    for sub in subjects:
+                        for entry in sub.sensors:
+                            sensor = entry["sensor"]
+                            if getattr(sensor, "measurement_cleanup_pending", False):
+                                sensor.physical_stop_quarantined = True
+                    stop_results = [{"address": address, "status": "unconfirmed", "error": str(exc)}
+                                    for address in addresses]
                     stop_error = exc
                     logger.exception(
                         "Physical sensor stop failed; finalizing captured session data"
@@ -1203,6 +1309,15 @@ class Core:
                 self.storage.file_manager.stop_stream(sub)
                 sub.is_streaming = False
 
+            if getattr(self, "_stop_results_timestamp", None) != self.session_timestamp:
+                self._stop_results_timestamp = self.session_timestamp
+                self._physical_stop_results = {}
+            self._physical_stop_results.update({result["address"]: result for result in stop_results})
+            all_streams_stopped = not self.has_active_streams()
+            if all_streams_stopped:
+                unresolved = [result for result in self._physical_stop_results.values() if result["status"] != "stopped"]
+                if unresolved and stop_error is None:
+                    stop_error = RuntimeError("Earlier subject physical STOP remains unconfirmed")
             physical_stop_complete = stop_error is None
 
             status = "error" if stop_error or raw_write_failures else "ok"
@@ -1236,6 +1351,7 @@ class Core:
                 session_info=self.storage.file_manager.describe_session(self.session_timestamp),
             )
 
+            drain_payload["physical_stop_results"] = stop_results
             drain_payload["physical_stop_complete"] = physical_stop_complete
             drain_payload["partial"] = bool(
                 stop_error or raw_write_failures
@@ -1255,6 +1371,7 @@ class Core:
                 "raw_write_failures": raw_write_failures,
                 "partial_markers": partial_markers,
                 "stop_summary": {
+                    "results": list(self._physical_stop_results.values()),
                     "scope": scope,
                     "subject_ids": list(subject_ids),
                     "status": status,
@@ -1342,7 +1459,16 @@ class Core:
             raise
         finally:
             self._set_stream_stop_finalization_pending(False)
-            self._clear_startup_gate_state(phase="idle")
+            with self._startup_lock:
+                self._stopping_subject_ids.difference_update(subject_ids)
+            self.active_subject_ids = None
+            manager = getattr(self.sensor_orch, "manager", None)
+            update_scope = getattr(manager, "update_acquisition_scope", None)
+            if update_scope is not None:
+                update_scope([entry["sensor"].address for sub in self.subjects if sub.is_streaming
+                              for entry in sub.sensors if entry["sensor"].address])
+            if not self.has_active_streams():
+                self._clear_startup_gate_state(phase="idle")
 
     def finalize_distributed_session(
         self,
@@ -1584,6 +1710,23 @@ class Core:
         self.active_subject_ids = None # reset the subject ids
         self.pending_correlation_id = None
 
+    def _announce_cleanup(self, context):
+        context = {**(context or {})}
+        context.setdefault("cleanup_deadline_unix_s", time.time() + 90)
+        if self.system_event_bus:
+            self.system_event_bus.emit({"type": mt.EVT_SENSOR_CLEANUP_STARTED, "payload": {
+                **context,
+                "expected_node_ids": context.get("expected_node_ids") or [self.node_id],
+            }})
+        return context
+
+    def _on_cleanup_complete(self, payload):
+        if self.system_event_bus:
+            self.system_event_bus.emit({"type": mt.EVT_SENSOR_CLEANUP_COMPLETE, "payload": {
+                **payload, "node_id": self.node_id,
+                "expected_node_ids": payload.get("expected_node_ids") or [self.node_id],
+            }})
+
     def _on_disconnected(self, disconnected_sensors):
         """Callback invoked when sensors disconnect."""
         if self.system_event_bus:
@@ -1592,6 +1735,22 @@ class Core:
                     "type": mt.EVT_SENSOR_DISCONNECTED,
                     "payload": {
                         "disconnected_sensors": disconnected_sensors,
+                        "unexpected": getattr(self, "stream_phase", None) == "official_streaming" and any(
+                            entry["sensor"].address in disconnected_sensors
+                            and getattr(entry["sensor"], "last_disconnect_was_connected", False)
+                            and not getattr(entry["sensor"], "cleanup_in_progress", False)
+                            for sub in self.subjects for entry in sub.sensors
+                        ),
+                        "lost_at": next((getattr(entry["sensor"], "last_link_loss_at", None)
+                                         for sub in self.subjects for entry in sub.sensors
+                                         if entry["sensor"].address in disconnected_sensors), None)
+                                   or datetime.now().astimezone().isoformat(),
+                        "sensors": [
+                            {"subject_id": sub.subject_id, "address": entry["sensor"].address,
+                             "name": entry["sensor"].name, "location": entry["sensor"].location}
+                            for sub in self.subjects for entry in sub.sensors
+                            if entry["sensor"].address in disconnected_sensors
+                        ],
                         **self._event_context(),
                     },
                 }
@@ -1628,6 +1787,8 @@ class Core:
             return
         # resolve the subject
         subject = self.subject_graph.find_subject_by_address(payload.address)
+        if subject and (not subject.is_streaming or subject.subject_id in getattr(self, "_stopping_subject_ids", set())):
+            return
         if subject:
             # a timeline module would need to compute the session coordinate for the sample before persiting it.
             subject.ingest_sample(payload, self.storage.file_manager)
@@ -1673,7 +1834,7 @@ class Core:
                 subject_id = entry.get("subject_id")
                 if subject_id:
                     subject = self.subject_graph.find_subject_by_id(subject_id)
-            if subject:
+            if subject and getattr(subject, "is_streaming", True):
                 subjects_map.setdefault(subject, []).append(entry)
 
         for subject, subject_results in subjects_map.items():
@@ -1718,6 +1879,9 @@ class Core:
             logger.warning(f"Result received for unknown sensor {result_address}")
             return
 
+        if not getattr(subject, "is_streaming", True):
+            return
+
         # get location from sensor meta
         entry = next((e for e in subject.sensors if e["sensor"].address == result_address), None)
         location = entry["meta"].get("location") if entry else None
@@ -1755,6 +1919,8 @@ class Core:
         address = payload.get("address")
         subject = self.subject_graph.find_subject_by_address(address)
         if subject is not None:
+            if not getattr(subject, "is_streaming", True):
+                return
             entry = next(
                 (item for item in subject.sensors if item["sensor"].address == address),
                 None,
@@ -1895,6 +2061,11 @@ class Core:
             ]
         else:
             subjects_to_process = self.subjects  # all subjects
+
+        # Plugin STOP events during scoped recovery have no active command
+        # subject list. Publish only subjects represented by these addresses.
+        subjects_to_process = [sub for sub in subjects_to_process
+                               if any(entry["sensor"].address in addresses for entry in sub.sensors)]
 
         streaming_sensors = []
         for sub in subjects_to_process:

@@ -85,6 +85,14 @@ class StdioJsonRpcTransport(PluginTransport):
     def register_handler(self, method: str, handler) -> None:
         self._rpc.register_handler(method, handler)
 
+    def abort(self) -> None:
+        """Stop only this plugin host without waiting for its lifecycle RPC."""
+        self._closed = True
+        self._rpc.close()
+        if self._process.poll() is None:
+            self._process.kill()
+            self._process.wait(timeout=1.0)
+
     def close(self) -> None:
         if self._closed:
             return

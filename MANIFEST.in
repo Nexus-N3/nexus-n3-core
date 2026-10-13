@@ -1,1 +1,2 @@
 recursive-include docs/_build/html *
+include docs/recovery-lifecycle.md

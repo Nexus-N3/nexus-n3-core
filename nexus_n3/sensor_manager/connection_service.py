@@ -9,6 +9,12 @@ class ConnectionService:
     def __init__(self, adapter_pool, logger):
         self.adapter_pool = adapter_pool
         self.logger = logger
+        self.recovery_obligations = {}
+
+    def _ensure_reconciled(self, sensors):
+        for sensor in sensors:
+            if str(sensor.address).upper() in self.recovery_obligations:
+                raise RuntimeError(f"Sensor {sensor.address} has unresolved physical STOP; use Reset to reconcile it")
 
     async def _connect_and_setup_sequentially(self, sensors_for_adapter, adapter, set_up_sensor):
         connected = []
@@ -29,6 +35,7 @@ class ConnectionService:
         return connected
 
     async def connect_all(self, sensors, set_up_sensor, emit_to_client):
+        self._ensure_reconciled(sensors)
         connected = []
         adapter_groups = self.adapter_pool.group_sensors(sensors)
 
@@ -60,6 +67,7 @@ class ConnectionService:
         return connected
 
     async def connect_specific(self, sensors_to_connect, set_up_sensor, emit_to_client):
+        self._ensure_reconciled(sensors_to_connect)
         if not sensors_to_connect:
             return []
 

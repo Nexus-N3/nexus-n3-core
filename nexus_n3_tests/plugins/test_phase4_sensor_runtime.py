@@ -272,7 +272,7 @@ class FakeBLEAdapter:
             return b"\x00\x00\x00IDENTIFY"
         return b""
 
-    async def write(self, transport_client, uuid, char):
+    async def write(self, transport_client, uuid, char, *, best_effort=False):
         payload = bytes(char)
         self.write_calls.append((str(uuid), payload))
         if str(uuid) == "measurement-uuid" and payload == b"start":

@@ -27,10 +27,13 @@ class AdapterPool:
         self._shutdown_adapter_ids = set()
         self._lifecycle_lock = asyncio.Lock()
 
-    def reset(self):
+    def reset(self, preserve_types=()):
         """Retire current adapters for async cleanup before replacements start."""
 
-        for adapter in self.adapters.values():
+        preserved = {key: adapter for key, adapter in self.adapters.items() if key in preserve_types}
+        for key, adapter in self.adapters.items():
+            if key in preserved:
+                continue
             if self.has_method(adapter, "shutdown"):
                 self._retired_adapters.append(adapter)
             elif self.has_method(adapter, "close"):
@@ -41,7 +44,7 @@ class AdapterPool:
                 finally:
                     self._initialized_adapter_ids.discard(id(adapter))
                     self._shutdown_adapter_ids.add(id(adapter))
-        self.adapters = {}
+        self.adapters = preserved
 
     def get_or_create(self, adapter_type):
         key = str(adapter_type).upper()

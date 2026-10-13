@@ -1,6 +1,7 @@
 """Sensor discovery and address assignment service."""
 
 import asyncio
+from datetime import datetime
 
 from nexus_n3.sensor_manager.types.connections import ConnectionStatus
 from nexus_n3.sensor_manager.utils import utils as utils
@@ -8,6 +9,8 @@ from nexus_n3.sensor_manager.utils import utils as utils
 
 def _build_disconnect_callback(sensor):
     def handle_disconnect(_client):
+        sensor.last_link_loss_at = datetime.now().astimezone().isoformat()
+        sensor.last_disconnect_was_connected = getattr(sensor.connection_status, "name", None) == "CONNECTED"
         sensor.set_connection_status(ConnectionStatus.DISCONNECTED)
         # Keep the callback payload consistent with ConnectionService, which
         # reports disconnected sensor addresses as a list.

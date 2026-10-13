@@ -37,6 +37,11 @@ class BLEAdapter:
         return await BLEAdapter.execute(ble_device.connect)
 
     @staticmethod
+    async def connect_for_cleanup(ble_device):
+        """One bounded peripheral connect; the local backend has no shared reset."""
+        return await asyncio.wait_for(BLEAdapter.connect(ble_device), timeout=20)
+
+    @staticmethod
     async def disconnect(ble_device):
         """Disconnect a BLE device and return True/False."""
         result = await BLEAdapter.execute(ble_device.disconnect)
@@ -251,7 +256,7 @@ class BLEAdapter:
         return await BLEAdapter.execute(ble_device.stop_notify, uuid)
 
     @staticmethod
-    async def write(ble_device, uuid, char):
+    async def write(ble_device, uuid, char, *, best_effort: bool = False):
         """
         Write a GATT characteristic.
 
@@ -270,6 +275,11 @@ class BLEAdapter:
             Result of write_gatt_char call or None if error.
         """
         try:
+            if best_effort:
+                # execute() suppresses exceptions, making failure indistinguishable
+                # from Bleak's successful None return.
+                await ble_device.write_gatt_char(uuid, char, response=True)
+                return True
             result = await BLEAdapter.execute(
                 ble_device.write_gatt_char, uuid, char, response=True
             )
@@ -277,6 +287,8 @@ class BLEAdapter:
         except Exception as e:
             print(f"Error during BLE Write: {e}")
             logger.error(f"Error during BLE Write: {e}")
+            if best_effort:
+                return False
 
     @staticmethod
     async def read(ble_device, uuid):
