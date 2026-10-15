@@ -64,6 +64,8 @@ class MasterNode:
         # ZeroMQ ROUTER for sending commands to workers
         self.ctx = zmq.Context()
         self.router = self.ctx.socket(zmq.ROUTER)
+        # Let a reconnecting worker replace its stale connection.
+        self.router.setsockopt(zmq.ROUTER_HANDOVER, 1)
         self.router.bind(f"tcp://*:{self.router_port}")
 
         self._running = False
@@ -488,7 +490,19 @@ class MasterNode:
                 # emit worker events after any internal tracking updates
                 self.system_event_bus.emit(msg)
 
-            except zmq.error.ZMQError:
+            except zmq.error.ZMQError as exc:
+                if self._running:
+                    logger.exception(
+                        "[MASTER] ROUTER loop exiting after ZeroMQ error "
+                        "errno=%s: %s",
+                        exc.errno,
+                        exc,
+                    )
+                else:
+                    logger.info(
+                        "[MASTER] ROUTER loop stopped during shutdown: %s",
+                        exc,
+                    )
                 break
             except Exception as e:
                 print(f"[MASTER] Error in router loop: {e}")
