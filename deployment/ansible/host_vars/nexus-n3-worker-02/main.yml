@@ -1,5 +1,5 @@
 ---
-# Native eth0 control plane. DHCP remains enabled for the existing uplink.
+# Native eth0 control plane. Static IPv4 addressing; no DHCPv4 dependency.
 nexus_control_network_address: 192.168.60.3/24
 
 # Common sensor network. br-sensor owns the node IP; eth0.20 and the

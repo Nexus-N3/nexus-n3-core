@@ -5,7 +5,7 @@ network:
   ethernets:
     {{ nexus_control_network_interface }}:
       # Keep DHCP enabled so its lease, gateway, and default route are retained.
-      dhcp4: true
+      dhcp4: false
       addresses:
         - "{{ nexus_control_network_address }}"
 
