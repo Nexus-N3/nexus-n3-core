@@ -471,13 +471,29 @@ class MasterNode:
                     continue
                 if node_id:
                     self.registry.heartbeat(node_id)
-
                 if msg_type == "HEARTBEAT":
-                    self.router.send_multipart([identity, b"", json.dumps({
-                        "type": "HEARTBEAT_ACK", "node_id": self.node_id,
-                        "ts": msg.get("ts"),
-                    }).encode()])
-                    if node_id and self.registry.get_nodes().get(node_id, {}).get("role") == "ai":
+                    node = self.registry.get_nodes().get(node_id)
+                    if node is None:
+                        # Do not keep an unregistered worker's watchdog alive.
+                        # Its existing reconnect path will send REGISTER again.
+                        logger.warning(
+                            "[MASTER] Ignoring heartbeat from unregistered "
+                            "node %s; registration required",
+                            node_id,
+                        )
+                        continue
+
+                    self.router.send_multipart([
+                        identity,
+                        b"",
+                        json.dumps({
+                            "type": "HEARTBEAT_ACK",
+                            "node_id": self.node_id,
+                            "ts": msg.get("ts"),
+                        }).encode(),
+                    ])
+
+                    if node.get("role") == "ai":
                         self._broadcast_ai_registry()
                     continue
                 if msg_type == mt.EVT_STREAM_DRAINED:
