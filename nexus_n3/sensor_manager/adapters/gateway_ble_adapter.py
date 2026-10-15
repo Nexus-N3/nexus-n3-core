@@ -34,6 +34,10 @@ from nexus_n3.sensor_manager.adapters.gateway_ble_client import (
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 from nexus_n3.sensor_manager.types.connections import ConnectionStatus
 
+from nexus_n3.sensor_manager.adapters.ifmcu_diagnostics import (
+    query_bridge_stats,
+)
+
 logger = get_module_logger("Gateway BLE Adapter")
 
 
@@ -448,20 +452,28 @@ class GatewayBLEAdapter:
         )
 
     async def get_diagnostics_snapshot(self):
-        """Return a structured snapshot of gateway transport diagnostics.
-
-        The gateway is asked for a fresh status snapshot first, but a refresh
-        failure does not prevent the adapter from returning the latest locally
-        cached diagnostics payload.
-        """
+        """Return gateway transport and optional IFMCU diagnostics."""
         try:
             await self.execute(
                 self.gateway_client.get_status_snapshot,
                 self.ble_runtime_config.gateway_read_timeout_s,
             )
         except Exception as exc:
-            logger.warning("Gateway diagnostics snapshot refresh failed: %s", exc)
-        return self._build_diagnostics_payload(event="gateway_status_snapshot")
+            logger.warning(
+                "Gateway diagnostics snapshot refresh failed: %s", exc
+            )
+
+        bridge_stats = await self.execute(
+            query_bridge_stats,
+            self.gateway_client.active_serial_port,
+            timeout_s=1.5,
+            operation=current_operation.get(),
+        )
+
+        return self._build_diagnostics_payload(
+            event="gateway_status_snapshot",
+            extra={"ifmcu_bridge_stats": bridge_stats},
+        )
 
     def _connect_sync(self, ble_device: GatewayBLETransportClient) -> bool:
         connections = self.gateway_client.connect(
