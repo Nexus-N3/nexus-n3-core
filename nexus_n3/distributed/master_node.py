@@ -81,6 +81,10 @@ class MasterNode:
         self._drain_tracking = {}
         self._official_start_lock = threading.RLock()
         self._official_start_tracking = {}
+        self._initialization_lock = threading.RLock()
+        self._pending_initialization = None
+        self._initialization_recovery = None
+        self._initialization_dispatching = False
         self._active_stream_subjects = set()
         self._after_all_streams_drained = None
         self._dispatcher = None # new internal handler
@@ -145,6 +149,10 @@ class MasterNode:
     def _handle_local_system_event(self, event: dict):
         """Handle master-local lifecycle events relevant to distributed coordination."""
         event_type = event.get("type")
+        if event_type in {mt.EVT_NODE_INITIALIZED, mt.EVT_NODE_INITIALIZATION_FAILED}:
+            self._record_initialization_reply(event.get("node_id", self.node_id), event_type, event.get("payload") or {})
+        elif event_type == mt.EVT_SENSOR_CLEANUP_COMPLETE:
+            self._record_initialization_recovery(event.get("payload") or {})
         if (
             event_type == mt.EVT_STREAM_DRAINED
             and not event.get("node_id")
@@ -411,6 +419,10 @@ class MasterNode:
     def stop(self):
         """Stop the master node: ROUTER loop + mDNS cleanup."""
         self._running = False
+        with self._initialization_lock:
+            if self._pending_initialization:
+                self._pending_initialization["timer"].cancel()
+                self._pending_initialization = None
 
         self._close_smb_share()
 
@@ -496,6 +508,13 @@ class MasterNode:
                     if node.get("role") == "ai":
                         self._broadcast_ai_registry()
                     continue
+                if msg_type in {mt.EVT_NODE_INITIALIZED, mt.EVT_NODE_INITIALIZATION_FAILED}:
+                    self._record_initialization_reply(node_id, msg_type, msg.get("payload") or {})
+                    continue
+                if msg_type == mt.EVT_SYSTEM_INITIALIZED:
+                    # Older workers cannot acknowledge the current protocol.
+                    # Never expose a worker-local success as workflow completion.
+                    continue
                 if msg_type == mt.EVT_STREAM_DRAINED:
                     self._record_drain_ack(node_id, msg.get("payload"))
                 elif msg_type in {
@@ -567,13 +586,15 @@ class MasterNode:
             )
 
 
-    def assign_subjects(self, subjects):
-        """
-        Assigns subjects to nodes.
-        Returns subjects assigned to this master node.
-        Pre-checks that each node’s total sensors do not exceed limits.
-        """
-        assigned_to_master = []
+    def _plan_subject_assignments(self, subjects):
+        """Plan capability/capacity assignments without changing live ownership."""
+        if not isinstance(subjects, list):
+            raise ValueError("Subjects must be a list")
+        subject_ids = [sub.get("subject_id") for sub in subjects if isinstance(sub, dict)]
+        if (len(subject_ids) != len(subjects)
+            or any(not isinstance(sid, str) or not sid for sid in subject_ids)
+            or len(set(subject_ids)) != len(subject_ids)):
+            raise ValueError("Subject IDs must be nonempty and unique")
         nodes = self.registry.get_nodes()
         execution_nodes = [
             (nid, node)
@@ -612,12 +633,155 @@ class MasterNode:
             if not node_subjects:
                 continue
             self._validate_subjects_per_node(node_subjects)
-            for sub in node_subjects:
-                self.registry.assign_subject(sub["subject_id"], node_id)
-                if node_id == self.node_id:
-                    assigned_to_master.append(sub)
+        return node_subjects_map
 
-        return assigned_to_master
+    def assign_subjects(self, subjects):
+        """Replace ownership using the existing capability/capacity assignment."""
+        plan = self._plan_subject_assignments(subjects)
+        self.registry.replace_subjects({sub["subject_id"]: nid for nid, subs in plan.items() for sub in subs})
+        return plan.get(self.node_id, [])
+
+    def _finish_initialization(self, record, failure=None):
+        """Finish under the initialization lock; retain failed participants for Reset."""
+        if self._pending_initialization is not record:
+            return
+        record["timer"].cancel()
+        self._pending_initialization = None
+        result = {
+            "correlation_id": record["correlation_id"],
+            "initialization_id": record["initialization_id"],
+            "expected_node_ids": sorted(record["expected"]),
+            "node_results": deepcopy(record["replies"]),
+        }
+        if failure:
+            self._initialization_recovery = {
+                "previous_assignments": record["previous_assignments"],
+                "requested_assignments": record["requested_assignments"],
+                "participants": set(record["expected"]),
+                "initialization_id": record["initialization_id"],
+                "node_results": deepcopy(record["replies"]),
+                "cleanup_id": None, "cleanup_nodes": set(),
+            }
+            # Neither snapshot describes a partially installed deployment.
+            # Keep them for recovery, rather than exposing the old map as live.
+            self.registry.replace_subjects({})
+            result.update(
+                message=f"{failure}. Reset all participating nodes before retrying.", initialization_complete=False,
+                configuration_state="mixed_or_unknown", recovery_required=True,
+                previous_assignments=record["previous_assignments"],
+                requested_assignments=record["requested_assignments"],
+                ownership_authoritative=False,
+                missing_node_ids=sorted(record["expected"] - record["replies"].keys()),
+            )
+            event_type = mt.EVT_ERROR
+        else:
+            self.registry.replace_subjects(record["requested_assignments"])
+            local = record["replies"].get(self.node_id, {})
+            result.update({key: local[key] for key in (
+                "site", "session_timestamp", "session_label", "session_name", "app_id", "app_name",
+            ) if key in local})
+            result.update(
+                message="System initialization confirmed by every required node",
+                initialization_complete=True, configuration_state="installed", recovery_required=False,
+                subject_ids=list(record["requested_assignments"]),
+            )
+            event_type = mt.EVT_SYSTEM_INITIALIZED
+        if self.system_event_bus:
+            self.system_event_bus.emit({"type": event_type, "node_id": self.node_id, "payload": result})
+
+    def _record_initialization_reply(self, node_id, event_type, payload):
+        with self._initialization_lock:
+            record = self._pending_initialization
+            if (not record or payload.get("initialization_id") != record["initialization_id"]
+                or payload.get("correlation_id") != record["correlation_id"]
+                or node_id not in record["expected"] or node_id in record["replies"]):
+                return
+            record["replies"][node_id] = payload
+            expected_subjects = sorted(sub["subject_id"] for sub in record["plan"][node_id])
+            reported = payload.get("subject_ids")
+            if (event_type == mt.EVT_NODE_INITIALIZATION_FAILED
+                or payload.get("configuration_state") != "installed"
+                or not isinstance(reported, list) or not all(isinstance(sid, str) for sid in reported)
+                or sorted(reported) != expected_subjects):
+                self._finish_initialization(record, f"Initialization failed on {node_id}: {payload.get('message', 'configuration mismatch')}")
+            elif record["expected"].issubset(record["replies"]):
+                self._finish_initialization(record)
+
+    def _record_initialization_recovery(self, payload):
+        with self._initialization_lock:
+            recovery = self._initialization_recovery
+            if (not recovery or not recovery["cleanup_id"]
+                or payload.get("correlation_id") != recovery["cleanup_id"]
+                or payload.get("node_id") not in recovery["participants"]
+                or payload.get("core_ready_for_configuration") is not True):
+                return
+            recovery["cleanup_nodes"].add(payload["node_id"])
+            if recovery["participants"].issubset(recovery["cleanup_nodes"]):
+                self.registry.replace_subjects({})
+                self._initialization_recovery = None
+
+    def _begin_initialization(self, payload, message_handler):
+        correlation_id = payload.get("correlation_id") or uuid.uuid4().hex
+        with self._initialization_lock:
+            if self._pending_initialization or self._initialization_recovery or self._initialization_dispatching:
+                self._emit_dispatch_error("Initialization is pending or requires Reset before another attempt", {"correlation_id": correlation_id})
+                return
+            try:
+                with self._drain_lock:
+                    if self._active_stream_subjects:
+                        raise ValueError("Cannot reconfigure while subjects are acquiring or draining")
+                if message_handler is None or message_handler.si is None:
+                    raise ValueError("Local initialization handler unavailable")
+                message_handler.si._ensure_recovery_idle()
+                message_handler.si._ensure_disconnect_allowed()
+                plan = self._plan_subject_assignments(payload.get("subjects", []))
+                previous = {sid: sub["assigned_node"] for sid, sub in self.registry.get_subjects().items()}
+                requested = {sub["subject_id"]: nid for nid, subs in plan.items() for sub in subs}
+                required = set(previous.values()) | set(requested.values()) | {self.node_id}
+                for nid in required:
+                    plan.setdefault(nid, [])
+                    if nid != self.node_id and not self.registry.get_identity(nid):
+                        raise ValueError(f"Previously assigned node {nid} is unavailable; recover it before reconfiguration")
+            except (ValueError, KeyError, TypeError, RuntimeError) as exc:
+                if self.system_event_bus:
+                    self.system_event_bus.emit({"type": mt.EVT_ERROR, "payload": {
+                        "message": f"System init rejected: {exc}", "correlation_id": correlation_id,
+                        "configuration_state": "previous_retained", "recovery_required": False,
+                        "initialization_complete": False,
+                        "previous_assignments": self.registry.get_subjects(),
+                    }})
+                return
+            initialization_id = uuid.uuid4().hex
+            record = {
+                "correlation_id": correlation_id, "initialization_id": initialization_id,
+                "previous_assignments": previous, "requested_assignments": requested,
+                "expected": required, "plan": plan, "replies": {},
+            }
+
+            def expired():
+                with self._initialization_lock:
+                    self._finish_initialization(record, "System initialization timed out")
+
+            record["timer"] = threading.Timer(90, expired)
+            record["timer"].daemon = True
+            self._pending_initialization = record
+            self._initialization_dispatching = True
+            record["timer"].start()
+        try:
+            # Dispatch every remote participant before the synchronous local install.
+            for nid in sorted(required, key=lambda nid: nid == self.node_id):
+                node_payload = {**payload, "subjects": plan[nid],
+                                "correlation_id": correlation_id, "initialization_id": initialization_id}
+                if nid == self.node_id:
+                    message_handler._handle_local(mt.CMD_INIT_SYSTEM, node_payload)
+                else:
+                    self.send_command({"type": mt.CMD_INIT_SYSTEM, "payload": node_payload}, target_node_id=nid)
+        except Exception as exc:
+            with self._initialization_lock:
+                self._finish_initialization(record, f"System initialization dispatch failed: {exc}")
+        finally:
+            with self._initialization_lock:
+                self._initialization_dispatching = False
 
     def _subject_requirements(self, subject: dict) -> dict[str, list[str]]:
         sensors = []
@@ -660,7 +824,21 @@ class MasterNode:
         payload = msg.get("payload", {})
         msg_type = msg.get("type")
 
+        with self._initialization_lock:
+            initialization_unsettled = bool(self._pending_initialization or self._initialization_recovery)
+            initialization_pending = self._pending_initialization is not None or self._initialization_dispatching
+        if initialization_unsettled and msg_type in {
+            mt.CMD_DISCOVER_SENSORS, mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS,
+            mt.CMD_CONNECT_TO_ALL, mt.CMD_CONNECT_SUBJECTS,
+            mt.CMD_START_STREAM_FOR_ALL, mt.CMD_START_STREAM_FOR_SUBJECTS,
+        }:
+            self._emit_dispatch_error("Initialization is pending or requires Reset; configuration ownership is not authoritative", payload)
+            return
+
         if msg_type in (mt.CMD_DISCONNECT_ALL, mt.CMD_DISCONNECT_SUBJECTS):
+            if initialization_pending:
+                self._emit_dispatch_error("Wait for initialization to finish or time out before Reset", payload)
+                return
             # Snapshot ownership, not link status; every participant reports once.
             nodes = {}
             requested = payload.get("subject_ids") if msg_type == mt.CMD_DISCONNECT_SUBJECTS else None
@@ -669,6 +847,16 @@ class MasterNode:
                     nodes.setdefault(subject.get("assigned_node", self.node_id), []).append(subject_id)
             if not nodes:
                 nodes[self.node_id] = []
+            if msg_type == mt.CMD_DISCONNECT_ALL:
+                with self._initialization_lock:
+                    recovery = self._initialization_recovery
+                    if recovery:
+                        for nid in recovery["participants"]:
+                            nodes.setdefault(nid, [])
+                        if payload.get("recover_session") is True:
+                            payload = {**payload, "correlation_id": payload.get("correlation_id") or uuid.uuid4().hex}
+                            recovery["cleanup_id"] = payload["correlation_id"]
+                            recovery["cleanup_nodes"] = set()
             expected = sorted(nodes)
             payload = {**payload, "cleanup_deadline_unix_s": time.time() + 90}
             if getattr(self, "system_event_bus", None):
@@ -731,49 +919,10 @@ class MasterNode:
                 print(f"[MASTER] No message_handler to handle master-only command: {msg_type}")
             return  # skip all other dispatch logic
 
-        # ------------------- Special case: INIT_SYSTEM -------------------
+        # Only the aggregate of current node acknowledgements completes setup.
         if msg_type == mt.CMD_INIT_SYSTEM:
-            subjects = payload.get("subjects", [])
-
-            # Assign subjects to nodes
-            try:
-                self.assign_subjects(subjects)
-            except ValueError as exc:
-                if self.system_event_bus:
-                    self.system_event_bus.emit({
-                        "type": mt.EVT_ERROR,
-                        "payload": str(exc),
-                    })
-                logger.error(str(exc))
-                return
-
-            # Forward each subject to its assigned node
-            per_worker_payloads = {}  # worker_id -> list of subjects
-            master_subjects = []
-
-            for sub in subjects:
-                assigned_node = self.registry.get_subjects().get(sub["subject_id"], {}).get("assigned_node", "master")
-                if assigned_node == "master":
-                    master_subjects.append(sub)
-                else:
-                    per_worker_payloads.setdefault(assigned_node, []).append(sub)
-
-            # Handle master subjects locally
-            if master_subjects and message_handler:
-                master_payload = dict(payload)
-                master_payload["subjects"] = master_subjects
-                message_handler._handle_local(mt.CMD_INIT_SYSTEM, master_payload)
-
-            # Send worker subjects
-            for worker_id, subs in per_worker_payloads.items():
-                worker_payload = dict(payload)
-                worker_payload["subjects"] = subs
-                self.send_command({
-                    "type": mt.CMD_INIT_SYSTEM,
-                    "payload": worker_payload
-                }, target_node_id=worker_id)
-
-            return  # skip general dispatch
+            self._begin_initialization(payload, message_handler)
+            return
 
         # ------------------- General dispatch -------------------
         subject_ids = payload.get("subject_ids")

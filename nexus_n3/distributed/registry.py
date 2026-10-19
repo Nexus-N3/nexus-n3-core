@@ -81,6 +81,14 @@ class NodeRegistry:
             return node.get("identity") if node else None
 
     # ---------------- Subjects ----------------
+    def replace_subjects(self, assignments):
+        """Atomically install exactly the confirmed subject ownership map."""
+        with self._lock:
+            self.subjects = {
+                subject_id: {"assigned_node": node_id, "meta": {}}
+                for subject_id, node_id in assignments.items()
+            }
+
     def assign_subject(self, subject_id, node_id, meta=None):
         """Assign a subject to a node."""
         with self._lock:

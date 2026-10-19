@@ -8,6 +8,7 @@ from nexus_n3.plugins.runtime.discovery import get_installed_plugin_inventory
 from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 
 from datetime import datetime, timezone
+from uuid import uuid4
 
 logger = get_module_logger("Message Handler")
 
@@ -257,6 +258,14 @@ class MessageHandler:
                 "payload": error_payload,
             })
 
+        if self.si and getattr(self.si, "_initialization_requires_recovery", False) and msg_type in {
+            mt.CMD_DISCOVER_SENSORS, mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS,
+            mt.CMD_CONNECT_TO_ALL, mt.CMD_CONNECT_SUBJECTS,
+            mt.CMD_START_STREAM_FOR_ALL, mt.CMD_START_STREAM_FOR_SUBJECTS,
+        }:
+            emit_error("Reset is required after failed configuration installation")
+            return
+
         if msg_type == mt.CMD_IS_SERVER_READY:
             if self.is_ready:
                 print("server is ready block")
@@ -332,20 +341,49 @@ class MessageHandler:
             print("System setup complete")
         
         elif msg_type == mt.CMD_INIT_SYSTEM:
+            correlation_id = correlation_id or uuid4().hex
+            initialization_id = payload.get("initialization_id")
             try:
                 print(f"initialising System with {payload['subjects']} subject(s)")
                 self.si.pending_correlation_id = correlation_id
-                self.si.init_core(
+                result = self.si.init_core(
                     payload["subjects"],
                     init_label=payload.get("init_label"),
                     app_id=payload.get("app_id"),
                     app_name=payload.get("app_name"),
+                    emit_initialized=False,
                 )
-                self.si.pending_correlation_id = None
+                self._system_event_bus.emit({
+                    "type": mt.EVT_NODE_INITIALIZED if initialization_id else mt.EVT_SYSTEM_INITIALIZED,
+                    "node_id": self.node_id,
+                    "payload": {
+                        **result,
+                        "correlation_id": correlation_id,
+                        "initialization_id": initialization_id,
+                        "initialization_complete": not bool(initialization_id),
+                    },
+                })
             except Exception as exc:
                 logger.exception("Failed to initialize system")
-                self.si.pending_correlation_id = None
-                emit_error(f"System init failed: {exc}")
+                configuration = getattr(exc, "configuration", {
+                    "configuration_state": "unknown", "recovery_required": True,
+                    "configured_subject_ids": None,
+                })
+                recovery_hint = " Reset is required before retrying." if configuration["recovery_required"] else " Previous configuration was retained."
+                self._system_event_bus.emit({
+                    "type": mt.EVT_NODE_INITIALIZATION_FAILED if initialization_id else mt.EVT_ERROR,
+                    "node_id": self.node_id,
+                    "payload": {
+                        "message": f"System init failed: {exc}.{recovery_hint}",
+                        "correlation_id": correlation_id,
+                        "initialization_id": initialization_id,
+                        "initialization_complete": False,
+                        **configuration,
+                    },
+                })
+            finally:
+                if self.si:
+                    self.si.pending_correlation_id = None
         
         # this is to decide where to save files
         elif msg_type == mt.CMD_UPDATE_FILE_PATH:

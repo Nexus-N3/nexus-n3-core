@@ -25,6 +25,13 @@ from nexus_n3.sensor_manager.ble_runtime_config import BLERuntimeConfig
 
 logger = get_module_logger("Core Interface")
 
+class InitializationError(RuntimeError):
+    """A rejected initialization with an explicit resulting configuration."""
+
+    def __init__(self, message, configuration):
+        super().__init__(message)
+        self.configuration = configuration
+
 class Core:
     """
     Manages subjects, sensors, and file storage in Nexus N3 Core.
@@ -125,6 +132,7 @@ class Core:
         self._official_persistence_prepared_subject_ids: set[str] = set()
         self._official_start_timing: dict = {}
         self._recovery_in_progress = False
+        self._initialization_requires_recovery = False
 
     def get_ble_runtime_config(self) -> dict:
         """Return the active BLE runtime backend configuration."""
@@ -734,6 +742,7 @@ class Core:
         init_label: str | None = None,
         app_id: str | None = None,
         app_name: str | None = None,
+        emit_initialized: bool = True,
     ):
         """
         Initialize subjects and sensor manager from configuration.
@@ -744,38 +753,57 @@ class Core:
             app_id: Optional stable application identifier for event attribution.
             app_name: Optional human-readable application name for event attribution.
         """
-        self._ensure_recovery_idle()
-        if any(sub.is_streaming for sub in self.subjects) or getattr(self, "stream_phase", "idle") in {
-            "starting", "warming_up", "preparing_official", "activating_official",
-        }:
-            raise RuntimeError("Cannot reconfigure while a subject is acquiring")
         previous_subjects = self.subjects
         previous_graph_subjects = self.subject_graph.get_subjects()
-        self.app_id = str(app_id).strip() if app_id else None
-        self.app_name = str(app_name).strip() if app_name else None
-        if init_label is not None:
-            self.storage.set_session_label(init_label)
-        success = self._init_subjects(subjects_config)
-        if success:
-            try:
-                self._init_sensor_manager()
-            except Exception:
-                self.subjects = previous_subjects
-                self.subject_graph.subjects = previous_graph_subjects
-                raise
+        previous_app = (self.app_id, self.app_name)
+        files = self.storage.file_manager
+        previous_label = (files.session_label, files.session_name, files.base_dir)
+        correlation_id = self.pending_correlation_id
+        installation_started = False
+        try:
+            self._ensure_recovery_idle()
+            self._ensure_disconnect_allowed()
+            if self._initialization_requires_recovery:
+                raise RuntimeError("Reset is required after failed configuration installation")
+            if any(sub.is_streaming for sub in self.subjects) or self.stream_phase in {
+                "starting", "warming_up", "preparing_official", "activating_official",
+            }:
+                raise RuntimeError("Cannot reconfigure while a subject is acquiring")
+            if not isinstance(subjects_config, list):
+                raise ValueError("Subjects must be a list")
+            self._init_subjects(subjects_config)
+            installation_started = True
+            self._init_sensor_manager()
+            self.app_id = str(app_id).strip() if app_id else None
+            self.app_name = str(app_name).strip() if app_name else None
+            if init_label is not None:
+                self.storage.set_session_label(init_label)
             self.compute_orch.reset()
             self._register_callbacks()
-            if self.system_event_bus:
-                self.system_event_bus.emit({
-                    "type": mt.EVT_SYSTEM_INITIALIZED,
-                    "payload": {
-                        "message": f"System initialised with {len(self.subjects)} subject(s)",
-                        **self._event_context(subject_ids=[sub.subject_id for sub in self.subjects]),
-                    },
-                })
-        else:
+        except Exception as exc:
+            self._initialization_requires_recovery |= installation_started
             self.subjects = previous_subjects
             self.subject_graph.subjects = previous_graph_subjects
+            self.app_id, self.app_name = previous_app
+            files.session_label, files.session_name, files.base_dir = previous_label
+            raise InitializationError(str(exc), {
+                "configuration_state": "recovery_required" if self._initialization_requires_recovery else "previous_retained",
+                "recovery_required": self._initialization_requires_recovery,
+                "previous_subject_ids": [sub.subject_id for sub in previous_subjects],
+                "requested_subject_ids": [sub.get("subject_id") for sub in (subjects_config if isinstance(subjects_config, list) else []) if isinstance(sub, dict)],
+                "configured_subject_ids": None if self._initialization_requires_recovery else [sub.subject_id for sub in previous_subjects],
+            }) from exc
+        result = {
+            "message": f"System initialised with {len(self.subjects)} subject(s)",
+            **self._event_context(subject_ids=[sub.subject_id for sub in self.subjects]),
+            "subject_ids": [sub.subject_id for sub in self.subjects],
+            "configuration_state": "installed",
+            "correlation_id": correlation_id,
+            "initialization_complete": True,
+        }
+        if emit_initialized and self.system_event_bus:
+            self.system_event_bus.emit({"type": mt.EVT_SYSTEM_INITIALIZED, "payload": result})
+        return result
 
     def _init_subjects(self, subjects_config):
         """
@@ -784,11 +812,14 @@ class Core:
         Validates that the number of sensors matches the number of body locations
         and that body locations are unique for each subject.
 
-        Emits EVT_SYSTEM_INITIALIZED when done.
+        Validation errors are raised to the correlated initialization handler.
         """
 
-        success = self.subject_graph.init_subjects(subjects_config, error_cb=self._on_error)
+        errors = []
+        success = self.subject_graph.init_subjects(subjects_config, error_cb=errors.append, emit_errors=False)
         self.subjects = self.subject_graph.get_subjects()
+        if not success:
+            raise ValueError(errors[-1] if errors else "Subject configuration validation failed")
         return success
 
 
@@ -943,6 +974,8 @@ class Core:
                 self.session_timestamp = None
                 self.active_subject_ids = None
                 self._reset_report = recovery
+                if recovery.get("core_ready_for_configuration") is True:
+                    self._initialization_requires_recovery = False
             except Exception as exc:
                 self._reset_report = {"core_ready_for_configuration": False,
                     "gateway_communication_available": False, "recovery_complete": False,

@@ -94,6 +94,10 @@ EVT_SERVER_READY = "server_ready"
 #: Event: System has been initialized
 EVT_SYSTEM_INITIALIZED = "system_initialized"
 
+# Node acknowledgements are distinct from workflow initialization completion.
+EVT_NODE_INITIALIZED = "node_initialized"
+EVT_NODE_INITIALIZATION_FAILED = "node_initialization_failed"
+
 #: Event: All sensors have been discovered
 EVT_SENSORS_DISCOVERED = "sensors_discovered"
 

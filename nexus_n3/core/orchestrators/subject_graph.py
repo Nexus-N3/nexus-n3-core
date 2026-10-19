@@ -15,7 +15,7 @@ class SubjectGraph:
         self.max_total_sensors = max_total_sensors
         self.subjects = []
 
-    def init_subjects(self, subjects_config, error_cb=None):
+    def init_subjects(self, subjects_config, error_cb=None, *, emit_errors=True):
         """Initialize subjects and assign sensors to locations."""
         self.subjects = []
         total_sensors_all_subjects = sum(
@@ -28,7 +28,7 @@ class SubjectGraph:
                 f"Total sensors across all subjects ({total_sensors_all_subjects}) "
                 f"exceed the maximum allowed ({self.max_total_sensors})"
             )
-            if self.system_event_bus:
+            if self.system_event_bus and emit_errors:
                 self.system_event_bus.emit({"type": "error", "payload": msg})
             if error_cb:
                 error_cb(msg)
@@ -49,7 +49,7 @@ class SubjectGraph:
                         f"Subject '{subject_id}' sensor '{s_conf.get('local_name')}' "
                         f"has {num} sensors but {len(locations)} locations"
                     )
-                    if self.system_event_bus:
+                    if self.system_event_bus and emit_errors:
                         self.system_event_bus.emit({"type": "error", "payload": msg})
                     if error_cb:
                         error_cb(msg)
@@ -71,7 +71,7 @@ class SubjectGraph:
                             f"assignment: sensor='{s_conf.get('local_name')}', "
                             f"location='{location}'"
                         )
-                        if self.system_event_bus:
+                        if self.system_event_bus and emit_errors:
                             self.system_event_bus.emit(
                                 {"type": "error", "payload": msg}
                             )
@@ -86,7 +86,7 @@ class SubjectGraph:
                 cls = resolve_installed_sensor_class(s_conf["local_name"])
                 if cls is None:
                     msg = f"Unsupported sensor plugin: {s_conf.get('local_name')}"
-                    if self.system_event_bus:
+                    if self.system_event_bus and emit_errors:
                         self.system_event_bus.emit({"type": "error", "payload": msg})
                     if error_cb:
                         error_cb(msg)
@@ -117,7 +117,7 @@ class SubjectGraph:
                             f"cannot run algorithm '{algo_name}'. "
                             f"Supported: {supported_algorithms or ['pass_through']}"
                         )
-                        if self.system_event_bus:
+                        if self.system_event_bus and emit_errors:
                             self.system_event_bus.emit({"type": "error", "payload": msg})
                         if error_cb:
                             error_cb(msg)
@@ -155,7 +155,7 @@ class SubjectGraph:
                     except Exception as exc:
                         msg = f"Sensor init failed for '{s_conf.get('local_name')}': {exc}"
                         logger.exception("Failed to init sensor '%s'", s_conf.get("local_name"))
-                        if self.system_event_bus:
+                        if self.system_event_bus and emit_errors:
                             self.system_event_bus.emit({"type": "error", "payload": msg})
                         if error_cb:
                             error_cb(msg)
