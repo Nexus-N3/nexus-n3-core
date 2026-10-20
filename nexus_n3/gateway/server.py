@@ -114,10 +114,17 @@ class Server:
         return False
 
     def _sync_core_file_path(self):
-        """Refresh USB state and update the core storage path immediately."""
+        """Refresh storage paths and dispatch updates before subsequent START commands."""
         active_path = self.usb_disk_manager.refresh()
         if self.handler.si:
-            self.handler.si.set_file_path(str(active_path))
+            network_path = self.usb_disk_manager.network_path
+            self.handler.handle({
+                "type": mt.CMD_UPDATE_FILE_PATH,
+                "payload": {
+                    "file_path": str(active_path),
+                    "network_path": str(network_path) if network_path else None,
+                },
+            })
 
     # returns a disk status
     def usb_status_payload(self, *, action: str, ok: bool, error: str | None = None) -> dict:
