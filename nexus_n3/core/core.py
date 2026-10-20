@@ -6,6 +6,7 @@ import threading
 import math
 from concurrent.futures import Future
 from datetime import datetime, timezone
+from nexus_n3.core.subject_connection_sequence import SubjectConnectionSequence
 from nexus_n3.logger.logger import get_module_logger
 from nexus_n3.gateway.messaging import message_types as mt
 from nexus_n3.gateway.gateways.gateway_registry import discover_gateways
@@ -133,6 +134,11 @@ class Core:
         self._official_start_timing: dict = {}
         self._recovery_in_progress = False
         self._initialization_requires_recovery = False
+        self.connection_sequence = SubjectConnectionSequence(
+            self._emit_connection_event, self._dispatch_local_connection_step,
+        )
+        if self.system_event_bus:
+            self.system_event_bus.subscribe(self.connection_sequence.on_event)
 
     def get_ble_runtime_config(self) -> dict:
         """Return the active BLE runtime backend configuration."""
@@ -793,6 +799,11 @@ class Core:
                 "requested_subject_ids": [sub.get("subject_id") for sub in (subjects_config if isinstance(subjects_config, list) else []) if isinstance(sub, dict)],
                 "configured_subject_ids": None if self._initialization_requires_recovery else [sub.subject_id for sub in previous_subjects],
             }) from exc
+        self.connection_sequence.configure([
+            {"subject_id": sub.subject_id, "node_id": self.node_id,
+             "locations": [entry["meta"].get("location") for entry in sub.sensors]}
+            for sub in self.subjects
+        ])
         result = {
             "message": f"System initialised with {len(self.subjects)} subject(s)",
             **self._event_context(subject_ids=[sub.subject_id for sub in self.subjects]),
@@ -890,13 +901,130 @@ class Core:
         """Return supported remote bridge keys."""
         return sorted(discover_bridges().keys())
 
+    def _emit_connection_event(self, event):
+        if self.system_event_bus:
+            self.system_event_bus.emit(event)
+        else:
+            self.connection_sequence.on_event(event)
+
+    def _dispatch_local_connection_step(self, node_id, command, payload):
+        self.execute_connection_step(command, payload)
+
+    def start_connection_sequence(self, payload):
+        self._ensure_recovery_idle()
+        self._ensure_disconnect_allowed()
+        self.connection_sequence.start(payload.get("correlation_id"))
+
+    def execute_connection_step(self, command, payload):
+        """Run an existing operation and report its correlated terminal result.
+
+        Queue acceptance is not completion. This path leaves the legacy callback
+        and identification-event contracts intact for individual operations.
+        """
+        sid = payload.get("subject_id") or payload["subject_ids"][0]
+        subject = self.subject_graph.find_subject_by_id(sid)
+        if subject is None:
+            raise ValueError(f"Subject {sid} not found")
+        context = {
+            "correlation_id": payload.get("correlation_id"),
+            "connection_sequence_id": payload["connection_sequence_id"],
+            "subject_ids": [sid], "subject_id": sid, "node_id": self.node_id,
+        }
+        manager = self.sensor_orch.manager
+        entries = subject.sensors
+        sensors = [entry["sensor"] for entry in entries]
+        if command == mt.CMD_IDENTIFY_SENSOR:
+            for entry in entries:
+                sensor = entry["sensor"]
+                if not sensor.has_capability("identify"):
+                    continue
+                future = manager.submit_connection_step("identify", address=sensor.address)
+
+                def identified(done, address=sensor.address):
+                    try:
+                        result = done.result()
+                        if result.get("on_error"):
+                            raise RuntimeError(str(result["on_error"]))
+                    except Exception as exc:
+                        self._emit_connection_event({"type": mt.EVT_ERROR, "payload": {
+                            **context, "correlation_id": payload.get("sequence_correlation_id"),
+                            "operation": "identify", "severity": "warning",
+                            "address": address, "message": f"Identification failed: {exc}",
+                        }})
+
+                future.add_done_callback(identified)
+            return
+        discovering = command == mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS
+        if discovering:
+            future = manager.submit_connection_step(
+                "discover_for_subject", sensors=sensors,
+                excluded_addresses=payload.get("excluded_addresses", []),
+            )
+        else:
+            selected = {str(a).strip().upper() for a in payload.get("selected_addresses", [])}
+            actual = {str(sensor.address).strip().upper() for sensor in sensors if sensor.address}
+            if actual != selected:
+                raise ValueError(f"Selected addresses changed for subject {sid}; Reset or rediscover it")
+            pending = [sensor for sensor in sensors
+                       if sensor.connection_status.name != "CONNECTED"
+                       or not getattr(sensor, "connection_setup_complete", False)]
+            for sensor in pending:
+                sensor.connection_setup_complete = False
+            future = manager.submit_connection_step(
+                "connect_specific_sensors", addresses=[sensor.address for sensor in pending],
+            )
+
+        def completed(done):
+            selected = [sensor.address for sensor in sensors if sensor.address]
+            base = {**context, "selected_addresses": selected,
+                    "operation": "discovering" if discovering else "connecting"}
+            try:
+                captured = done.result()
+                if captured.get("on_error"):
+                    raise RuntimeError(str(captured["on_error"]))
+                if discovering:
+                    result = captured.get("on_discover")
+                    if isinstance(result, dict) and result.get("valid") is False:
+                        raise RuntimeError(f"Incomplete discovery: {result.get('missing', [])}")
+                    covered = {id(sensor) for sensor in result} if isinstance(result, list) else set()
+                    covered.update(id(sensor) for sensor in sensors
+                                   if sensor.connection_status.name == "CONNECTED")
+                    if any(id(sensor) not in covered for sensor in sensors):
+                        raise RuntimeError("Incomplete discovery: not every required slot was discovered")
+                    self.compute_orch.register_algorithms([subject])
+                    event_type = mt.EVT_SENSORS_DISCOVERED
+                    data = {"subject_id": sid, "discovered_sensors": selected}
+                else:
+                    event_type = mt.EVT_SENSOR_CONNECTED
+                    data = {"subject_id": sid, "connected_sensors": [
+                        {"address": entry["sensor"].address,
+                         "location": entry["meta"].get("location"),
+                         "status": entry["sensor"].connection_status.name,
+                         "setup_complete": True}
+                        for entry in entries
+                        if entry["sensor"].connection_status.name == "CONNECTED"
+                        and getattr(entry["sensor"], "connection_setup_complete", False)
+                    ]}
+                self._emit_connection_event({"type": event_type, "payload": {
+                    **base, "operation_complete": True, "subjects": [data],
+                }})
+            except Exception as exc:
+                self._emit_connection_event({"type": mt.EVT_ERROR, "payload": {
+                    **base, "message": str(exc),
+                    "setup_completed_addresses": [sensor.address for sensor in sensors
+                                                  if sensor.connection_status.name == "CONNECTED"
+                                                  and getattr(sensor, "connection_setup_complete", False)],
+                }})
+
+        future.add_done_callback(completed)
+
     def discover_sensors(self):
         """Discover all sensors in the system via SensorManager."""
         logger.info("Discovering sensors")
         self.active_subject_ids = None
         self.sensor_orch.discover()
 
-    def discover_sensors_for_subjects(self, subject_ids):
+    def discover_sensors_for_subjects(self, subject_ids, excluded_addresses=()):
         """Discover sensors for specific subjects."""
         subjects = self._get_subjects_by_ids(subject_ids)
         self.active_subject_ids = [sub.subject_id for sub in subjects]
@@ -906,10 +1034,13 @@ class Core:
             for entry in sub.sensors
         ]
         logger.info("Discovering sensors for subjects %s", self.active_subject_ids)
-        self.sensor_orch.discover_for_subject(sensors=sensors)
+        self.sensor_orch.discover_for_subject(sensors=sensors, excluded_addresses=excluded_addresses)
 
     def connect_all(self):
-        """Connect all sensors in the system."""
+        """Connect all sensors, ordering multi-subject preparation locally."""
+        if len(self.subjects) > 1:
+            self.start_connection_sequence({"correlation_id": self.pending_correlation_id})
+            return
         self.active_subject_ids = None
         self.sensor_orch.connect_all()
 
@@ -938,7 +1069,7 @@ class Core:
     def reset_session(self, cleanup_context=None):
         """Recover resources and retire configuration without finalising again."""
         self._ensure_disconnect_allowed()
-        context = dict(cleanup_context or {})
+        context = {**(cleanup_context or {}), "recover_session": True}
         with self._startup_lock:
             if getattr(self, "_recovery_in_progress", False):
                 future = self._reset_future

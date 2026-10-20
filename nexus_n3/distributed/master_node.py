@@ -11,6 +11,7 @@ from copy import deepcopy
 from datetime import datetime
 from zeroconf import Zeroconf, ServiceInfo
 from nexus_n3.distributed.capabilities import build_node_capabilities, supports_algorithm, supports_sensor
+from nexus_n3.core.subject_connection_sequence import SubjectConnectionSequence
 from nexus_n3.distributed.registry import NodeRegistry
 from nexus_n3.distributed.registry_messages import AI_NODE_REGISTRY
 from nexus_n3.gateway.messaging import message_types as mt
@@ -58,6 +59,10 @@ class MasterNode:
         self.mdns_port = mdns_port
         self.mdns_hostname = mdns_hostname
         self.system_event_bus = None
+        self._connection_message_handler = None
+        self.connection_sequence = SubjectConnectionSequence(
+            lambda event: self.system_event_bus.emit(event), self._dispatch_connection_step,
+        )
 
         self.MAX_TOTAL_SENSORS_PER_NODE = 8
 
@@ -146,8 +151,15 @@ class MasterNode:
         # A coordinating client may respond immediately to the final READY event.
         self.system_event_bus.subscribe(self._handle_local_system_event, prepend=True)
 
+    def _dispatch_connection_step(self, node_id, command, payload):
+        if node_id == self.node_id:
+            self._connection_message_handler._handle_local(command, payload)
+        else:
+            self.send_command({"type": command, "payload": payload}, target_node_id=node_id)
+
     def _handle_local_system_event(self, event: dict):
         """Handle master-local lifecycle events relevant to distributed coordination."""
+        self.connection_sequence.on_event(event)
         event_type = event.get("type")
         if event_type in {mt.EVT_NODE_INITIALIZED, mt.EVT_NODE_INITIALIZATION_FAILED}:
             self._record_initialization_reply(event.get("node_id", self.node_id), event_type, event.get("payload") or {})
@@ -676,6 +688,13 @@ class MasterNode:
             event_type = mt.EVT_ERROR
         else:
             self.registry.replace_subjects(record["requested_assignments"])
+            self.connection_sequence.configure([
+                {"subject_id": sub["subject_id"],
+                 "node_id": record["requested_assignments"][sub["subject_id"]],
+                 "locations": [location for sensor in sub.get("sensors", [])
+                               for location in sensor.get("locations", [])]}
+                for sub in record["connection_subjects"]
+            ])
             local = record["replies"].get(self.node_id, {})
             result.update({key: local[key] for key in (
                 "site", "session_timestamp", "session_label", "session_name", "app_id", "app_name",
@@ -756,6 +775,7 @@ class MasterNode:
                 "correlation_id": correlation_id, "initialization_id": initialization_id,
                 "previous_assignments": previous, "requested_assignments": requested,
                 "expected": required, "plan": plan, "replies": {},
+                "connection_subjects": deepcopy(payload.get("subjects", [])),
             }
 
             def expired():
@@ -833,6 +853,33 @@ class MasterNode:
             mt.CMD_START_STREAM_FOR_ALL, mt.CMD_START_STREAM_FOR_SUBJECTS,
         }:
             self._emit_dispatch_error("Initialization is pending or requires Reset; configuration ownership is not authoritative", payload)
+            return
+
+        if msg_type == mt.CMD_CONNECT_TO_ALL and len(self.connection_sequence.subjects) > 1:
+            self._connection_message_handler = message_handler
+            self.connection_sequence.start(payload.get("correlation_id"))
+            return
+        if self.connection_sequence.busy and msg_type in {
+            mt.CMD_DISCOVER_SENSORS, mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS,
+            mt.CMD_CONNECT_SUBJECTS, mt.CMD_CONNECT_TO_ALL, mt.CMD_IDENTIFY_SENSOR,
+            mt.CMD_INIT_SYSTEM,
+        }:
+            self._emit_dispatch_error("Connect All is still in progress; wait for completion or Reset", payload)
+            return
+        if msg_type == mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS:
+            targets = set(payload.get("subject_ids", []))
+            payload = {**payload, "excluded_addresses": sorted(
+                set(self.connection_sequence.exclusions(targets))
+                | set(payload.get("excluded_addresses", [])))}
+        if msg_type == mt.CMD_IDENTIFY_SENSOR and payload.get("subject_id"):
+            subject = self.registry.get_subjects().get(payload["subject_id"])
+            if not subject:
+                self._emit_dispatch_error(f"Unknown subject {payload['subject_id']}", payload)
+            elif subject["assigned_node"] == self.node_id:
+                if message_handler:
+                    message_handler._handle_local(msg_type, payload)
+            else:
+                self.send_command(msg, target_node_id=subject["assigned_node"])
             return
 
         if msg_type in (mt.CMD_DISCONNECT_ALL, mt.CMD_DISCONNECT_SUBJECTS):

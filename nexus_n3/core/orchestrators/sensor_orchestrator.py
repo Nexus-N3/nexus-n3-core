@@ -43,8 +43,8 @@ class SensorOrchestrator:
     def discover(self):
         self.manager.discover()
 
-    def discover_for_subject(self, sensors):
-        self.manager.discover_for_subject(sensors=sensors)
+    def discover_for_subject(self, sensors, excluded_addresses=()):
+        self.manager.discover_for_subject(sensors=sensors, excluded_addresses=excluded_addresses)
 
     def connect_all(self):
         self.manager.connect_all()

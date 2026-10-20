@@ -189,3 +189,6 @@ EVT_CONTROL_CENTER_MESSAGE = "control_center_message"
 
 #: Event: Robot Status
 EVT_ROBOT_STATUS = "robot_status"
+
+# Ordered multi-subject Connect All lifecycle (UI display only).
+EVT_SUBJECT_CONNECTION_PROGRESS = "subject_connection_progress"

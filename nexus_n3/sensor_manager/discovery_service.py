@@ -50,6 +50,7 @@ class DiscoveryService:
         loop,
         register_listeners_with_sensor,
         emit_to_client,
+        excluded_addresses=(),
     ):
         requested_sensor_ids = {id(sensor) for sensor in requested_sensors}
         pending_sensors = [
@@ -61,8 +62,10 @@ class DiscoveryService:
         connected_addresses = {
             str(sensor.address).upper()
             for sensor in sensors
-            if sensor.connection_status == ConnectionStatus.CONNECTED and sensor.address
+            if sensor.address and (sensor.connection_status == ConnectionStatus.CONNECTED
+                                   or id(sensor) not in requested_sensor_ids)
         }
+        connected_addresses.update(str(address).strip().upper() for address in excluded_addresses)
 
         return await self._discover_pending(
             pending_sensors=pending_sensors,
@@ -83,6 +86,7 @@ class DiscoveryService:
         if not pending_sensors:
             return []
 
+        excluded_addresses = set(excluded_addresses)
         discovered_sensors = []
         adapter_groups = self.adapter_pool.group_sensors(pending_sensors)
 
@@ -98,7 +102,7 @@ class DiscoveryService:
                 devices = {
                     address: device
                     for address, device in devices.items()
-                    if str(address).upper() not in excluded_addresses
+                    if str(address).strip().upper() not in excluded_addresses
                 }
                 matched = utils.match_devices(sensors_for_adapter, devices)
                 validation = utils.validate_matched_devices(sensors_for_adapter, matched)
@@ -122,7 +126,11 @@ class DiscoveryService:
             for sensor, entry in zip(sensors_for_adapter, matched):
                 device, _adv_data = entry[0], entry[1]
                 address = getattr(device, "address", None) or getattr(device, "path", None)
+                if str(address).strip().upper() in excluded_addresses:
+                    raise ValueError("Discovery selected an excluded sensor address")
+                excluded_addresses.add(str(address).strip().upper())
                 sensor.address = address
+                sensor.connection_setup_complete = False
                 if self.adapter_pool.has_method(adapter, "create_transport_client"):
                     sensor.set_transport_client(
                         adapter.create_transport_client(

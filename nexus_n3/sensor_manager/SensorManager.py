@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import List
 from concurrent.futures import Future, ThreadPoolExecutor
 
+from nexus_n3.core.subject_connection_sequence import connection_step_capture
 from nexus_n3.sensor_manager.types.connections import ConnectionStatus
 from nexus_n3.sensor_manager.utils import utils as utils
 from nexus_n3.sensor_manager.adapter_pool import AdapterPool
@@ -148,6 +149,10 @@ class SensorManager:
             self.system_event_bus.emit({"type": msg_type, "payload": payload})
 
     def _emit_to_client(self, event_name, payload):
+        capture = connection_step_capture.get()
+        if capture is not None and event_name in {"on_discover", "on_connected", "on_error"}:
+            capture[event_name] = payload
+            return
         if event_name == "on_cleanup_complete":
             for result in payload.get("results", []):
                 if result.get("status") in ("failed", "unconfirmed"):
@@ -258,6 +263,7 @@ class SensorManager:
                 )
 
     async def set_up_sensor(self, sensor):
+        sensor.connection_setup_complete = False
         self.logger.info(
             "Setting up sensor %s with capabilities: %s",
             sensor.name,
@@ -270,6 +276,10 @@ class SensorManager:
                 enable_battery=self.listeners["on_battery"] is not None,
                 enable_button=self.listeners["on_button"] is not None,
             )
+            capture = connection_step_capture.get()
+            if capture is not None and capture.get("on_error"):
+                raise RuntimeError(str(capture["on_error"]))
+            sensor.connection_setup_complete = True
         else:
             self.logger.warning("Sensor %s does not implement setup hook", sensor.name)
 
@@ -461,6 +471,8 @@ class SensorManager:
         while self.running:
             msg = await self.queue.get()
             completion = msg.get("_completion")
+            capture = {} if msg.get("connection_sequence_step") else None
+            capture_token = connection_step_capture.set(capture)
 
             try:
                 if msg.get("message") == "__stop__":
@@ -543,19 +555,30 @@ class SensorManager:
                         )
 
                 elif completion is not None and not completion.done():
-                    completion.set_result(handled if isinstance(handled, (list, dict)) else True)
+                    completion.set_result(capture if capture is not None else
+                                          handled if isinstance(handled, (list, dict)) else True)
 
             finally:
+                connection_step_capture.reset(capture_token)
                 self.queue.task_done()
+
+    def submit_connection_step(self, message, **arguments):
+        """Return terminal completion for one existing controller operation."""
+        completion = Future()
+        self.loop.call_soon_threadsafe(self.queue.put_nowait, {
+            "message": message, **arguments, "connection_sequence_step": True,
+            "_completion": completion,
+        })
+        return completion
 
     # ----------------- Client-facing APIs ----------------- #
     def discover(self):
         self.loop.call_soon_threadsafe(self.queue.put_nowait, {"message": "discover"})
 
-    def discover_for_subject(self, sensors):
+    def discover_for_subject(self, sensors, excluded_addresses=()):
         self.loop.call_soon_threadsafe(
             self.queue.put_nowait,
-            {"message": "discover_for_subject", "sensors": sensors},
+            {"message": "discover_for_subject", "sensors": sensors, "excluded_addresses": list(excluded_addresses)},
         )
 
     def discover_and_connect(self):

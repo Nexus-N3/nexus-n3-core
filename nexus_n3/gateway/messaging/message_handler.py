@@ -266,6 +266,33 @@ class MessageHandler:
             emit_error("Reset is required after failed configuration installation")
             return
 
+        if payload.get("connection_sequence_id") and msg_type in {
+            mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS, mt.CMD_CONNECT_SUBJECTS, mt.CMD_IDENTIFY_SENSOR,
+        }:
+            try:
+                self.si.execute_connection_step(msg_type, payload)
+            except Exception as exc:
+                self._system_event_bus.emit({"type": mt.EVT_ERROR, "payload": {
+                    **payload, "node_id": self.node_id,
+                    "correlation_id": payload.get("sequence_correlation_id", correlation_id),
+                    "subject_id": payload.get("subject_id") or (payload.get("subject_ids") or [None])[0],
+                    "operation": "identify" if msg_type == mt.CMD_IDENTIFY_SENSOR else msg_type,
+                    "severity": "warning" if msg_type == mt.CMD_IDENTIFY_SENSOR else "error",
+                    "message": str(exc),
+                }})
+            return
+        sequence = getattr(self.si, "connection_sequence", None)
+        if msg_type == mt.CMD_CONNECT_TO_ALL and sequence and len(self.si.subjects) > 1:
+            self.si.start_connection_sequence(payload)
+            return
+        if sequence and sequence.busy and msg_type in {
+            mt.CMD_DISCOVER_SENSORS, mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS,
+            mt.CMD_CONNECT_TO_ALL, mt.CMD_CONNECT_SUBJECTS, mt.CMD_IDENTIFY_SENSOR,
+            mt.CMD_INIT_SYSTEM,
+        }:
+            emit_error("Connect All is still in progress; wait for completion or Reset")
+            return
+
         if msg_type == mt.CMD_IS_SERVER_READY:
             if self.is_ready:
                 print("server is ready block")
@@ -448,7 +475,7 @@ class MessageHandler:
         elif msg_type == mt.CMD_DISCOVER_SENSORS_FOR_SUBJECTS:
             self.si.pending_correlation_id = correlation_id
             try:
-                self.si.discover_sensors_for_subjects(payload["subject_ids"])
+                self.si.discover_sensors_for_subjects(payload["subject_ids"], payload.get("excluded_addresses", []))
             except Exception as exc:
                 logger.exception("Failed to discover sensors for subjects")
                 self.si.pending_correlation_id = None

@@ -67,6 +67,9 @@ class SensorController:
             return await self.handle_stop_all(msg.get("stop_deadline"))
         if message_type == "stop_specific_sensors":
             return await self.handle_stop_specific_sensors(msg["addresses"], msg.get("stop_deadline"))
+        if message_type == "discover_for_subject":
+            await self.handle_discover_for_subject(msg["sensors"], msg.get("excluded_addresses", []))
+            return True
         handler, arg_key = handler_entry
         if arg_key is None:
             await handler()
@@ -82,10 +85,11 @@ class SensorController:
             emit_to_client=self.emit_to_client,
         )
 
-    async def handle_discover_for_subject(self, sensors):
+    async def handle_discover_for_subject(self, sensors, excluded_addresses=()):
         return await self.discovery_service.discover_for_subject(
             sensors=self._sensors(),
             requested_sensors=sensors,
+            excluded_addresses=excluded_addresses,
             loop=self.loop,
             register_listeners_with_sensor=self.register_listeners_with_sensor,
             emit_to_client=self.emit_to_client,
